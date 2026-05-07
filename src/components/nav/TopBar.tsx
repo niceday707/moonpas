@@ -6,11 +6,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { GraduationCap, ChevronDown, Users, Menu, X, Search, Bell } from "lucide-react";
+import { GraduationCap, ChevronDown, PenSquare, Menu, X, Search, Bell } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useNotifications } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
-import { getBoardCounts, type BoardType } from "@/lib/board";
+import { getBoardCounts, getTodayPostCount, type BoardType } from "@/lib/board";
 
 // ── 메뉴 정의 ───────────────────────────────────────────────────────────
 // boardType 을 단일 source of truth 로 두고 href = /board/{boardType}, 카운트는 Supabase 에서 조회.
@@ -77,13 +77,17 @@ export function TopBar() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [counts, setCounts] = useState<Partial<Record<BoardType, number>>>({});
+  const [todayCount, setTodayCount] = useState(0);
   const { unreadCount } = useNotifications();
 
-  // Supabase posts 테이블에서 board_type 별 카운트 조회 (마운트 1회)
+  // Supabase posts 테이블에서 board_type 별 카운트 + 오늘 작성된 글 수 (마운트 1회)
   useEffect(() => {
     let active = true;
     getBoardCounts().then((c) => {
       if (active) setCounts(c);
+    });
+    getTodayPostCount().then((n) => {
+      if (active) setTodayCount(n);
     });
     return () => {
       active = false;
@@ -126,9 +130,12 @@ export function TopBar() {
           <div className="mx-auto flex max-w-screen-xl items-center justify-between">
             <span>{TODAY_KR}</span>
             <span className="flex items-center gap-1">
-              <Users className="h-3 w-3" />
-              현재 접속자{" "}
-              <strong className="text-violet-600 dark:text-violet-400">47</strong>명
+              <PenSquare className="h-3 w-3" />
+              오늘 작성된 글{" "}
+              <strong className="text-violet-600 dark:text-violet-400">
+                {todayCount.toLocaleString()}
+              </strong>
+              개
             </span>
           </div>
         </div>

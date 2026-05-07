@@ -29,7 +29,13 @@ import {
   saveNickname,
   useSupabaseProfile,
 } from "@/lib/supabase-profile";
-import { getUserStats, type UserStats } from "@/lib/board";
+import {
+  BOARD_LABEL,
+  getHotPosts,
+  getUserStats,
+  type PostRow,
+  type UserStats,
+} from "@/lib/board";
 
 // ── 대시보드 문튜브 미리보기 영상 ─────────────────────────────────
 // 영상 ID 는 더미 — 실제 영상으로 교체하세요.
@@ -39,15 +45,8 @@ const DASHBOARD_YOUTUBE = [
   { id: "dQw4w9WgXcQ", title: "내신 5등급제 완벽 분석" },
 ];
 
-// ── 목 데이터 ─────────────────────────────────────────────
-
-const HOT_POSTS = [
-  { id: 1, title: "이번 모의고사 수학 30번 풀이 같이 봐요", likes: 128, comments: 32 },
-  { id: 2, title: "체육대회 응원 티셔츠 디자인 투표!", likes: 96, comments: 21 },
-  { id: 3, title: "야자 끝나고 같이 갈 사람 구해요", likes: 64, comments: 18 },
-  { id: 4, title: "수학 선생님 오늘 너무 웃기심 ㅋㅋ", likes: 51, comments: 14 },
-  { id: 5, title: "급식이 맛있었던 오늘의 기록", likes: 44, comments: 9 },
-];
+// ── 목 데이터 (TODO: 점진적으로 실제 데이터로 교체) ──────────────────
+// HOT 게시물은 dashboard 컴포넌트에서 useEffect 로 Supabase 에서 직접 조회한다.
 
 const NOTICES = [
   { id: 1, title: "2학기 중간고사 일정 안내", date: "05.07" },
@@ -186,6 +185,91 @@ function SectionHead({
         </Link>
       )}
     </div>
+  );
+}
+
+function formatShortDate(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// HOT 게시물 카드 본문 — 데스크톱 사이드바 / 태블릿 / 모바일 모두 공통 사용
+function HotPostList({
+  posts,
+  loading,
+  variant = "compact",
+}: {
+  posts: PostRow[];
+  loading: boolean;
+  variant?: "compact" | "full";
+}) {
+  if (loading) {
+    return (
+      <div className="px-4 py-6 text-center text-[11px] text-gray-400">
+        불러오는 중...
+      </div>
+    );
+  }
+  if (posts.length === 0) {
+    return (
+      <div className="px-4 py-6 text-center text-[11px] text-gray-400">
+        아직 게시글이 없습니다.
+      </div>
+    );
+  }
+  return (
+    <ul className="divide-y divide-gray-50 dark:divide-white/[0.04]">
+      {posts.map((p, i) => (
+        <li key={p.id}>
+          <Link
+            href={`/board/${p.board_type}/${p.id}`}
+            className="flex items-start gap-2.5 px-4 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
+          >
+            <span
+              className={`mt-0.5 shrink-0 text-sm font-extrabold tabular-nums ${
+                i === 0
+                  ? "text-red-500"
+                  : i === 1
+                  ? "text-orange-400"
+                  : i === 2
+                  ? "text-amber-400"
+                  : "text-gray-300 dark:text-gray-600"
+              }`}
+            >
+              {i + 1}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="line-clamp-2 text-xs leading-relaxed text-gray-700 dark:text-gray-200">
+                {p.title}
+              </p>
+              {variant === "full" && (
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-gray-400">
+                  <span className="text-gray-500 dark:text-gray-300">
+                    {p.author?.nickname ?? "(알수없음)"}
+                  </span>
+                  <span>·</span>
+                  <span>{BOARD_LABEL[p.board_type]}</span>
+                  <span>·</span>
+                  <span className="tabular-nums">
+                    {formatShortDate(p.created_at)}
+                  </span>
+                </div>
+              )}
+            </div>
+            <span className="mt-0.5 flex shrink-0 items-center gap-2 text-[10px]">
+              <span className="flex items-center gap-0.5 text-red-400">
+                <Heart className="h-2.5 w-2.5" />
+                {p.like_count}
+              </span>
+              <span className="flex items-center gap-0.5 text-gray-400">
+                <Eye className="h-2.5 w-2.5" />
+                {p.view_count}
+              </span>
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -339,6 +423,23 @@ export default function DashboardPage() {
     receivedLikes: 0,
   });
 
+  // HOT 게시물 — 최근 7일 / like + view 합계 상위 5개
+  const [hotPosts, setHotPosts] = useState<PostRow[]>([]);
+  const [hotLoading, setHotLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setHotLoading(true);
+    getHotPosts(7, 5).then((rows) => {
+      if (!active) return;
+      setHotPosts(rows);
+      setHotLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   // 프로필이 로드되면 사용자 통계도 함께 조회
   useEffect(() => {
     if (!user || !profile) return;
@@ -401,34 +502,15 @@ export default function DashboardPage() {
 
         {/* ── 왼쪽: HOT + 공지 (데스크톱 전용) ── */}
         <aside className="hidden lg:flex lg:flex-col lg:gap-4">
-          {/* HOT 게시물 */}
+          {/* HOT 게시물 — 실제 데이터 */}
           <Card>
-            <SectionHead icon={Flame} title="HOT 게시물" href="/feed?sort=hot" iconColor="text-orange-500" />
-            <ul className="divide-y divide-gray-50 dark:divide-white/[0.04]">
-              {HOT_POSTS.map((p, i) => (
-                <li key={p.id}>
-                  <Link
-                    href="/feed"
-                    className="flex items-start gap-2.5 px-4 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
-                  >
-                    <span
-                      className={`mt-0.5 shrink-0 text-sm font-extrabold tabular-nums ${
-                        i === 0 ? "text-red-500" : i === 1 ? "text-orange-400" : i === 2 ? "text-amber-400" : "text-gray-300 dark:text-gray-600"
-                      }`}
-                    >
-                      {i + 1}
-                    </span>
-                    <span className="line-clamp-2 flex-1 text-xs leading-relaxed text-gray-700 dark:text-gray-200">
-                      {p.title}
-                    </span>
-                    <span className="mt-0.5 flex shrink-0 items-center gap-0.5 text-[10px] text-red-400">
-                      <Heart className="h-2.5 w-2.5" />
-                      {p.likes}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <SectionHead
+              icon={Flame}
+              title="HOT 게시물"
+              href="/board/free"
+              iconColor="text-orange-500"
+            />
+            <HotPostList posts={hotPosts} loading={hotLoading} variant="full" />
           </Card>
 
           {/* 최신 공지 */}
@@ -460,32 +542,13 @@ export default function DashboardPage() {
           {/* 태블릿 전용 HOT 게시물 (md에서만 보임, 데스크톱은 왼쪽 사이드바) */}
           <div className="hidden md:block lg:hidden">
             <Card>
-              <SectionHead icon={Flame} title="HOT 게시물" href="/feed?sort=hot" iconColor="text-orange-500" />
-              <ul className="divide-y divide-gray-50 dark:divide-white/[0.04]">
-                {HOT_POSTS.map((p, i) => (
-                  <li key={p.id}>
-                    <Link
-                      href="/feed"
-                      className="flex items-center gap-2.5 px-4 py-3 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
-                    >
-                      <span
-                        className={`w-4 shrink-0 text-center text-sm font-extrabold tabular-nums ${
-                          i === 0 ? "text-red-500" : i === 1 ? "text-orange-400" : i === 2 ? "text-amber-400" : "text-gray-300 dark:text-gray-600"
-                        }`}
-                      >
-                        {i + 1}
-                      </span>
-                      <span className="line-clamp-1 flex-1 text-xs leading-relaxed text-gray-700 dark:text-gray-200">
-                        {p.title}
-                      </span>
-                      <span className="mt-0.5 flex shrink-0 items-center gap-0.5 text-[10px] text-red-400">
-                        <Heart className="h-2.5 w-2.5" />
-                        {p.likes}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+              <SectionHead
+                icon={Flame}
+                title="HOT 게시물"
+                href="/board/free"
+                iconColor="text-orange-500"
+              />
+              <HotPostList posts={hotPosts} loading={hotLoading} variant="full" />
             </Card>
           </div>
 
@@ -689,22 +752,13 @@ export default function DashboardPage() {
       {/* 모바일 전용: HOT + 공지 섹션 (태블릿 이상은 내부 레이아웃에서 처리) */}
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 md:hidden">
         <Card>
-          <SectionHead icon={Flame} title="HOT 게시물" href="/feed?sort=hot" iconColor="text-orange-500" />
-          <ul className="divide-y divide-gray-50 dark:divide-white/[0.04]">
-            {HOT_POSTS.slice(0, 5).map((p, i) => (
-              <li key={p.id}>
-                <Link
-                  href="/feed"
-                  className="flex items-center gap-2.5 px-4 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
-                >
-                  <span className={`w-4 shrink-0 text-center text-sm font-extrabold ${i === 0 ? "text-red-500" : i === 1 ? "text-orange-400" : "text-gray-300 dark:text-gray-600"}`}>
-                    {i + 1}
-                  </span>
-                  <span className="line-clamp-1 flex-1 text-xs text-gray-700 dark:text-gray-200">{p.title}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <SectionHead
+            icon={Flame}
+            title="HOT 게시물"
+            href="/board/free"
+            iconColor="text-orange-500"
+          />
+          <HotPostList posts={hotPosts} loading={hotLoading} variant="compact" />
         </Card>
         <Card>
           <SectionHead icon={Bell} title="최신 공지" href="/notices" iconColor="text-red-500" />

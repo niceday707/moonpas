@@ -102,12 +102,48 @@ function WriteInner() {
 
   const isChallenge = boardType === "challenge";
 
-  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+  // 클라이언트에서 Canvas 로 이미지 리사이즈 + JPEG 재압축. 임시 조치 — 곧 Storage 업로드로 교체 예정.
+  async function compressImage(
+    file: File,
+    maxWidth = 1200,
+    quality = 0.7,
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const objUrl = URL.createObjectURL(file);
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const ratio = Math.min(maxWidth / img.width, 1);
+        canvas.width = Math.round(img.width * ratio);
+        canvas.height = Math.round(img.height * ratio);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          URL.revokeObjectURL(objUrl);
+          reject(new Error("Canvas 2D context 생성 실패"));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(objUrl);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objUrl);
+        reject(new Error("이미지 로드 실패"));
+      };
+      img.src = objUrl;
+    });
+  }
+
+  async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setImageDataUrl(typeof reader.result === "string" ? reader.result : null);
-    reader.readAsDataURL(file);
+    try {
+      const dataUrl = await compressImage(file);
+      setImageDataUrl(dataUrl);
+    } catch (err) {
+      console.error("[handleImageChange] 압축 실패", err);
+      setError("이미지를 처리할 수 없어요. 다른 사진으로 시도해주세요.");
+    }
   }
 
   async function handleSubmit() {

@@ -69,10 +69,11 @@ export type CommentRow = {
   author: { id: string; nickname: string; role: Role } | null;
 };
 
+// PostgREST 임베딩은 FK 컬럼명으로 가리키는 게 가장 안전 (FK constraint 이름이 환경마다 달라질 수 있어서).
 const POST_SELECT = `
   id, author_id, board_type, title, content, image_url,
   view_count, like_count, created_at, updated_at,
-  author:profiles!posts_author_id_fkey ( id, nickname, role ),
+  author:profiles!author_id ( id, nickname, role ),
   comments_aggregate:comments(count)
 `;
 
@@ -253,7 +254,7 @@ export async function incrementViewCount(postId: string): Promise<void> {
 
 const COMMENT_SELECT = `
   id, post_id, author_id, content, created_at,
-  author:profiles!comments_author_id_fkey ( id, nickname, role )
+  author:profiles!author_id ( id, nickname, role )
 `;
 
 export async function listComments(postId: string): Promise<CommentRow[]> {
@@ -305,6 +306,47 @@ export type UserStats = {
   comments: number;
   receivedLikes: number;
 };
+
+/** 최근 N일 내 like_count + view_count 가 높은 글 상위 K개 (대시보드 HOT) */
+export async function getHotPosts(
+  days: number = 7,
+  limit: number = 5,
+): Promise<PostRow[]> {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("posts")
+    .select(POST_SELECT)
+    .gte("created_at", since)
+    // PostgREST 가 (col + col) 정렬을 지원하지 않으므로 후보를 넉넉히 받아 클라이언트에서 정렬한다.
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    console.error("[getHotPosts] 실패", error);
+    return [];
+  }
+  const posts = ((data ?? []) as unknown as RawPost[]).map(normalizePost);
+  posts.sort(
+    (a, b) =>
+      b.like_count + b.view_count - (a.like_count + a.view_count),
+  );
+  return posts.slice(0, limit);
+}
+
+/** 오늘(현지 자정 기준) 작성된 글 개수 — 슬림바에서 사용 */
+export async function getTodayPostCount(): Promise<number> {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const { count, error } = await supabase
+    .from("posts")
+    .select("*", { count: "exact", head: true })
+    .gte("created_at", start.toISOString());
+  if (error) {
+    console.error("[getTodayPostCount] 실패", error);
+    return 0;
+  }
+  return count ?? 0;
+}
 
 /** 모든 board_type 별 게시글 개수 — TopBar 메가메뉴 표시용 */
 export async function getBoardCounts(): Promise<Partial<Record<BoardType, number>>> {

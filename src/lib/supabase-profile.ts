@@ -97,9 +97,25 @@ export async function saveNickname(
   userId: string,
   nickname: string,
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("profiles")
-    .upsert({ id: userId, nickname }, { onConflict: "id" });
+    .upsert({ id: userId, nickname }, { onConflict: "id" })
+    .select()
+    .single();
+  if (error) {
+    // RLS / 제약조건 등 실제 원인을 콘솔에서 바로 확인할 수 있도록 전체 객체를 출력
+    console.error("[saveNickname] upsert 실패", {
+      userId,
+      nickname,
+      message: error.message,
+      code: (error as unknown as { code?: string }).code,
+      details: (error as unknown as { details?: string }).details,
+      hint: (error as unknown as { hint?: string }).hint,
+      raw: error,
+    });
+  } else {
+    console.log("[saveNickname] upsert 성공", data);
+  }
   return { error: error?.message ?? null };
 }
 

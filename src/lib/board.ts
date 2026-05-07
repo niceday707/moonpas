@@ -468,6 +468,20 @@ export async function getHotPosts(
   return posts.slice(0, limit);
 }
 
+/** 전체 게시판 통합 최신글 — 대시보드 피드용 */
+export async function getLatestPosts(limit: number = 15): Promise<PostRow[]> {
+  const { data, error } = await supabase
+    .from("posts")
+    .select(POST_SELECT)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("[getLatestPosts] 실패", error);
+    return [];
+  }
+  return ((data ?? []) as unknown as RawPost[]).map(normalizePost);
+}
+
 /** 오늘(현지 자정 기준) 작성된 글 개수 — 슬림바에서 사용 */
 export async function getTodayPostCount(): Promise<number> {
   const start = new Date();

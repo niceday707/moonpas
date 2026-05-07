@@ -1,5 +1,9 @@
 "use client";
 
+// 대시보드 — 실제 Supabase 데이터로 채워진 포탈 홈
+//  · 모바일: 배너 → 문튜브 가로스크롤 → HOT 게시물 → 최신글 피드 (세로 1열)
+//  · 데스크톱: 3컬럼 (왼쪽 HOT/공지/문튜브, 중앙 최신글, 오른쪽 프로필/검색/바로가기)
+
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
@@ -19,6 +23,7 @@ import {
   ChevronRight,
   ArrowUp,
   Play,
+  Pin,
 } from "lucide-react";
 import { BannerSlider } from "@/components/dashboard/BannerSlider";
 import { NicknameSetupModal } from "@/components/dashboard/NicknameSetupModal";
@@ -32,88 +37,39 @@ import {
 import {
   BOARD_LABEL,
   getHotPosts,
+  getLatestPosts,
   getUserStats,
+  listPosts,
+  parseYoutubeContent,
+  youtubeThumbUrl,
+  type BoardType,
   type PostRow,
   type UserStats,
 } from "@/lib/board";
 
-// ── 대시보드 문튜브 미리보기 영상 ─────────────────────────────────
-// 영상 ID 는 더미 — 실제 영상으로 교체하세요.
-const DASHBOARD_YOUTUBE = [
-  { id: "dQw4w9WgXcQ", title: "2028 대입 완벽 정리 - 달라지는 수능과 내신" },
-  { id: "dQw4w9WgXcQ", title: "서울대 합격생이 말하는 고등학교 공부법" },
-  { id: "dQw4w9WgXcQ", title: "내신 5등급제 완벽 분석" },
-];
+// ── 상수 ──────────────────────────────────────────────────
 
-// ── 목 데이터 (TODO: 점진적으로 실제 데이터로 교체) ──────────────────
-// HOT 게시물은 dashboard 컴포넌트에서 useEffect 로 Supabase 에서 직접 조회한다.
-
-const NOTICES = [
-  { id: 1, title: "2학기 중간고사 일정 안내", date: "05.07" },
-  { id: 2, title: "학부모 총회 개최 안내", date: "05.06" },
-  { id: 3, title: "2025학년도 수련회 일정 공고", date: "05.05" },
-  { id: 4, title: "교복 착용 기준 안내문", date: "05.04" },
-  { id: 5, title: "급식 만족도 조사 실시", date: "05.03" },
-];
-
-type PostCategory = "자유" | "질문" | "정보" | "유머" | "고민" | "공지";
-type BoardTab = "전체" | "인기" | "공지" | "질문";
-
-const CATEGORY_COLOR: Record<PostCategory, string> = {
-  자유: "text-blue-500 bg-blue-50 dark:bg-blue-900/20",
-  질문: "text-green-600 bg-green-50 dark:bg-green-900/20",
-  정보: "text-violet-600 bg-violet-50 dark:bg-violet-900/20",
-  유머: "text-amber-500 bg-amber-50 dark:bg-amber-900/20",
-  고민: "text-pink-500 bg-pink-50 dark:bg-pink-900/20",
-  공지: "text-red-600 bg-red-50 dark:bg-red-900/20",
+/** 게시판 뱃지 색상 — 최신 글 피드에서 board_type 표시용 */
+const BOARD_BADGE_COLOR: Record<BoardType, string> = {
+  free: "text-blue-500 bg-blue-50 dark:bg-blue-900/20",
+  notice: "text-red-600 bg-red-50 dark:bg-red-900/20",
+  qa: "text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20",
+  issue: "text-orange-500 bg-orange-50 dark:bg-orange-900/20",
+  challenge: "text-cyan-500 bg-cyan-50 dark:bg-cyan-900/20",
+  market: "text-amber-500 bg-amber-50 dark:bg-amber-900/20",
+  lost: "text-rose-500 bg-rose-50 dark:bg-rose-900/20",
+  study: "text-teal-500 bg-teal-50 dark:bg-teal-900/20",
+  college: "text-violet-600 bg-violet-50 dark:bg-violet-900/20",
+  curriculum: "text-green-600 bg-green-50 dark:bg-green-900/20",
+  council: "text-pink-500 bg-pink-50 dark:bg-pink-900/20",
+  youtube: "text-red-500 bg-red-50 dark:bg-red-900/20",
+  resources: "text-indigo-500 bg-indigo-50 dark:bg-indigo-900/20",
+  news: "text-amber-700 bg-amber-50 dark:bg-amber-900/20",
+  alumni: "text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20",
+  senior: "text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20",
 };
 
-const ROLE_COLOR: Record<Role, string> = {
-  student: "text-blue-500",
-  teacher: "text-violet-500",
-  parent: "text-green-500",
-  alumni: "text-amber-500",
-  admin: "text-rose-500",
-};
-
-
-interface Post {
-  id: number;
-  no: number | "공지" | "NEW";
-  category: PostCategory;
-  title: string;
-  comments: number;
-  author: string;
-  role: Role;
-  date: string;
-  views: number;
-  isNew?: boolean;
-}
-
-const ALL_POSTS: Post[] = [
-  { id: 1, no: "공지", category: "공지", title: "2학기 중간고사 일정 안내", comments: 5, author: "교무부", role: "teacher", date: "05.07", views: 1240 },
-  { id: 2, no: "NEW", category: "정보", title: "2028 수능 개편안 요약 정리 (개인 공부 자료 공유)", comments: 28, author: "익명", role: "student", date: "05.07", views: 892, isNew: true },
-  { id: 3, no: 1534, category: "자유", title: "이번 모의고사 수학 30번 풀이 같이 봐요", comments: 32, author: "익명", role: "student", date: "05.07", views: 543 },
-  { id: 4, no: 1533, category: "유머", title: "수학 선생님 오늘 너무 웃기심 ㅋㅋㅋ", comments: 14, author: "익명", role: "student", date: "05.07", views: 421 },
-  { id: 5, no: 1532, category: "질문", title: "고2 물리학 선택한 분들 공부법 어떻게 해요?", comments: 9, author: "익명", role: "student", date: "05.07", views: 312 },
-  { id: 6, no: 1531, category: "정보", title: "서울대 수시 학생부 종합 합격 후기 (졸업생)", comments: 41, author: "24졸업", role: "alumni", date: "05.06", views: 2104 },
-  { id: 7, no: 1530, category: "자유", title: "체육대회 응원 티셔츠 디자인 투표 올라왔어요", comments: 21, author: "학생회", role: "student", date: "05.06", views: 718 },
-  { id: 8, no: 1529, category: "고민", title: "문과 선택인데 수학 포기해도 될까요", comments: 17, author: "익명", role: "student", date: "05.06", views: 289 },
-  { id: 9, no: 1528, category: "정보", title: "학원 추천) 광주 국어 학원 다녀봤던 분 후기", comments: 8, author: "익명", role: "student", date: "05.06", views: 201 },
-  { id: 10, no: 1527, category: "자유", title: "야자 끝나고 같이 분식 먹을 사람 구해요", comments: 18, author: "익명", role: "student", date: "05.05", views: 175 },
-  { id: 11, no: 1526, category: "질문", title: "3학년 영어 선생님 누구세요? 수업 스타일 궁금해요", comments: 6, author: "익명", role: "student", date: "05.05", views: 163 },
-  { id: 12, no: 1525, category: "유머", title: "급식 오늘 역대급이었음 ㄹㅇ 인생 짬뽕", comments: 9, author: "익명", role: "student", date: "05.05", views: 144 },
-  { id: 13, no: 1524, category: "자유", title: "학부모 입장에서 본 학교 생활 이야기", comments: 3, author: "학부모A", role: "parent", date: "05.04", views: 98 },
-  { id: 14, no: 1523, category: "정보", title: "수능 D-200 스터디 같이 할 사람!", comments: 12, author: "익명", role: "student", date: "05.04", views: 376 },
-  { id: 15, no: 1522, category: "고민", title: "진로를 아직도 못 정한 고2 학생인데 너무 불안해요", comments: 23, author: "익명", role: "student", date: "05.03", views: 487 },
-];
-
-const HOT_POSTS_BOARD: Post[] = ALL_POSTS.filter((p) =>
-  [3, 4, 7, 15, 6].includes(p.id),
-);
-const NOTICE_POSTS: Post[] = ALL_POSTS.filter((p) => p.category === "공지");
-const QUESTION_POSTS: Post[] = ALL_POSTS.filter((p) => p.category === "질문");
-
+/** 실시간 검색 — 정적 키워드 (실시간 분석은 추후 구현) */
 const TRENDING = [
   { rank: 1, keyword: "중간고사", trend: "up" as const },
   { rank: 2, keyword: "체육대회", trend: "same" as const },
@@ -148,9 +104,22 @@ const EXTERNAL_LINKS = [
   },
 ];
 
-// ── 유틸 컴포넌트 ─────────────────────────────────────────
+// ── 유틸 ──────────────────────────────────────────────────
 
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function formatShortDate(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// ── 공통 컴포넌트 ─────────────────────────────────────────
+
+function Card({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <div
       className={`rounded-xl border border-gray-200 bg-white dark:border-white/[0.07] dark:bg-[#16162a] ${className}`}
@@ -173,7 +142,9 @@ function SectionHead({
 }) {
   return (
     <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-white/[0.05]">
-      <div className={`flex items-center gap-1.5 text-sm font-bold ${iconColor} dark:opacity-90`}>
+      <div
+        className={`flex items-center gap-1.5 text-sm font-bold ${iconColor} dark:opacity-90`}
+      >
         <Icon className="h-4 w-4" />
         {title}
       </div>
@@ -189,12 +160,56 @@ function SectionHead({
   );
 }
 
-function formatShortDate(iso: string): string {
-  const d = new Date(iso);
-  return `${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
+/** 빈 상태 — 섹션별 안내 + 게시판 이동 링크 */
+function EmptyHint({
+  message,
+  href,
+  ctaLabel,
+}: {
+  message: string;
+  href: string;
+  ctaLabel: string;
+}) {
+  return (
+    <div className="px-4 py-6 text-center">
+      <p className="text-[11px] text-gray-400">{message}</p>
+      <Link
+        href={href}
+        className="mt-2 inline-block text-[11px] font-semibold text-violet-500 transition-colors hover:text-violet-600 dark:text-violet-300"
+      >
+        {ctaLabel} →
+      </Link>
+    </div>
+  );
 }
 
-// HOT 게시물 카드 본문 — 데스크톱 사이드바 / 태블릿 / 모바일 모두 공통 사용
+/** 스켈레톤 행 — 리스트 로딩용 */
+function SkeletonRows({
+  rows = 5,
+  withMeta = false,
+}: {
+  rows?: number;
+  withMeta?: boolean;
+}) {
+  return (
+    <ul className="divide-y divide-gray-50 dark:divide-white/[0.04]">
+      {Array.from({ length: rows }).map((_, i) => (
+        <li key={i} className="flex items-start gap-2.5 px-4 py-3">
+          <span className="h-3 w-3 shrink-0 animate-pulse rounded-full bg-gray-200 dark:bg-white/[0.06]" />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="h-3 w-4/5 animate-pulse rounded bg-gray-200 dark:bg-white/[0.06]" />
+            {withMeta && (
+              <div className="h-2.5 w-1/3 animate-pulse rounded bg-gray-100 dark:bg-white/[0.04]" />
+            )}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// ── HOT 게시물 ────────────────────────────────────────────
+
 function HotPostList({
   posts,
   loading,
@@ -205,17 +220,15 @@ function HotPostList({
   variant?: "compact" | "full";
 }) {
   if (loading) {
-    return (
-      <div className="px-4 py-6 text-center text-[11px] text-gray-400">
-        불러오는 중...
-      </div>
-    );
+    return <SkeletonRows rows={5} withMeta={variant === "full"} />;
   }
   if (posts.length === 0) {
     return (
-      <div className="px-4 py-6 text-center text-[11px] text-gray-400">
-        아직 게시글이 없습니다.
-      </div>
+      <EmptyHint
+        message="아직 인기 게시물이 없습니다"
+        href="/board/free"
+        ctaLabel="자유게시판으로 이동"
+      />
     );
   }
   return (
@@ -274,6 +287,268 @@ function HotPostList({
   );
 }
 
+// ── 최신 공지 리스트 ──────────────────────────────────────
+
+function NoticeList({
+  posts,
+  loading,
+  max = 5,
+}: {
+  posts: PostRow[];
+  loading: boolean;
+  max?: number;
+}) {
+  if (loading) return <SkeletonRows rows={max} />;
+  if (posts.length === 0) {
+    return (
+      <EmptyHint
+        message="아직 공지가 없습니다"
+        href="/board/notice"
+        ctaLabel="공지사항으로 이동"
+      />
+    );
+  }
+  return (
+    <ul className="divide-y divide-gray-50 dark:divide-white/[0.04]">
+      {posts.slice(0, max).map((n) => (
+        <li key={n.id}>
+          <Link
+            href={`/board/notice/${n.id}`}
+            className="flex items-center justify-between gap-2 px-4 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
+          >
+            <span className="line-clamp-1 flex flex-1 items-center gap-1 text-xs text-gray-700 dark:text-gray-200">
+              {n.is_pinned && (
+                <Pin className="h-2.5 w-2.5 shrink-0 text-rose-500" />
+              )}
+              {n.title}
+            </span>
+            <span className="shrink-0 text-[10px] tabular-nums text-gray-400">
+              {formatShortDate(n.created_at)}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// ── 문튜브 ────────────────────────────────────────────────
+
+type YoutubeItem = { postId: string; videoId: string; title: string };
+
+/** 문튜브 카드 — 모바일/데스크톱 공용. width 는 부모에서 제어. */
+function MoonTubeCard({ item }: { item: YoutubeItem }) {
+  return (
+    <Link
+      href={`/board/youtube/${item.postId}`}
+      className="group relative block overflow-hidden rounded-lg bg-black"
+    >
+      <div className="relative aspect-video w-full">
+        {item.videoId ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={youtubeThumbUrl(item.videoId)}
+            alt={item.title}
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            loading="lazy"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-500 to-cyan-500 text-white">
+            <PlayCircle className="h-10 w-10 opacity-90" />
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+        <div className="absolute inset-0 grid place-items-center">
+          <span className="grid h-9 w-9 place-items-center rounded-full bg-red-600/90 text-white shadow-lg transition-transform duration-300 group-hover:scale-110">
+            <Play className="h-4 w-4 fill-current" />
+          </span>
+        </div>
+        <p className="absolute inset-x-0 bottom-0 line-clamp-2 px-2.5 pb-2 text-[11px] font-semibold leading-snug text-white">
+          {item.title}
+        </p>
+      </div>
+    </Link>
+  );
+}
+
+function MoonTubeSkeleton({ count = 3 }: { count?: number }) {
+  return (
+    <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-1">
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={i}
+          className="aspect-video w-full animate-pulse rounded-lg bg-gray-200 dark:bg-white/[0.06]"
+        />
+      ))}
+    </div>
+  );
+}
+
+/** 데스크톱 좌측 사이드 — 세로 1열 카드 3장 */
+function MoonTubeAsideSection({
+  videos,
+  loading,
+}: {
+  videos: YoutubeItem[];
+  loading: boolean;
+}) {
+  return (
+    <Card>
+      <SectionHead
+        icon={PlayCircle}
+        title="문튜브"
+        href="/board/youtube"
+        iconColor="text-red-500"
+      />
+      {loading ? (
+        <MoonTubeSkeleton count={3} />
+      ) : videos.length === 0 ? (
+        <EmptyHint
+          message="아직 등록된 영상이 없습니다"
+          href="/board/youtube"
+          ctaLabel="문튜브로 이동"
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-1">
+          {videos.slice(0, 3).map((v) => (
+            <MoonTubeCard key={v.postId} item={v} />
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** 모바일 전용 — 가로 스크롤 + snap (lg 이상에서는 숨김) */
+function MoonTubeMobileScroll({
+  videos,
+  loading,
+}: {
+  videos: YoutubeItem[];
+  loading: boolean;
+}) {
+  return (
+    <div className="lg:hidden">
+      <Card>
+        <SectionHead
+          icon={PlayCircle}
+          title="문튜브"
+          href="/board/youtube"
+          iconColor="text-red-500"
+        />
+        {loading ? (
+          <div className="flex gap-3 overflow-x-auto px-3 py-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div
+                key={i}
+                className="aspect-video w-[200px] shrink-0 animate-pulse rounded-lg bg-gray-200 dark:bg-white/[0.06]"
+              />
+            ))}
+          </div>
+        ) : videos.length === 0 ? (
+          <EmptyHint
+            message="아직 등록된 영상이 없습니다"
+            href="/board/youtube"
+            ctaLabel="문튜브로 이동"
+          />
+        ) : (
+          <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {videos.map((v) => (
+              <div
+                key={v.postId}
+                className="w-[200px] shrink-0 snap-start"
+              >
+                <MoonTubeCard item={v} />
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ── 최신 글 피드 (전체 게시판 통합) ────────────────────────
+
+function LatestFeedList({
+  posts,
+  loading,
+}: {
+  posts: PostRow[];
+  loading: boolean;
+}) {
+  if (loading) return <SkeletonRows rows={8} withMeta />;
+  if (posts.length === 0) {
+    return (
+      <EmptyHint
+        message="아직 등록된 게시글이 없습니다"
+        href="/board/free"
+        ctaLabel="자유게시판으로 이동"
+      />
+    );
+  }
+  return (
+    <ul className="divide-y divide-gray-50 dark:divide-white/[0.04]">
+      {posts.map((p) => (
+        <li key={p.id}>
+          <Link
+            href={`/board/${p.board_type}/${p.id}`}
+            className="flex items-center gap-2.5 px-4 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02] sm:gap-3"
+          >
+            {/* 게시판 뱃지 */}
+            <span
+              className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${BOARD_BADGE_COLOR[p.board_type]}`}
+            >
+              {BOARD_LABEL[p.board_type]}
+            </span>
+
+            {/* 제목 */}
+            <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-gray-800 dark:text-gray-100">
+              <span className="line-clamp-1 flex items-center gap-1">
+                {p.is_pinned && (
+                  <Pin className="h-2.5 w-2.5 shrink-0 text-rose-500" />
+                )}
+                {p.title}
+              </span>
+            </span>
+
+            {/* 댓글 */}
+            {p.comment_count > 0 && (
+              <span className="flex shrink-0 items-center gap-0.5 text-[11px] text-violet-500">
+                <MessageSquare className="h-3 w-3" />
+                {p.comment_count}
+              </span>
+            )}
+
+            {/* 작성자 */}
+            <span className="hidden shrink-0 items-center gap-1 text-[11px] sm:flex">
+              <span className="text-gray-600 dark:text-gray-300">
+                {p.author?.nickname ?? "(알수없음)"}
+              </span>
+              {p.author && (
+                <Badge role={p.author.role} className="text-[9px] py-0 px-1" />
+              )}
+            </span>
+
+            {/* 날짜 */}
+            <span className="hidden shrink-0 text-[11px] tabular-nums text-gray-400 md:block">
+              {formatShortDate(p.created_at)}
+            </span>
+
+            {/* 조회수 */}
+            <span className="hidden shrink-0 items-center gap-0.5 text-[11px] text-gray-400 lg:flex">
+              <Eye className="h-3 w-3" />
+              {p.view_count.toLocaleString()}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// ── 트렌드 / 로그인 / 프로필 ───────────────────────────────
+
 function TrendIcon({ trend }: { trend: "up" | "down" | "same" | "new" }) {
   if (trend === "new")
     return <span className="text-[10px] font-bold text-red-500">NEW</span>;
@@ -282,9 +557,6 @@ function TrendIcon({ trend }: { trend: "up" | "down" | "same" | "new" }) {
   return <Minus className="h-3 w-3 text-gray-400" />;
 }
 
-// ── 메인 컴포넌트 ─────────────────────────────────────────
-
-// ── 구글 로그인 카드 ─────────────────────────────────────────
 function GoogleLoginCard() {
   return (
     <Card>
@@ -306,7 +578,6 @@ function GoogleLoginCard() {
   );
 }
 
-// 구글 G 로고 (인라인 SVG)
 function GoogleLogo({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 48 48" aria-hidden>
@@ -318,7 +589,6 @@ function GoogleLogo({ className }: { className?: string }) {
   );
 }
 
-// ── 내 프로필 카드 ────────────────────────────────────────────
 function ProfileCard({
   nickname,
   role,
@@ -338,7 +608,12 @@ function ProfileCard({
   ];
   return (
     <Card>
-      <SectionHead icon={ArrowUp} title="내 프로필" href="/profile" iconColor="text-cyan-500" />
+      <SectionHead
+        icon={ArrowUp}
+        title="내 프로필"
+        href="/profile"
+        iconColor="text-cyan-500"
+      />
       <div className="px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[linear-gradient(135deg,#7c3aed,#06b6d4)] text-sm font-bold text-white">
@@ -346,7 +621,9 @@ function ProfileCard({
           </div>
           <div className="flex flex-col items-start gap-1">
             {nickname ? (
-              <p className="text-sm font-bold text-gray-900 dark:text-white">{nickname}</p>
+              <p className="text-sm font-bold text-gray-900 dark:text-white">
+                {nickname}
+              </p>
             ) : (
               <button
                 type="button"
@@ -361,8 +638,13 @@ function ProfileCard({
         </div>
         <div className="mt-3 grid grid-cols-3 gap-2 text-center">
           {items.map((s) => (
-            <div key={s.l} className="rounded-lg bg-gray-50 py-1.5 dark:bg-white/[0.04]">
-              <p className="text-sm font-bold text-gray-900 dark:text-white">{s.v}</p>
+            <div
+              key={s.l}
+              className="rounded-lg bg-gray-50 py-1.5 dark:bg-white/[0.04]"
+            >
+              <p className="text-sm font-bold text-gray-900 dark:text-white">
+                {s.v}
+              </p>
               <p className="text-[10px] text-gray-500">{s.l}</p>
             </div>
           ))}
@@ -372,53 +654,13 @@ function ProfileCard({
   );
 }
 
-// ── 문튜브 미리보기 카드 ──────────────────────────────────────
-function MoonTubeSection() {
-  return (
-    <Card>
-      <SectionHead icon={PlayCircle} title="문튜브" href="/youtube" iconColor="text-red-500" />
-      <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-1">
-        {DASHBOARD_YOUTUBE.map((v, i) => (
-          <Link
-            key={`${v.id}-${i}`}
-            href="/youtube"
-            className="group relative overflow-hidden rounded-lg bg-black"
-          >
-            <div className="relative aspect-video w-full">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={`https://img.youtube.com/vi/${v.id}/mqdefault.jpg`}
-                alt={v.title}
-                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                loading="lazy"
-              />
-              {/* 어두운 오버레이 + 재생 아이콘 */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
-              <div className="absolute inset-0 grid place-items-center">
-                <span className="grid h-9 w-9 place-items-center rounded-full bg-red-600/90 text-white shadow-lg transition-transform duration-300 group-hover:scale-110">
-                  <Play className="h-4 w-4 fill-current" />
-                </span>
-              </div>
-              {/* 제목 */}
-              <p className="absolute inset-x-0 bottom-0 line-clamp-2 px-2.5 pb-2 text-[11px] font-semibold leading-snug text-white">
-                {v.title}
-              </p>
-            </div>
-          </Link>
-        ))}
-      </div>
-    </Card>
-  );
-}
+// ── 메인 페이지 ───────────────────────────────────────────
 
 export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState<BoardTab>("전체");
   const { isLoggedIn } = useAuth();
-
-  // ── Supabase 사용자 + profiles row ─────────────────────────
-  const { user, profile, loading: profileLoading, refetch } = useSupabaseProfile();
+  const { user, profile, loading: profileLoading, refetch } =
+    useSupabaseProfile();
   const [setupOpen, setSetupOpen] = useState(false);
-  // 초대 코드로 가입한 사용자 — 로그인 직후 sessionStorage 에서 역할 읽기
   const [inviteRole, setInviteRole] = useState<Role | null>(null);
   const [stats, setStats] = useState<UserStats>({
     posts: 0,
@@ -426,10 +668,20 @@ export default function DashboardPage() {
     receivedLikes: 0,
   });
 
-  // HOT 게시물 — 최근 7일 / like + view 합계 상위 5개
+  // ── 실제 데이터 상태 ────────────────────────────────────
   const [hotPosts, setHotPosts] = useState<PostRow[]>([]);
   const [hotLoading, setHotLoading] = useState(true);
 
+  const [noticePosts, setNoticePosts] = useState<PostRow[]>([]);
+  const [noticeLoading, setNoticeLoading] = useState(true);
+
+  const [latestPosts, setLatestPosts] = useState<PostRow[]>([]);
+  const [latestLoading, setLatestLoading] = useState(true);
+
+  const [youtubeItems, setYoutubeItems] = useState<YoutubeItem[]>([]);
+  const [youtubeLoading, setYoutubeLoading] = useState(true);
+
+  // HOT
   useEffect(() => {
     let active = true;
     setHotLoading(true);
@@ -443,7 +695,53 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // 프로필이 로드되면 사용자 통계도 함께 조회
+  // 최신 공지 — board_type='notice', is_pinned 우선
+  useEffect(() => {
+    let active = true;
+    setNoticeLoading(true);
+    listPosts("notice", 1, { pinnedFirst: true }).then((res) => {
+      if (!active) return;
+      setNoticePosts(res.posts.slice(0, 5));
+      setNoticeLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // 최신 글 피드 — 전체 게시판 통합 15개
+  useEffect(() => {
+    let active = true;
+    setLatestLoading(true);
+    getLatestPosts(15).then((rows) => {
+      if (!active) return;
+      setLatestPosts(rows);
+      setLatestLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // 문튜브 — board_type='youtube' 최신 6개, content JSON 에서 videoId 추출
+  useEffect(() => {
+    let active = true;
+    setYoutubeLoading(true);
+    listPosts("youtube", 1).then((res) => {
+      if (!active) return;
+      const items: YoutubeItem[] = res.posts.slice(0, 6).map((p) => {
+        const info = parseYoutubeContent(p.content);
+        return { postId: p.id, videoId: info.videoId, title: p.title };
+      });
+      setYoutubeItems(items);
+      setYoutubeLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // 사용자 통계
   useEffect(() => {
     if (!user || !profile) return;
     let active = true;
@@ -455,10 +753,9 @@ export default function DashboardPage() {
     };
   }, [user, profile]);
 
-  // 최초 로그인 감지: 사용자는 있는데 profiles row 가 없으면 모달 자동 오픈
+  // 최초 로그인 — profiles row 없으면 닉네임 모달 자동 오픈
   useEffect(() => {
     if (!profileLoading && user && !profile) {
-      // 초대 코드로 들어온 경우 역할 자동 지정
       if (typeof window !== "undefined") {
         const r = sessionStorage.getItem("inviteRole");
         if (r === "parent" || r === "alumni" || r === "student" || r === "teacher") {
@@ -475,11 +772,13 @@ export default function DashboardPage() {
     if (!user) {
       return { ok: false as const, message: "로그인이 필요합니다." };
     }
-    // 초대 코드 사용자는 역할이 강제됨
     const finalRole: Role = inviteRole ?? role;
     const { error } = await saveNickname(user.id, nickname, finalRole);
     if (error) {
-      return { ok: false as const, message: "저장에 실패했어요. 잠시 후 다시 시도해주세요." };
+      return {
+        ok: false as const,
+        message: "저장에 실패했어요. 잠시 후 다시 시도해주세요.",
+      };
     }
     if (typeof window !== "undefined") {
       sessionStorage.removeItem("inviteRole");
@@ -490,18 +789,8 @@ export default function DashboardPage() {
     return { ok: true as const };
   }
 
-  // 프로필 카드 표시값 — Supabase 우선
   const displayNickname: string | null = profile?.nickname ?? null;
   const displayRole: Role | null = profile?.role ?? null;
-
-  const tabPosts: Record<BoardTab, Post[]> = {
-    전체: ALL_POSTS,
-    인기: HOT_POSTS_BOARD,
-    공지: NOTICE_POSTS,
-    질문: QUESTION_POSTS,
-  };
-
-  const posts = tabPosts[activeTab];
 
   return (
     <motion.div
@@ -513,12 +802,15 @@ export default function DashboardPage() {
       {/* 배너 슬라이더 */}
       <BannerSlider />
 
+      {/* 모바일 전용 — 문튜브 가로 스크롤 (lg 이상에서는 좌측 사이드바에서 표시) */}
+      <div className="mt-4">
+        <MoonTubeMobileScroll videos={youtubeItems} loading={youtubeLoading} />
+      </div>
+
       {/* ── 포탈 레이아웃: 모바일 1컬럼 → 태블릿 2컬럼 → 데스크톱 3컬럼 ── */}
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-[1fr_220px] lg:grid-cols-[220px_1fr_200px]">
-
-        {/* ── 왼쪽: HOT + 공지 (데스크톱 전용) ── */}
+        {/* ── 왼쪽: HOT + 공지 + 문튜브 (lg 이상에서만 표시) ── */}
         <aside className="hidden lg:flex lg:flex-col lg:gap-4">
-          {/* HOT 게시물 — 실제 데이터 */}
           <Card>
             <SectionHead
               icon={Flame}
@@ -529,33 +821,22 @@ export default function DashboardPage() {
             <HotPostList posts={hotPosts} loading={hotLoading} variant="full" />
           </Card>
 
-          {/* 최신 공지 */}
           <Card>
-            <SectionHead icon={Bell} title="최신 공지" href="/notices" iconColor="text-red-500" />
-            <ul className="divide-y divide-gray-50 dark:divide-white/[0.04]">
-              {NOTICES.map((n) => (
-                <li key={n.id}>
-                  <Link
-                    href="/notices"
-                    className="flex items-center justify-between gap-2 px-4 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
-                  >
-                    <span className="line-clamp-1 flex-1 text-xs text-gray-700 dark:text-gray-200">
-                      {n.title}
-                    </span>
-                    <span className="shrink-0 text-[10px] tabular-nums text-gray-400">{n.date}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <SectionHead
+              icon={Bell}
+              title="최신 공지"
+              href="/board/notice"
+              iconColor="text-red-500"
+            />
+            <NoticeList posts={noticePosts} loading={noticeLoading} max={5} />
           </Card>
 
-          {/* 문튜브 미리보기 */}
-          <MoonTubeSection />
+          <MoonTubeAsideSection videos={youtubeItems} loading={youtubeLoading} />
         </aside>
 
-        {/* ── 중앙: 자유게시판 (+ 태블릿에서 HOT 게시물 상단 표시) ── */}
+        {/* ── 중앙: HOT (태블릿 전용) + 최신글 피드 ── */}
         <section className="min-w-0 space-y-4">
-          {/* 태블릿 전용 HOT 게시물 (md에서만 보임, 데스크톱은 왼쪽 사이드바) */}
+          {/* 태블릿 전용 HOT 게시물 */}
           <div className="hidden md:block lg:hidden">
             <Card>
               <SectionHead
@@ -564,103 +845,52 @@ export default function DashboardPage() {
                 href="/board/free"
                 iconColor="text-orange-500"
               />
-              <HotPostList posts={hotPosts} loading={hotLoading} variant="full" />
+              <HotPostList
+                posts={hotPosts}
+                loading={hotLoading}
+                variant="full"
+              />
             </Card>
           </div>
 
+          {/* 모바일 전용 HOT 게시물 — 가로스크롤 다음 위치 */}
+          <div className="md:hidden">
+            <Card>
+              <SectionHead
+                icon={Flame}
+                title="HOT 게시물"
+                href="/board/free"
+                iconColor="text-orange-500"
+              />
+              <HotPostList
+                posts={hotPosts}
+                loading={hotLoading}
+                variant="compact"
+              />
+            </Card>
+          </div>
+
+          {/* 최신 글 피드 — 전체 게시판 통합 */}
           <Card>
-            {/* 탭 */}
-            <div className="flex border-b border-gray-100 dark:border-white/[0.05]">
-              {(["전체", "인기", "공지", "질문"] as BoardTab[]).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`flex-1 border-b-2 py-2.5 text-sm font-semibold transition-colors sm:flex-none sm:px-5 ${
-                    activeTab === tab
-                      ? "border-violet-600 text-violet-600 dark:border-violet-400 dark:text-violet-400"
-                      : "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100"
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
-              <div className="ml-auto hidden items-center px-4 sm:flex">
-                <Link
-                  href="/feed"
-                  className="text-xs text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-200"
-                >
-                  전체보기 →
-                </Link>
+            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-white/[0.05]">
+              <div className="flex items-center gap-1.5 text-sm font-bold text-violet-600 dark:text-violet-400">
+                <MessageSquare className="h-4 w-4" />
+                최신 글
               </div>
+              <Link
+                href="/board/free"
+                className="text-xs text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-200"
+              >
+                전체보기 →
+              </Link>
             </div>
 
-            {/* 게시글 목록 */}
-            <ul className="divide-y divide-gray-50 dark:divide-white/[0.04]">
-              {posts.map((post) => (
-                <li key={post.id}>
-                  <Link
-                    href="/feed"
-                    className="flex items-center gap-2.5 px-4 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02] sm:gap-3"
-                  >
-                    {/* 번호 */}
-                    <span
-                      className={`hidden w-10 shrink-0 text-center text-xs tabular-nums sm:block ${
-                        post.no === "공지"
-                          ? "font-bold text-red-500"
-                          : post.no === "NEW"
-                          ? "font-bold text-violet-500"
-                          : "text-gray-400"
-                      }`}
-                    >
-                      {post.no}
-                    </span>
-
-                    {/* 카테고리 */}
-                    <span
-                      className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${CATEGORY_COLOR[post.category]}`}
-                    >
-                      {post.category}
-                    </span>
-
-                    {/* 제목 */}
-                    <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-gray-800 dark:text-gray-100">
-                      <span className="line-clamp-1">{post.title}</span>
-                    </span>
-
-                    {/* 댓글 */}
-                    {post.comments > 0 && (
-                      <span className="flex shrink-0 items-center gap-0.5 text-[11px] text-violet-500">
-                        <MessageSquare className="h-3 w-3" />
-                        {post.comments}
-                      </span>
-                    )}
-
-                    {/* 작성자 */}
-                    <span
-                      className={`hidden shrink-0 text-[11px] tabular-nums sm:block ${ROLE_COLOR[post.role]}`}
-                    >
-                      {post.author}
-                    </span>
-
-                    {/* 날짜 */}
-                    <span className="hidden shrink-0 text-[11px] tabular-nums text-gray-400 md:block">
-                      {post.date}
-                    </span>
-
-                    {/* 조회수 */}
-                    <span className="hidden shrink-0 items-center gap-0.5 text-[11px] text-gray-400 lg:flex">
-                      <Eye className="h-3 w-3" />
-                      {post.views.toLocaleString()}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <LatestFeedList posts={latestPosts} loading={latestLoading} />
 
             {/* 하단 글쓰기 버튼 */}
             <div className="flex items-center justify-end border-t border-gray-100 px-4 py-3 dark:border-white/[0.05]">
               <Link
-                href="/feed"
+                href="/board/free/write"
                 className="rounded-lg bg-violet-600 px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-violet-700"
               >
                 글쓰기
@@ -671,8 +901,6 @@ export default function DashboardPage() {
 
         {/* ── 오른쪽: 프로필 + 검색순위 + 바로가기 ── */}
         <aside className="flex flex-col gap-4">
-
-          {/* 로그인 / 프로필 — 개발 모드에서는 isLoggedIn=true 로 항상 프로필 표시 */}
           {isLoggedIn ? (
             <ProfileCard
               nickname={displayNickname}
@@ -691,13 +919,13 @@ export default function DashboardPage() {
                 <Flame className="h-4 w-4" />
                 실시간 검색
               </div>
-              <span className="text-[10px] text-gray-400">05.07 12:00 기준</span>
+              <span className="text-[10px] text-gray-400">실시간 인기</span>
             </div>
             <ul className="divide-y divide-gray-50 dark:divide-white/[0.03]">
               {TRENDING.map((t) => (
                 <li key={t.rank}>
                   <Link
-                    href="/feed"
+                    href="/board/free"
                     className="flex items-center gap-2.5 px-4 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
                   >
                     <span
@@ -717,32 +945,55 @@ export default function DashboardPage() {
             </ul>
           </Card>
 
-          {/* 태블릿 전용 최신 공지 (데스크톱은 왼쪽 사이드바에서 표시) */}
+          {/* 태블릿 전용 최신 공지 */}
           <div className="hidden md:block lg:hidden">
             <Card>
-              <SectionHead icon={Bell} title="최신 공지" href="/notices" iconColor="text-red-500" />
-              <ul className="divide-y divide-gray-50 dark:divide-white/[0.04]">
-                {NOTICES.slice(0, 4).map((n) => (
-                  <li key={n.id}>
-                    <Link href="/notices" className="flex items-center justify-between gap-2 px-4 py-3 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]">
-                      <span className="line-clamp-1 flex-1 text-xs text-gray-700 dark:text-gray-200">{n.title}</span>
-                      <span className="shrink-0 text-[10px] tabular-nums text-gray-400">{n.date}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+              <SectionHead
+                icon={Bell}
+                title="최신 공지"
+                href="/board/notice"
+                iconColor="text-red-500"
+              />
+              <NoticeList posts={noticePosts} loading={noticeLoading} max={4} />
             </Card>
           </div>
 
           {/* 바로가기 */}
           <Card>
-            <SectionHead icon={ChevronRight} title="바로가기" iconColor="text-gray-500" />
+            <SectionHead
+              icon={ChevronRight}
+              title="바로가기"
+              iconColor="text-gray-500"
+            />
             <div className="grid grid-cols-2 gap-1.5 p-3">
               {[
-                { href: "/admission", label: "2028 대입", icon: GraduationCap, color: "text-violet-600 bg-violet-50 dark:bg-violet-900/20" },
-                { href: "/curriculum", label: "과목 가이드", icon: BookOpen, color: "text-green-600 bg-green-50 dark:bg-green-900/20" },
-                { href: "/youtube", label: "문튜브", icon: PlayCircle, color: "text-red-500 bg-red-50 dark:bg-red-900/20" },
-                { href: "/notices", label: "공지사항", icon: Bell, color: "text-amber-500 bg-amber-50 dark:bg-amber-900/20" },
+                {
+                  href: "/board/college",
+                  label: "2028 대입",
+                  icon: GraduationCap,
+                  color:
+                    "text-violet-600 bg-violet-50 dark:bg-violet-900/20",
+                },
+                {
+                  href: "/board/curriculum",
+                  label: "과목 가이드",
+                  icon: BookOpen,
+                  color:
+                    "text-green-600 bg-green-50 dark:bg-green-900/20",
+                },
+                {
+                  href: "/board/youtube",
+                  label: "문튜브",
+                  icon: PlayCircle,
+                  color: "text-red-500 bg-red-50 dark:bg-red-900/20",
+                },
+                {
+                  href: "/board/notice",
+                  label: "공지사항",
+                  icon: Bell,
+                  color:
+                    "text-amber-500 bg-amber-50 dark:bg-amber-900/20",
+                },
               ].map((item) => {
                 const Icon = item.icon;
                 return (
@@ -751,7 +1002,9 @@ export default function DashboardPage() {
                     href={item.href}
                     className="flex flex-col items-center gap-1.5 rounded-xl py-3 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.03]"
                   >
-                    <span className={`grid h-8 w-8 place-items-center rounded-lg ${item.color}`}>
+                    <span
+                      className={`grid h-8 w-8 place-items-center rounded-lg ${item.color}`}
+                    >
                       <Icon className="h-4 w-4" />
                     </span>
                     <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300">
@@ -765,29 +1018,16 @@ export default function DashboardPage() {
         </aside>
       </div>
 
-      {/* 모바일 전용: HOT + 공지 섹션 (태블릿 이상은 내부 레이아웃에서 처리) */}
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 md:hidden">
+      {/* 모바일 전용 — 최신 공지 (lg 이상은 좌측 사이드바, md는 오른쪽) */}
+      <div className="mt-4 md:hidden">
         <Card>
           <SectionHead
-            icon={Flame}
-            title="HOT 게시물"
-            href="/board/free"
-            iconColor="text-orange-500"
+            icon={Bell}
+            title="최신 공지"
+            href="/board/notice"
+            iconColor="text-red-500"
           />
-          <HotPostList posts={hotPosts} loading={hotLoading} variant="compact" />
-        </Card>
-        <Card>
-          <SectionHead icon={Bell} title="최신 공지" href="/notices" iconColor="text-red-500" />
-          <ul className="divide-y divide-gray-50 dark:divide-white/[0.04]">
-            {NOTICES.map((n) => (
-              <li key={n.id}>
-                <Link href="/notices" className="flex items-center justify-between gap-2 px-4 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]">
-                  <span className="line-clamp-1 flex-1 text-xs text-gray-700 dark:text-gray-200">{n.title}</span>
-                  <span className="shrink-0 text-[10px] tabular-nums text-gray-400">{n.date}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <NoticeList posts={noticePosts} loading={noticeLoading} max={5} />
         </Card>
       </div>
 
@@ -802,7 +1042,9 @@ export default function DashboardPage() {
             className="flex min-h-[56px] items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 transition-shadow hover:shadow-md dark:border-white/[0.07] dark:bg-[#16162a]"
           >
             <div>
-              <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">{link.label}</p>
+              <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                {link.label}
+              </p>
               <p className="mt-0.5 text-[11px] text-gray-400">{link.desc}</p>
             </div>
             <ExternalLink className="h-4 w-4 shrink-0 text-gray-400" />
@@ -810,14 +1052,15 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* ── 하단 피처 카드 3개 (태블릿 2컬럼, 데스크톱 3컬럼) ── */}
+      {/* ── 하단 피처 카드 3개 ── */}
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {/* 2028 대입 정보 */}
-        <Link href="/admission">
+        <Link href="/board/college">
           <div className="group rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50 to-indigo-50 p-5 transition-shadow hover:shadow-md dark:border-violet-900/30 dark:from-violet-900/10 dark:to-indigo-900/10">
             <div className="flex items-center gap-2 text-violet-600 dark:text-violet-400">
               <GraduationCap className="h-5 w-5" />
-              <span className="text-xs font-semibold uppercase tracking-wide">2028 대입 정보</span>
+              <span className="text-xs font-semibold uppercase tracking-wide">
+                2028 대입 정보
+              </span>
             </div>
             <h3 className="mt-3 text-base font-extrabold leading-snug text-gray-900 dark:text-white">
               통합형 수능, 어떻게 달라지나요?
@@ -838,12 +1081,13 @@ export default function DashboardPage() {
           </div>
         </Link>
 
-        {/* 과목 가이드 */}
-        <Link href="/curriculum">
+        <Link href="/board/curriculum">
           <div className="group rounded-xl border border-green-100 bg-gradient-to-br from-green-50 to-emerald-50 p-5 transition-shadow hover:shadow-md dark:border-green-900/30 dark:from-green-900/10 dark:to-emerald-900/10">
             <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
               <BookOpen className="h-5 w-5" />
-              <span className="text-xs font-semibold uppercase tracking-wide">교육과정 가이드</span>
+              <span className="text-xs font-semibold uppercase tracking-wide">
+                교육과정 가이드
+              </span>
             </div>
             <h3 className="mt-3 text-base font-extrabold leading-snug text-gray-900 dark:text-white">
               선택과목, 어떻게 고를까요?
@@ -864,12 +1108,13 @@ export default function DashboardPage() {
           </div>
         </Link>
 
-        {/* 문튜브 */}
-        <Link href="/youtube">
+        <Link href="/board/youtube">
           <div className="group rounded-xl border border-red-100 bg-gradient-to-br from-red-50 to-rose-50 p-5 transition-shadow hover:shadow-md dark:border-red-900/30 dark:from-red-900/10 dark:to-rose-900/10">
             <div className="flex items-center gap-2 text-red-500 dark:text-red-400">
               <PlayCircle className="h-5 w-5" />
-              <span className="text-xs font-semibold uppercase tracking-wide">문튜브</span>
+              <span className="text-xs font-semibold uppercase tracking-wide">
+                문튜브
+              </span>
             </div>
             <h3 className="mt-3 text-base font-extrabold leading-snug text-gray-900 dark:text-white">
               진로·입시 유튜브 큐레이션
@@ -896,7 +1141,7 @@ export default function DashboardPage() {
         문파스 MoonPas · 문태고등학교 커뮤니티 · 함께 나누고, 함께 성장하는 공간
       </div>
 
-      {/* 닉네임 최초 설정 모달 — Supabase 사용자 + profiles row 없을 때 자동 노출 */}
+      {/* 닉네임 최초 설정 모달 */}
       <NicknameSetupModal
         open={setupOpen}
         defaultNickname={pickDisplayName(user)}

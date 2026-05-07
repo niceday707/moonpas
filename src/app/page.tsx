@@ -9,11 +9,11 @@ import { FullscreenMenu } from "@/components/landing/FullscreenMenu";
 
 // 배경 슬라이드: 5장의 사진을 6초 간격으로 페이드 전환, 각자 다른 Ken Burns 모션
 const SLIDES = [
-  { src: "/school1.jpg", kb: "kb-zoom-in" },
-  { src: "/school2.jpg", kb: "kb-pan-left-right" },
-  { src: "/school3.jpg", kb: "kb-pan-right-left" },
-  { src: "/school4.jpg", kb: "kb-zoom-out" },
-  { src: "/school5.jpg", kb: "kb-zoom-in" },
+  { src: "/school1.jpg", kb: "kb-zoom-in", pos: "70% center" },
+  { src: "/school2.jpg", kb: "kb-pan-left-right", pos: "center center" },
+  { src: "/school3.jpg", kb: "kb-pan-right-left", pos: "center center" },
+  { src: "/school4.jpg", kb: "kb-zoom-out", pos: "center center" },
+  { src: "/school5.jpg", kb: "kb-zoom-in", pos: "center center" },
 ] as const;
 
 const SLIDE_INTERVAL_MS = 6000;
@@ -68,7 +68,7 @@ export default function LandingPage() {
                   setFailed((prev) => ({ ...prev, [i]: true }))
                 }
                 className={`h-full w-full object-cover ${slide.kb}`}
-                style={{ objectPosition: "30% center" }}
+                style={{ objectPosition: slide.pos }}
                 draggable={false}
               />
             </div>

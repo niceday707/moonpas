@@ -23,11 +23,14 @@ export function NicknameSetupModal({
   open,
   defaultNickname,
   defaultRole = "student",
+  roleLocked = false,
   onSubmit,
 }: {
   open: boolean;
   defaultNickname: string;
   defaultRole?: Role;
+  /** 초대 코드 등으로 역할이 미리 정해진 경우 변경 불가 */
+  roleLocked?: boolean;
   onSubmit: (nickname: string, role: Role) => Promise<NicknameSubmitResult>;
 }) {
   const [value, setValue] = useState(defaultNickname);
@@ -107,21 +110,31 @@ export function NicknameSetupModal({
 
             <label className="mt-4 block text-[11px] font-semibold uppercase tracking-widest text-white/50">
               역할
+              {roleLocked && (
+                <span className="ml-2 text-[10px] font-normal normal-case tracking-normal text-violet-400">
+                  · 초대 코드로 자동 설정
+                </span>
+              )}
             </label>
             <div className="mt-1.5 grid grid-cols-2 gap-2">
               {ROLE_OPTIONS.map((opt) => {
                 const active = role === opt.value;
+                const disabled = submitting || (roleLocked && !active);
                 return (
                   <button
                     key={opt.value}
                     type="button"
-                    onClick={() => setRole(opt.value)}
-                    disabled={submitting}
+                    onClick={() => {
+                      if (roleLocked) return;
+                      setRole(opt.value);
+                    }}
+                    disabled={disabled}
                     className={
-                      "rounded-xl border px-3 py-2.5 text-left transition disabled:opacity-50 " +
+                      "rounded-xl border px-3 py-2.5 text-left transition " +
                       (active
                         ? "border-violet-500 bg-violet-500/15"
-                        : "border-white/10 bg-white/5 hover:bg-white/10")
+                        : "border-white/10 bg-white/5 hover:bg-white/10") +
+                      (disabled ? " disabled:cursor-not-allowed disabled:opacity-40" : "")
                     }
                   >
                     <div className="text-sm font-bold text-white">{opt.label}</div>

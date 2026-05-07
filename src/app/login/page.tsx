@@ -1,34 +1,100 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { AlertCircle, Loader2, Ticket, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 const ALLOWED_DOMAIN = "moontae.hs.jne.kr";
+
+// 초대 코드 실패 시도 제한
+const MAX_ATTEMPTS = 10;
+const LOCKOUT_MS = 10 * 60 * 1000; // 10분
+const ATTEMPT_KEY = "invite_attempts";
+const LOCKOUT_KEY = "invite_lockout_until";
+
+// sessionStorage 키 — OAuth 리다이렉트 사이에도 유지
+const SS_INVITE_CODE = "inviteCode";
+const SS_INVITE_ROLE = "inviteRole";
+
+type InviteRole = "parent" | "alumni" | "student" | "teacher";
+
+function readLockoutMs(): number {
+  if (typeof window === "undefined") return 0;
+  const until = Number(localStorage.getItem(LOCKOUT_KEY) ?? "0");
+  if (!until) return 0;
+  const remain = until - Date.now();
+  return remain > 0 ? remain : 0;
+}
+
+function bumpAttempts(): number {
+  if (typeof window === "undefined") return 0;
+  const current = Number(localStorage.getItem(ATTEMPT_KEY) ?? "0") + 1;
+  localStorage.setItem(ATTEMPT_KEY, String(current));
+  if (current >= MAX_ATTEMPTS) {
+    localStorage.setItem(LOCKOUT_KEY, String(Date.now() + LOCKOUT_MS));
+    localStorage.setItem(ATTEMPT_KEY, "0");
+  }
+  return current;
+}
+
+function clearAttempts() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(ATTEMPT_KEY);
+  localStorage.removeItem(LOCKOUT_KEY);
+}
 
 export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   // 로그인 완료 후 콜백 처리 (URL에 code 파라미터가 있는 경우)
   useEffect(() => {
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (event === "SIGNED_IN" && session?.user) {
-          const email = session.user.email ?? "";
-          if (!email.endsWith(`@${ALLOWED_DOMAIN}`)) {
-            // 허용되지 않은 도메인 → 즉시 로그아웃
-            await supabase.auth.signOut();
-            setError(
-              `@${ALLOWED_DOMAIN} 학교 이메일만 로그인할 수 있습니다.\n(입력된 이메일: ${email})`
-            );
-            setLoading(false);
-          } else {
-            router.push("/dashboard");
+        if (event !== "SIGNED_IN" || !session?.user) return;
+
+        const email = session.user.email ?? "";
+        const inviteCode =
+          typeof window !== "undefined"
+            ? sessionStorage.getItem(SS_INVITE_CODE)
+            : null;
+
+        // 초대 코드 사용자: 도메인 체크 건너뜀 + used_count 증가
+        if (inviteCode) {
+          try {
+            const { data: code } = await supabase
+              .from("invite_codes")
+              .select("id, used_count")
+              .eq("code", inviteCode)
+              .maybeSingle();
+            if (code) {
+              await supabase
+                .from("invite_codes")
+                .update({ used_count: (code.used_count ?? 0) + 1 })
+                .eq("id", code.id);
+            }
+          } catch (err) {
+            console.error("[invite] used_count 증가 실패", err);
           }
+          // 사용 후 정리 (role 은 닉네임 모달에서 읽고 삭제)
+          sessionStorage.removeItem(SS_INVITE_CODE);
+          router.push("/dashboard");
+          return;
+        }
+
+        // 일반 사용자: 학교 도메인만 허용
+        if (!email.endsWith(`@${ALLOWED_DOMAIN}`)) {
+          await supabase.auth.signOut();
+          setError(
+            `@${ALLOWED_DOMAIN} 학교 이메일만 로그인할 수 있습니다.\n(입력된 이메일: ${email})`
+          );
+          setLoading(false);
+        } else {
+          router.push("/dashboard");
         }
       }
     );
@@ -38,11 +104,15 @@ export default function LoginPage() {
   async function handleGoogleLogin() {
     setLoading(true);
     setError(null);
+    // 일반 구글 로그인 — 초대 코드 흐름이 아니므로 sessionStorage 클리어
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem(SS_INVITE_CODE);
+      sessionStorage.removeItem(SS_INVITE_ROLE);
+    }
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo: `${window.location.origin}/login`,
-        // 항상 계정 선택 창 표시
         queryParams: { prompt: "select_account" },
       },
     });
@@ -95,7 +165,6 @@ export default function LoginPage() {
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              // Google 로고 SVG
               <svg className="h-4 w-4 shrink-0" viewBox="0 0 48 48" aria-hidden>
                 <path
                   fill="#4285F4"
@@ -118,6 +187,26 @@ export default function LoginPage() {
             {loading ? "로그인 중..." : "Google 계정으로 로그인"}
           </button>
 
+          {/* 구분선 */}
+          <div className="my-5 flex items-center gap-3">
+            <div className="h-px flex-1 bg-white/10" />
+            <span className="text-[11px] uppercase tracking-widest text-white/30">또는</span>
+            <div className="h-px flex-1 bg-white/10" />
+          </div>
+
+          {/* 초대 코드 버튼 */}
+          <button
+            onClick={() => {
+              setError(null);
+              setInviteOpen(true);
+            }}
+            disabled={loading}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white/80 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Ticket className="h-4 w-4" />
+            초대 코드로 가입
+          </button>
+
           {/* 에러 메시지 */}
           {error && (
             <motion.div
@@ -132,7 +221,7 @@ export default function LoginPage() {
 
           {/* 안내 문구 */}
           <p className="mt-6 text-center text-[11px] text-white/30">
-            @{ALLOWED_DOMAIN} 계정만 로그인 가능합니다
+            학생/교사: @{ALLOWED_DOMAIN} · 학부모/졸업생: 초대 코드
           </p>
         </div>
 
@@ -146,6 +235,243 @@ export default function LoginPage() {
           </button>
         </div>
       </motion.div>
+
+      <InviteCodeModal
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        onError={(msg) => setError(msg)}
+      />
     </div>
+  );
+}
+
+function InviteCodeModal({
+  open,
+  onClose,
+  onError,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onError: (msg: string) => void;
+}) {
+  const [digits, setDigits] = useState<string[]>(["", "", "", "", "", ""]);
+  const [submitting, setSubmitting] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [lockoutRemain, setLockoutRemain] = useState(0);
+  const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
+
+  // 모달 열릴 때마다 상태 초기화 + 잠금 시간 갱신
+  useEffect(() => {
+    if (!open) return;
+    setDigits(["", "", "", "", "", ""]);
+    setLocalError(null);
+    setLockoutRemain(readLockoutMs());
+    setTimeout(() => inputsRef.current[0]?.focus(), 60);
+  }, [open]);
+
+  // 잠금 카운트다운
+  useEffect(() => {
+    if (!open || lockoutRemain <= 0) return;
+    const t = setInterval(() => {
+      const r = readLockoutMs();
+      setLockoutRemain(r);
+      if (r <= 0) clearInterval(t);
+    }, 1000);
+    return () => clearInterval(t);
+  }, [open, lockoutRemain]);
+
+  function handleChange(idx: number, raw: string) {
+    const v = raw.replace(/\D/g, "").slice(0, 1);
+    setDigits((prev) => {
+      const next = [...prev];
+      next[idx] = v;
+      return next;
+    });
+    if (v && idx < 5) inputsRef.current[idx + 1]?.focus();
+  }
+
+  function handleKeyDown(idx: number, e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Backspace" && !digits[idx] && idx > 0) {
+      inputsRef.current[idx - 1]?.focus();
+    }
+    if (e.key === "Enter") {
+      void handleSubmit();
+    }
+  }
+
+  function handlePaste(e: React.ClipboardEvent<HTMLInputElement>) {
+    const text = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (!text) return;
+    e.preventDefault();
+    const next = ["", "", "", "", "", ""];
+    for (let i = 0; i < text.length; i++) next[i] = text[i];
+    setDigits(next);
+    const focusIdx = Math.min(text.length, 5);
+    inputsRef.current[focusIdx]?.focus();
+  }
+
+  async function handleSubmit() {
+    const code = digits.join("").trim();
+    if (code.length !== 6) {
+      setLocalError("6자리 숫자를 모두 입력해주세요.");
+      return;
+    }
+
+    const remain = readLockoutMs();
+    if (remain > 0) {
+      setLockoutRemain(remain);
+      setLocalError("너무 많이 시도했습니다. 10분 후 다시 시도해주세요.");
+      return;
+    }
+
+    setSubmitting(true);
+    setLocalError(null);
+
+    try {
+      // invite_codes 테이블 조회
+      const { data, error: dbError } = await supabase
+        .from("invite_codes")
+        .select("id, code, role, max_uses, used_count, expires_at")
+        .eq("code", code)
+        .maybeSingle();
+
+      if (dbError) {
+        console.error("[invite] 조회 실패", dbError);
+        setLocalError("코드 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+        setSubmitting(false);
+        return;
+      }
+
+      const valid =
+        !!data &&
+        (data.max_uses == null || (data.used_count ?? 0) < data.max_uses) &&
+        (!data.expires_at || new Date(data.expires_at).getTime() > Date.now());
+
+      if (!valid) {
+        bumpAttempts();
+        const r = readLockoutMs();
+        if (r > 0) {
+          setLockoutRemain(r);
+          setLocalError("너무 많이 시도했습니다. 10분 후 다시 시도해주세요.");
+        } else {
+          setLocalError("잘못된 초대 코드입니다.");
+        }
+        setSubmitting(false);
+        return;
+      }
+
+      // 검증 통과 — 실패 카운터 초기화 + sessionStorage 저장
+      clearAttempts();
+      const role: InviteRole = (data!.role as InviteRole) ?? "parent";
+      sessionStorage.setItem(SS_INVITE_CODE, code);
+      sessionStorage.setItem(SS_INVITE_ROLE, role);
+
+      // Google OAuth 진입
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/login`,
+          queryParams: { prompt: "select_account" },
+        },
+      });
+
+      if (oauthError) {
+        sessionStorage.removeItem(SS_INVITE_CODE);
+        sessionStorage.removeItem(SS_INVITE_ROLE);
+        onError("로그인 중 오류가 발생했습니다. 다시 시도해주세요.");
+        setSubmitting(false);
+        onClose();
+      }
+      // 성공 시 페이지가 OAuth 로 이동하므로 추가 처리 불필요
+    } catch (err) {
+      console.error("[invite] 예외", err);
+      setLocalError("문제가 발생했습니다. 잠시 후 다시 시도해주세요.");
+      setSubmitting(false);
+    }
+  }
+
+  const locked = lockoutRemain > 0;
+  const lockMin = Math.ceil(lockoutRemain / 60000);
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0, y: 8 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="relative w-full max-w-sm rounded-2xl border border-white/10 bg-[#16162a] p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={onClose}
+              className="absolute right-3 top-3 rounded-full p-1.5 text-white/50 transition hover:bg-white/5 hover:text-white"
+              aria-label="닫기"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="mb-1 flex items-center gap-2 text-violet-400">
+              <Ticket className="h-4 w-4" />
+              <span className="text-[11px] font-semibold uppercase tracking-widest">
+                초대 코드
+              </span>
+            </div>
+            <h2 className="text-lg font-bold text-white">초대 코드를 입력하세요</h2>
+            <p className="mt-1 text-xs leading-relaxed text-white/60">
+              학부모/졸업생용 6자리 숫자 코드를 입력하면 Google 계정으로 가입할 수 있어요.
+            </p>
+
+            {/* 6자리 입력 */}
+            <div className="mt-5 flex items-center justify-between gap-2">
+              {digits.map((d, i) => (
+                <input
+                  key={i}
+                  ref={(el) => {
+                    inputsRef.current[i] = el;
+                  }}
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={1}
+                  value={d}
+                  disabled={submitting || locked}
+                  onChange={(e) => handleChange(i, e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(i, e)}
+                  onPaste={handlePaste}
+                  className="h-12 w-11 rounded-xl border border-white/10 bg-white/5 text-center text-lg font-bold text-white focus:border-violet-500 focus:outline-none disabled:opacity-40"
+                />
+              ))}
+            </div>
+
+            {locked && (
+              <p className="mt-3 text-xs text-amber-400">
+                너무 많이 시도했습니다. {lockMin}분 후 다시 시도해주세요.
+              </p>
+            )}
+            {!locked && localError && (
+              <p className="mt-3 text-xs text-red-400">{localError}</p>
+            )}
+
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={submitting || locked}
+              className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {submitting ? "확인 중..." : "Google 계정으로 가입 진행"}
+            </button>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

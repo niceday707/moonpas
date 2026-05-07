@@ -417,6 +417,8 @@ export default function DashboardPage() {
   // ── Supabase 사용자 + profiles row ─────────────────────────
   const { user, profile, loading: profileLoading, refetch } = useSupabaseProfile();
   const [setupOpen, setSetupOpen] = useState(false);
+  // 초대 코드로 가입한 사용자 — 로그인 직후 sessionStorage 에서 역할 읽기
+  const [inviteRole, setInviteRole] = useState<Role | null>(null);
   const [stats, setStats] = useState<UserStats>({
     posts: 0,
     comments: 0,
@@ -455,6 +457,13 @@ export default function DashboardPage() {
   // 최초 로그인 감지: 사용자는 있는데 profiles row 가 없으면 모달 자동 오픈
   useEffect(() => {
     if (!profileLoading && user && !profile) {
+      // 초대 코드로 들어온 경우 역할 자동 지정
+      if (typeof window !== "undefined") {
+        const r = sessionStorage.getItem("inviteRole");
+        if (r === "parent" || r === "alumni" || r === "student" || r === "teacher") {
+          setInviteRole(r as Role);
+        }
+      }
       setSetupOpen(true);
     } else if (profile) {
       setSetupOpen(false);
@@ -465,10 +474,16 @@ export default function DashboardPage() {
     if (!user) {
       return { ok: false as const, message: "로그인이 필요합니다." };
     }
-    const { error } = await saveNickname(user.id, nickname, role);
+    // 초대 코드 사용자는 역할이 강제됨
+    const finalRole: Role = inviteRole ?? role;
+    const { error } = await saveNickname(user.id, nickname, finalRole);
     if (error) {
       return { ok: false as const, message: "저장에 실패했어요. 잠시 후 다시 시도해주세요." };
     }
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("inviteRole");
+    }
+    setInviteRole(null);
     await refetch();
     setSetupOpen(false);
     return { ok: true as const };
@@ -884,6 +899,8 @@ export default function DashboardPage() {
       <NicknameSetupModal
         open={setupOpen}
         defaultNickname={pickDisplayName(user)}
+        defaultRole={inviteRole ?? "student"}
+        roleLocked={!!inviteRole}
         onSubmit={handleSubmitNickname}
       />
     </motion.div>

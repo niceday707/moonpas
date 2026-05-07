@@ -12,7 +12,7 @@ export type BoardType =
   | "notice" // 공지사항
   | "lost" // 분실물 센터
   | "market" // 나눔장터
-  | "issue" // 이슈토론
+  | "debate" // 이슈토론 (DB CHECK 제약: 'debate')
   | "challenge" // 챌린지 (이미지 필수)
   | "college"
   | "curriculum"
@@ -30,7 +30,7 @@ export const BOARD_LABEL: Record<BoardType, string> = {
   notice: "공지사항",
   lost: "분실물 센터",
   market: "나눔장터",
-  issue: "이슈토론",
+  debate: "이슈토론",
   challenge: "챌린지",
   college: "대입정보",
   curriculum: "교육과정",
@@ -64,7 +64,12 @@ export type PostRow = {
   vote_b: number;
   created_at: string;
   updated_at: string;
-  author: { id: string; nickname: string; role: Role } | null;
+  author: {
+    id: string;
+    nickname: string;
+    role: Role;
+    avatar_url: string | null;
+  } | null;
   comment_count: number;
 };
 
@@ -74,14 +79,19 @@ export type CommentRow = {
   author_id: string;
   content: string;
   created_at: string;
-  author: { id: string; nickname: string; role: Role } | null;
+  author: {
+    id: string;
+    nickname: string;
+    role: Role;
+    avatar_url: string | null;
+  } | null;
 };
 
 // PostgREST 임베딩은 FK 컬럼명으로 가리키는 게 가장 안전 (FK constraint 이름이 환경마다 달라질 수 있어서).
 const POST_SELECT = `
   id, author_id, board_type, title, content, image_url, file_url, file_name,
   view_count, like_count, is_pinned, status, vote_a, vote_b, created_at, updated_at,
-  author:profiles!author_id ( id, nickname, role ),
+  author:profiles!author_id ( id, nickname, role, avatar_url ),
   comments_aggregate:comments(count)
 `;
 
@@ -93,7 +103,12 @@ type RawPost = Omit<
   status: PostStatus | null;
   vote_a: number | null;
   vote_b: number | null;
-  author: { id: string; nickname: string; role: Role } | null;
+  author: {
+    id: string;
+    nickname: string;
+    role: Role;
+    avatar_url: string | null;
+  } | null;
   comments_aggregate: { count: number }[] | null;
 };
 
@@ -389,7 +404,7 @@ export async function incrementViewCount(postId: string): Promise<void> {
 
 const COMMENT_SELECT = `
   id, post_id, author_id, content, created_at,
-  author:profiles!author_id ( id, nickname, role )
+  author:profiles!author_id ( id, nickname, role, avatar_url )
 `;
 
 export async function listComments(postId: string): Promise<CommentRow[]> {
@@ -1353,6 +1368,54 @@ export async function getChallengeStats(): Promise<ChallengeStats> {
     .slice(0, 5);
 
   return { streakByAuthor, weeklyRanking };
+}
+
+/** 본인이 작성한 글 — /profile 페이지용 */
+export async function getUserPosts(
+  userId: string,
+  limit: number = 20,
+): Promise<PostRow[]> {
+  const { data, error } = await supabase
+    .from("posts")
+    .select(POST_SELECT)
+    .eq("author_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("[getUserPosts] 실패", error);
+    return [];
+  }
+  return ((data ?? []) as unknown as RawPost[]).map(normalizePost);
+}
+
+/** 본인이 작성한 댓글 (소속 글 정보 포함) — /profile 페이지용 */
+export type UserCommentRow = CommentRow & {
+  post: {
+    id: string;
+    title: string;
+    board_type: BoardType;
+  } | null;
+};
+
+export async function getUserComments(
+  userId: string,
+  limit: number = 20,
+): Promise<UserCommentRow[]> {
+  const { data, error } = await supabase
+    .from("comments")
+    .select(
+      `id, post_id, author_id, content, created_at,
+       author:profiles!author_id ( id, nickname, role, avatar_url ),
+       post:posts!post_id ( id, title, board_type )`,
+    )
+    .eq("author_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("[getUserComments] 실패", error);
+    return [];
+  }
+  return (data ?? []) as unknown as UserCommentRow[];
 }
 
 export async function getUserStats(userId: string): Promise<UserStats> {

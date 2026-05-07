@@ -173,7 +173,7 @@ function WriteInner() {
         const parsed = parseMarketContent(post.content);
         setMarketCondition(parsed.condition);
         setContent(parsed.description);
-      } else if (post.board_type === "issue") {
+      } else if (post.board_type === "debate") {
         const parsed = parseIssueContent(post.content);
         setOptionA(parsed.optionA);
         setOptionB(parsed.optionB);
@@ -325,7 +325,7 @@ function WriteInner() {
   const isChallenge = boardType === "challenge";
   const isLost = boardType === "lost";
   const isMarket = boardType === "market";
-  const isIssue = boardType === "issue";
+  const isIssue = boardType === "debate";
   const isQa = boardType === "qa";
   const isYoutube = boardType === "youtube";
   const isResources = boardType === "resources";

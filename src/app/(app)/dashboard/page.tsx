@@ -28,6 +28,7 @@ import {
 import { BannerSlider } from "@/components/dashboard/BannerSlider";
 import { NicknameSetupModal } from "@/components/dashboard/NicknameSetupModal";
 import { Badge, type Role } from "@/components/ui/Badge";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useAuth, attemptGoogleLogin } from "@/lib/auth";
 import {
   pickDisplayName,
@@ -54,7 +55,7 @@ const BOARD_BADGE_COLOR: Record<BoardType, string> = {
   free: "text-blue-500 bg-blue-50 dark:bg-blue-900/20",
   notice: "text-red-600 bg-red-50 dark:bg-red-900/20",
   qa: "text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20",
-  issue: "text-orange-500 bg-orange-50 dark:bg-orange-900/20",
+  debate: "text-orange-500 bg-orange-50 dark:bg-orange-900/20",
   challenge: "text-cyan-500 bg-cyan-50 dark:bg-cyan-900/20",
   market: "text-amber-500 bg-amber-50 dark:bg-amber-900/20",
   lost: "text-rose-500 bg-rose-50 dark:bg-rose-900/20",
@@ -592,15 +593,16 @@ function GoogleLogo({ className }: { className?: string }) {
 function ProfileCard({
   nickname,
   role,
+  avatarUrl,
   stats,
   onSetupClick,
 }: {
   nickname: string | null;
   role: Role | null;
+  avatarUrl: string | null;
   stats: UserStats;
   onSetupClick?: () => void;
 }) {
-  const initial = nickname ? nickname.charAt(0) : "?";
   const items: { v: number; l: string }[] = [
     { v: stats.posts, l: "쓴 글" },
     { v: stats.receivedLikes, l: "받은 좋아요" },
@@ -616,9 +618,12 @@ function ProfileCard({
       />
       <div className="px-4 py-3">
         <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[linear-gradient(135deg,#7c3aed,#06b6d4)] text-sm font-bold text-white">
-            {initial}
-          </div>
+          <UserAvatar
+            nickname={nickname}
+            role={role}
+            avatarUrl={avatarUrl}
+            size="md"
+          />
           <div className="flex flex-col items-start gap-1">
             {nickname ? (
               <p className="text-sm font-bold text-gray-900 dark:text-white">
@@ -791,6 +796,7 @@ export default function DashboardPage() {
 
   const displayNickname: string | null = profile?.nickname ?? null;
   const displayRole: Role | null = profile?.role ?? null;
+  const displayAvatar: string | null = profile?.avatar_url ?? null;
 
   return (
     <motion.div
@@ -905,6 +911,7 @@ export default function DashboardPage() {
             <ProfileCard
               nickname={displayNickname}
               role={displayRole}
+              avatarUrl={displayAvatar}
               stats={stats}
               onSetupClick={() => setSetupOpen(true)}
             />

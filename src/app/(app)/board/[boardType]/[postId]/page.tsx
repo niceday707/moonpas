@@ -31,6 +31,7 @@ import {
   Vote,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { AuthGate } from "@/components/auth/AuthGate";
 import {
   BOARD_LABEL,
@@ -193,7 +194,7 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
     boardType === "notice" && (role === "admin" || role === "teacher");
   const isLost = boardType === "lost";
   const isMarket = boardType === "market";
-  const isIssue = boardType === "issue";
+  const isIssue = boardType === "debate";
   const isFree = boardType === "free";
   const isQa = boardType === "qa";
   const isYoutube = boardType === "youtube";
@@ -444,6 +445,12 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
         </h1>
 
         <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+          <UserAvatar
+            nickname={post.author?.nickname}
+            role={post.author?.role}
+            avatarUrl={post.author?.avatar_url ?? null}
+            size="sm"
+          />
           <span className="font-semibold text-gray-700 dark:text-gray-200">
             {post.author?.nickname ?? "(알수없음)"}
           </span>
@@ -843,6 +850,12 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
               return (
                 <li key={c.id} className="py-3">
                   <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                    <UserAvatar
+                      nickname={c.author?.nickname}
+                      role={c.author?.role}
+                      avatarUrl={c.author?.avatar_url ?? null}
+                      size="xs"
+                    />
                     <span className="font-semibold text-gray-700 dark:text-gray-200">
                       {c.author?.nickname ?? "(알수없음)"}
                     </span>

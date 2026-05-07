@@ -5,7 +5,7 @@
 //  - notice: 고정글 우선 + "중요" 뱃지
 //  - lost: 카드 그리드 + 상태 필터
 //  - market: 당근 스타일 카드 그리드 + 상태 필터 + 물품상태 뱃지
-//  - issue: 토론 리스트 + 미니 투표 바 + 🔥HOT 뱃지
+//  - debate: 토론 리스트 + 미니 투표 바 + 🔥HOT 뱃지
 //  - challenge: 인스타 그리드 + 본인 연속 인증 배너 + 주간 랭킹
 //  - free: 카드형 레이아웃 + 좋아요 버튼 + 인기글 뱃지
 //  - 그 외: 기본 리스트
@@ -146,7 +146,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
   const isNotice = boardType === "notice";
   const isLost = boardType === "lost";
   const isMarket = boardType === "market";
-  const isIssue = boardType === "issue";
+  const isIssue = boardType === "debate";
   const isChallenge = boardType === "challenge";
   const isFree = boardType === "free";
   const isCollege = boardType === "college";
@@ -857,7 +857,7 @@ function IssueRow({ post }: { post: PostRow }) {
   return (
     <li>
       <Link
-        href={`/board/issue/${post.id}`}
+        href={`/board/debate/${post.id}`}
         className="block rounded-xl border border-gray-200 bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(124,58,237,0.15)] dark:border-white/[0.07] dark:bg-[#16162a]"
       >
         <div className="flex flex-wrap items-center gap-1.5">

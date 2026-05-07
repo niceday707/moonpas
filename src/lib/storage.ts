@@ -7,7 +7,10 @@ import { supabase } from "@/lib/supabase";
 
 const BUCKET = "images";
 const FILES_BUCKET = "files";
+const AVATARS_BUCKET = "avatars";
 const MAX_PDF_BYTES = 10 * 1024 * 1024; // 10MB
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024; // 5MB
+const ALLOWED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 /**
  * 클라이언트에서 Canvas 로 이미지 리사이즈 + JPEG 재압축 후 Blob 반환.
@@ -182,6 +185,113 @@ export function validatePdfFile(file: File): UploadFileError | null {
     };
   }
   return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 아바타 업로드 — 'avatars' 버킷, 400x400 정사각형 JPEG 0.8
+// ─────────────────────────────────────────────────────────────────────
+
+export type AvatarUploadError =
+  | { code: "type"; message: string }
+  | { code: "size"; message: string }
+  | { code: "upload"; message: string };
+
+/** 사전 검증 — 5MB / jpg, png, webp 만 */
+export function validateAvatarFile(file: File): AvatarUploadError | null {
+  if (!ALLOWED_AVATAR_TYPES.includes(file.type)) {
+    return {
+      code: "type",
+      message: "JPG, PNG, WebP 이미지만 업로드할 수 있어요.",
+    };
+  }
+  if (file.size > MAX_AVATAR_BYTES) {
+    const mb = (file.size / 1024 / 1024).toFixed(1);
+    return {
+      code: "size",
+      message: `이미지가 너무 커요 (${mb}MB). 5MB 이하만 가능합니다.`,
+    };
+  }
+  return null;
+}
+
+/**
+ * 정사각형 크롭 + 리사이즈 — 짧은 변 기준으로 가운데에서 정사각형으로 잘라
+ * 400x400 JPEG (0.8) 로 재인코딩.
+ */
+async function squareResizeForAvatar(file: File): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      const side = Math.min(img.width, img.height);
+      const sx = Math.floor((img.width - side) / 2);
+      const sy = Math.floor((img.height - side) / 2);
+      const canvas = document.createElement("canvas");
+      canvas.width = 400;
+      canvas.height = 400;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        URL.revokeObjectURL(objUrl);
+        reject(new Error("Canvas 2D context 생성 실패"));
+        return;
+      }
+      ctx.drawImage(img, sx, sy, side, side, 0, 0, 400, 400);
+      URL.revokeObjectURL(objUrl);
+      canvas.toBlob(
+        (blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error("toBlob 변환 실패"));
+        },
+        "image/jpeg",
+        0.8,
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objUrl);
+      reject(new Error("이미지 로드 실패"));
+    };
+    img.src = objUrl;
+  });
+}
+
+/**
+ * 아바타 업로드 — 정사각 리사이즈(400x400, JPEG 0.8) → avatars 버킷 → public URL.
+ * 같은 파일명을 덮어쓰지 않도록 timestamp 를 붙이고 upsert=true 로 갱신을 허용한다.
+ */
+export async function uploadAvatar(
+  file: File,
+  userId: string,
+): Promise<string | null> {
+  try {
+    const blob = await squareResizeForAvatar(file);
+    const path = `${userId}/${Date.now()}.jpg`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(AVATARS_BUCKET)
+      .upload(path, blob, {
+        contentType: "image/jpeg",
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error("[uploadAvatar] Storage upload 실패", {
+        path,
+        message: uploadError.message,
+        raw: uploadError,
+      });
+      return null;
+    }
+
+    const { data } = supabase.storage.from(AVATARS_BUCKET).getPublicUrl(path);
+    if (!data?.publicUrl) {
+      console.error("[uploadAvatar] getPublicUrl 결과가 비어있음", { path });
+      return null;
+    }
+    return data.publicUrl;
+  } catch (err) {
+    console.error("[uploadAvatar] 처리 중 예외", err);
+    return null;
+  }
 }
 
 /** 사람이 읽기 좋은 파일 크기 — "1.2 MB" 같은 형식 */

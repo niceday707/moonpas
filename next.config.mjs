@@ -17,7 +17,7 @@ const nextConfig = {
       { source: "/notices", destination: "/board/notice", permanent: false },
       { source: "/lost", destination: "/board/lost", permanent: false },
       { source: "/market", destination: "/board/market", permanent: false },
-      { source: "/debate", destination: "/board/issue", permanent: false },
+      { source: "/debate", destination: "/board/debate", permanent: false },
       // 재학생
       { source: "/admission", destination: "/board/college", permanent: false },
       { source: "/curriculum", destination: "/board/curriculum", permanent: false },

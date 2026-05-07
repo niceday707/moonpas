@@ -25,7 +25,7 @@ const MEGA_NAV: NavGroup[] = [
       { boardType: "notice", label: "공지사항" },
       { boardType: "lost", label: "분실물센터" },
       { boardType: "market", label: "나눔장터" },
-      { boardType: "issue", label: "이슈토론" },
+      { boardType: "debate", label: "이슈토론" },
       { boardType: "challenge", label: "챌린지" },
     ],
   },

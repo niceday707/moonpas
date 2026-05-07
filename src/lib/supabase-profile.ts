@@ -12,6 +12,7 @@ export type SupabaseProfile = {
   id: string;
   nickname: string;
   role: Role;
+  avatar_url: string | null;
   created_at: string;
 };
 
@@ -70,7 +71,7 @@ export function useSupabaseProfile(): {
     try {
       const { data } = await supabase
         .from("profiles")
-        .select("id, nickname, role, created_at")
+        .select("id, nickname, role, avatar_url, created_at")
         .eq("id", uid)
         .maybeSingle();
       setProfile((data as SupabaseProfile | null) ?? null);
@@ -118,6 +119,21 @@ export async function saveNickname(
     });
   } else {
     console.log("[saveNickname] upsert 성공", data);
+  }
+  return { error: error?.message ?? null };
+}
+
+/** profiles.avatar_url 업데이트. null 이면 기본 아바타로 되돌림 */
+export async function saveAvatarUrl(
+  userId: string,
+  avatarUrl: string | null,
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("profiles")
+    .update({ avatar_url: avatarUrl })
+    .eq("id", userId);
+  if (error) {
+    console.error("[saveAvatarUrl] update 실패", { userId, message: error.message });
   }
   return { error: error?.message ?? null };
 }

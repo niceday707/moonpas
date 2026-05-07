@@ -1,33 +1,75 @@
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@import "tailwindcss";
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css");
+
+/* class 기반 다크모드 설정 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* 배경색 */
+  --color-bg-dark: #0f0f1a;
+  --color-bg-light: #f8f9fc;
+
+  /* 액센트 */
+  --color-accent: #7c3aed;
+  --color-accent-foreground: #ffffff;
+  --color-cyan-accent: #06b6d4;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+
+  /* 역할 배지 컬러 */
+  --color-role-student: #3b82f6;
+  --color-role-teacher: #7c3aed;
+  --color-role-parent: #10b981;
+  --color-role-alumni: #f59e0b;
+
+  /* 글로우 그림자 */
+  --shadow-glow: 0 0 30px rgba(124, 58, 237, 0.25);
+  --shadow-glow-strong: 0 8px 40px rgba(124, 58, 237, 0.45);
+  --shadow-glow-cyan: 0 0 30px rgba(6, 182, 212, 0.35);
+
+  /* 폰트 */
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system,
+    BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI",
+    "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* 라이트/다크 기본 색 */
+:root {
+  --background: var(--color-bg-light);
+  --foreground: #1a1b2e;
+  --card-bg: rgba(255, 255, 255, 0.7);
+  --card-border: rgba(255, 255, 255, 0.5);
+}
+
+.dark {
+  --background: var(--color-bg-dark);
+  --foreground: #f4f4f6;
+  --card-bg: rgba(255, 255, 255, 0.05);
+  --card-border: rgba(255, 255, 255, 0.1);
+}
+
+* {
+  box-sizing: border-box;
 }
 
 html,
 body {
   max-width: 100vw;
   overflow-x: hidden;
+  /* 부드러운 모멘텀 스크롤 (iOS) */
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  /* 모바일 탭 하이라이트 제거 */
+  -webkit-tap-highlight-color: transparent;
 }
 
 a {
@@ -35,8 +77,125 @@ a {
   text-decoration: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
+/* 글래스모피즘 카드 유틸 */
+@utility glass {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* 오로라 배경 애니메이션 */
+@keyframes aurora-flow {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
   }
+  33% {
+    transform: translate(30px, -30px) rotate(120deg);
+  }
+  66% {
+    transform: translate(-20px, 20px) rotate(240deg);
+  }
+}
+
+.aurora-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  opacity: 0.55;
+  animation: aurora-flow 18s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* 스켈레톤 펄스 */
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.skeleton-pulse {
+  animation: pulse-soft 1.6s ease-in-out infinite;
+}
+
+/* 텍스트 그라데이션 */
+.text-gradient {
+  background: linear-gradient(135deg, #a78bfa 0%, #06b6d4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Ken Burns 효과 (랜딩 배경 슬라이드) — 12초 사이클 */
+@keyframes kb-zoom-in {
+  0% {
+    transform: scale(1) translate(0, 0);
+  }
+  100% {
+    transform: scale(1.18) translate(0, 0);
+  }
+}
+@keyframes kb-pan-left-right {
+  0% {
+    transform: scale(1.15) translate(-3%, 0);
+  }
+  100% {
+    transform: scale(1.15) translate(3%, 0);
+  }
+}
+@keyframes kb-pan-right-left {
+  0% {
+    transform: scale(1.15) translate(3%, 0);
+  }
+  100% {
+    transform: scale(1.15) translate(-3%, 0);
+  }
+}
+@keyframes kb-zoom-out {
+  0% {
+    transform: scale(1.22) translate(0, 0);
+  }
+  100% {
+    transform: scale(1.05) translate(0, 0);
+  }
+}
+
+.kb-zoom-in {
+  animation: kb-zoom-in 12s ease-in-out infinite alternate;
+  transform-origin: center center;
+  will-change: transform;
+}
+.kb-pan-left-right {
+  animation: kb-pan-left-right 12s linear infinite alternate;
+  transform-origin: center center;
+  will-change: transform;
+}
+.kb-pan-right-left {
+  animation: kb-pan-right-left 12s linear infinite alternate;
+  transform-origin: center center;
+  will-change: transform;
+}
+.kb-zoom-out {
+  animation: kb-zoom-out 12s ease-in-out infinite alternate;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+/* 스크롤바 (다크 친화) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(124, 58, 237, 0.35);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 58, 237, 0.6);
 }

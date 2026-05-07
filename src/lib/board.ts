@@ -45,6 +45,8 @@ export const BOARD_LABEL: Record<BoardType, string> = {
 };
 
 // posts row + 작성자 join 결과
+export type PostStatus = "active" | "resolved";
+
 export type PostRow = {
   id: string;
   author_id: string;
@@ -56,6 +58,8 @@ export type PostRow = {
   file_name: string | null;
   view_count: number;
   like_count: number;
+  is_pinned: boolean;
+  status: PostStatus;
   created_at: string;
   updated_at: string;
   author: { id: string; nickname: string; role: Role } | null;
@@ -74,12 +78,14 @@ export type CommentRow = {
 // PostgREST 임베딩은 FK 컬럼명으로 가리키는 게 가장 안전 (FK constraint 이름이 환경마다 달라질 수 있어서).
 const POST_SELECT = `
   id, author_id, board_type, title, content, image_url, file_url, file_name,
-  view_count, like_count, created_at, updated_at,
+  view_count, like_count, is_pinned, status, created_at, updated_at,
   author:profiles!author_id ( id, nickname, role ),
   comments_aggregate:comments(count)
 `;
 
-type RawPost = Omit<PostRow, "author" | "comment_count"> & {
+type RawPost = Omit<PostRow, "author" | "comment_count" | "is_pinned" | "status"> & {
+  is_pinned: boolean | null;
+  status: PostStatus | null;
   author: { id: string; nickname: string; role: Role } | null;
   comments_aggregate: { count: number }[] | null;
 };
@@ -97,6 +103,8 @@ function normalizePost(raw: RawPost): PostRow {
     file_name: raw.file_name,
     view_count: raw.view_count,
     like_count: raw.like_count,
+    is_pinned: raw.is_pinned ?? false,
+    status: (raw.status as PostStatus | null) ?? "active",
     created_at: raw.created_at,
     updated_at: raw.updated_at,
     author: raw.author,
@@ -110,18 +118,29 @@ function normalizePost(raw: RawPost): PostRow {
 
 export const POSTS_PER_PAGE = 20;
 
-/** board_type 별 목록 (페이지네이션) */
+/** board_type 별 목록 (페이지네이션). 옵션으로 고정글 우선 정렬 및 상태 필터 지원 */
 export async function listPosts(
   boardType: BoardType,
   page: number = 1,
+  options?: { pinnedFirst?: boolean; status?: PostStatus | null },
 ): Promise<{ posts: PostRow[]; total: number }> {
   const from = (page - 1) * POSTS_PER_PAGE;
   const to = from + POSTS_PER_PAGE - 1;
 
-  const { data, error, count } = await supabase
+  let query = supabase
     .from("posts")
     .select(POST_SELECT, { count: "exact" })
-    .eq("board_type", boardType)
+    .eq("board_type", boardType);
+
+  if (options?.status) {
+    query = query.eq("status", options.status);
+  }
+
+  if (options?.pinnedFirst) {
+    query = query.order("is_pinned", { ascending: false });
+  }
+
+  const { data, error, count } = await query
     .order("created_at", { ascending: false })
     .range(from, to);
 
@@ -132,6 +151,82 @@ export async function listPosts(
 
   const posts = ((data ?? []) as unknown as RawPost[]).map(normalizePost);
   return { posts, total: count ?? 0 };
+}
+
+/** 공지사항 고정/해제 — 관리자/교사만 호출 (RLS 가 권한 검증) */
+export async function togglePostPin(
+  postId: string,
+  pinned: boolean,
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("posts")
+    .update({ is_pinned: pinned })
+    .eq("id", postId);
+  if (error) {
+    console.error("[togglePostPin] 실패", error);
+    return { error: error.message };
+  }
+  return { error: null };
+}
+
+/** 분실물 상태 변경 — 작성자만 호출 (RLS 가 권한 검증) */
+export async function setPostStatus(
+  postId: string,
+  status: PostStatus,
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("posts")
+    .update({ status })
+    .eq("id", postId);
+  if (error) {
+    console.error("[setPostStatus] 실패", error);
+    return { error: error.message };
+  }
+  return { error: null };
+}
+
+// ─────────────────────────────────────────────────────────
+// 분실물 게시판 — content 안에 JSON 으로 구조화 저장
+// ─────────────────────────────────────────────────────────
+
+export type LostContent = {
+  /** 분실 장소 (예: "3층 화장실 앞") */
+  location: string;
+  /** 분실 날짜 (yyyy-mm-dd, 비워두면 빈 문자열) */
+  lostDate: string;
+  /** 자유 서술 본문 */
+  description: string;
+};
+
+/** 분실물 글 본문 파싱 — JSON 구조면 분해, 아니면 description 으로만 사용 */
+export function parseLostContent(content: string): LostContent {
+  try {
+    const obj: unknown = JSON.parse(content);
+    if (
+      obj &&
+      typeof obj === "object" &&
+      "description" in obj &&
+      typeof (obj as { description: unknown }).description === "string"
+    ) {
+      const o = obj as { location?: unknown; lostDate?: unknown; description: string };
+      return {
+        location: typeof o.location === "string" ? o.location : "",
+        lostDate: typeof o.lostDate === "string" ? o.lostDate : "",
+        description: o.description,
+      };
+    }
+  } catch {
+    // 일반 텍스트 본문
+  }
+  return { location: "", lostDate: "", description: content };
+}
+
+export function stringifyLostContent(input: LostContent): string {
+  return JSON.stringify({
+    location: input.location.trim(),
+    lostDate: input.lostDate,
+    description: input.description.trim(),
+  });
 }
 
 export async function getPost(postId: string): Promise<PostRow | null> {

@@ -7,11 +7,15 @@ import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
+  CalendarDays,
   Download,
   Eye,
   FileText,
   Loader2,
+  MapPin,
   Pencil,
+  Pin,
+  PinOff,
   Send,
   Trash2,
 } from "lucide-react";
@@ -25,11 +29,16 @@ import {
   getPost,
   incrementViewCount,
   listComments,
+  parseLostContent,
+  setPostStatus,
+  togglePostPin,
   type BoardType,
   type CommentRow,
   type PostRow,
+  type PostStatus,
 } from "@/lib/board";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
+import { cn } from "@/lib/utils";
 
 const VALID_BOARDS = Object.keys(BOARD_LABEL) as BoardType[];
 
@@ -67,10 +76,12 @@ export default function PostDetailPage() {
 
 function DetailInner({ boardType, postId }: { boardType: BoardType; postId: string }) {
   const router = useRouter();
-  const { user } = useSupabaseProfile();
+  const { user, profile } = useSupabaseProfile();
   const [post, setPost] = useState<PostRow | null>(null);
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [togglingPin, setTogglingPin] = useState(false);
+  const [togglingStatus, setTogglingStatus] = useState(false);
   const viewCounted = useRef(false);
 
   const refreshComments = useCallback(async () => {
@@ -125,6 +136,11 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
   }
 
   const isOwner = !!user && user.id === post.author_id;
+  const role = (profile?.role ?? "") as string;
+  const canPin =
+    boardType === "notice" && (role === "admin" || role === "teacher");
+  const isLost = boardType === "lost";
+  const lostInfo = isLost ? parseLostContent(post.content) : null;
 
   async function handleDelete() {
     if (!post) return;
@@ -135,6 +151,32 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
       return;
     }
     router.push(`/board/${boardType}`);
+  }
+
+  async function handleTogglePin() {
+    if (!post || togglingPin) return;
+    setTogglingPin(true);
+    const next = !post.is_pinned;
+    const { error } = await togglePostPin(post.id, next);
+    setTogglingPin(false);
+    if (error) {
+      window.alert("고정 상태를 바꾸지 못했어요.\n" + error);
+      return;
+    }
+    setPost({ ...post, is_pinned: next });
+  }
+
+  async function handleToggleStatus() {
+    if (!post || togglingStatus) return;
+    setTogglingStatus(true);
+    const next: PostStatus = post.status === "resolved" ? "active" : "resolved";
+    const { error } = await setPostStatus(post.id, next);
+    setTogglingStatus(false);
+    if (error) {
+      window.alert("상태를 바꾸지 못했어요.\n" + error);
+      return;
+    }
+    setPost({ ...post, status: next });
   }
 
   return (
@@ -152,8 +194,34 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
         {BOARD_LABEL[boardType]}
       </Link>
 
-      <article className="mt-3 rounded-xl border border-gray-200 bg-white p-5 dark:border-white/[0.07] dark:bg-[#16162a]">
-        <h1 className="text-xl font-extrabold leading-snug text-gray-900 dark:text-white">
+      <article
+        className={cn(
+          "mt-3 rounded-xl border p-5",
+          post.is_pinned
+            ? "border-rose-300 bg-rose-50/70 dark:border-rose-500/30 dark:bg-rose-500/[0.06]"
+            : "border-gray-200 bg-white dark:border-white/[0.07] dark:bg-[#16162a]",
+        )}
+      >
+        <div className="flex flex-wrap items-center gap-1.5">
+          {post.is_pinned && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 px-2 py-0.5 text-[10px] font-bold text-rose-500 ring-1 ring-inset ring-rose-500/30 dark:text-rose-300">
+              <Pin className="h-3 w-3" /> 중요
+            </span>
+          )}
+          {isLost && (
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
+                post.status === "resolved"
+                  ? "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300"
+                  : "bg-rose-500/15 text-rose-500 ring-rose-500/30 dark:text-rose-300",
+              )}
+            >
+              {post.status === "resolved" ? "찾았어요 🟢" : "찾는 중 🔴"}
+            </span>
+          )}
+        </div>
+        <h1 className="mt-1 text-xl font-extrabold leading-snug text-gray-900 dark:text-white">
           {post.title}
         </h1>
 
@@ -170,25 +238,65 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
             {post.view_count}
           </span>
 
-          {isOwner && (
-            <span className="ml-auto flex gap-1">
-              <Link
-                href={`/board/${boardType}/write?id=${post.id}`}
-                className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-600 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/[0.05]"
-              >
-                <Pencil className="h-3 w-3" />
-                수정
-              </Link>
+          <span className="ml-auto flex flex-wrap gap-1">
+            {canPin && (
               <button
                 type="button"
-                onClick={handleDelete}
-                className="flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-[11px] text-red-500 transition hover:bg-red-50 dark:border-red-900/40 dark:hover:bg-red-900/20"
+                onClick={handleTogglePin}
+                disabled={togglingPin}
+                className={cn(
+                  "flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition disabled:cursor-not-allowed disabled:opacity-50",
+                  post.is_pinned
+                    ? "border-rose-300 text-rose-600 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                    : "border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/[0.05]",
+                )}
               >
-                <Trash2 className="h-3 w-3" />
-                삭제
+                {togglingPin ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : post.is_pinned ? (
+                  <PinOff className="h-3 w-3" />
+                ) : (
+                  <Pin className="h-3 w-3" />
+                )}
+                {post.is_pinned ? "고정 해제" : "고정"}
               </button>
-            </span>
-          )}
+            )}
+            {isOwner && isLost && (
+              <button
+                type="button"
+                onClick={handleToggleStatus}
+                disabled={togglingStatus}
+                className={cn(
+                  "flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition disabled:cursor-not-allowed disabled:opacity-50",
+                  post.status === "resolved"
+                    ? "border-emerald-300 text-emerald-600 hover:bg-emerald-50 dark:border-emerald-500/40 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
+                    : "border-rose-300 text-rose-600 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-300 dark:hover:bg-rose-500/10",
+                )}
+              >
+                {togglingStatus && <Loader2 className="h-3 w-3 animate-spin" />}
+                {post.status === "resolved" ? "다시 찾는중으로" : "찾았어요로 변경"}
+              </button>
+            )}
+            {isOwner && (
+              <>
+                <Link
+                  href={`/board/${boardType}/write?id=${post.id}`}
+                  className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-600 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/[0.05]"
+                >
+                  <Pencil className="h-3 w-3" />
+                  수정
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-[11px] text-red-500 transition hover:bg-red-50 dark:border-red-900/40 dark:hover:bg-red-900/20"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  삭제
+                </button>
+              </>
+            )}
+          </span>
         </div>
 
         {post.image_url && (
@@ -200,8 +308,39 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
           />
         )}
 
+        {isLost && lostInfo && (lostInfo.location || lostInfo.lostDate) && (
+          <div className="mt-4 grid gap-2 rounded-lg border border-gray-100 bg-gray-50/70 px-4 py-3 text-xs sm:grid-cols-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
+            {lostInfo.location && (
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 shrink-0 text-violet-500" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                    분실 장소
+                  </p>
+                  <p className="mt-0.5 truncate text-sm text-gray-800 dark:text-gray-200">
+                    {lostInfo.location}
+                  </p>
+                </div>
+              </div>
+            )}
+            {lostInfo.lostDate && (
+              <div className="flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 shrink-0 text-violet-500" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                    분실 날짜
+                  </p>
+                  <p className="mt-0.5 truncate text-sm text-gray-800 dark:text-gray-200">
+                    {lostInfo.lostDate}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="mt-5 whitespace-pre-wrap text-sm leading-relaxed text-gray-800 dark:text-gray-200">
-          {post.content}
+          {isLost && lostInfo ? lostInfo.description : post.content}
         </div>
 
         {/* PDF 다운로드 */}

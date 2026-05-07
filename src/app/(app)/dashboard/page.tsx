@@ -73,6 +73,7 @@ const ROLE_COLOR: Record<Role, string> = {
   teacher: "text-violet-500",
   parent: "text-green-500",
   alumni: "text-amber-500",
+  admin: "text-rose-500",
 };
 
 

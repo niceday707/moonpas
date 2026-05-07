@@ -5,12 +5,23 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, FileText, Loader2, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Camera,
+  FileText,
+  Loader2,
+  Lock,
+  MapPin,
+  CalendarDays,
+  X,
+} from "lucide-react";
 import { AuthGate } from "@/components/auth/AuthGate";
 import {
   BOARD_LABEL,
   createPost,
   getPost,
+  parseLostContent,
+  stringifyLostContent,
   updatePost,
   type BoardType,
 } from "@/lib/board";
@@ -54,6 +65,9 @@ function WriteInner() {
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  // 분실물 전용 필드 — content 에 JSON 으로 합쳐 저장
+  const [lostLocation, setLostLocation] = useState("");
+  const [lostDate, setLostDate] = useState("");
   // 이미지 상태 — 새로 고른 파일은 imageFile, 미리보기는 imagePreview, 수정 모드 시작 시 원본은 originalImageUrl
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -79,7 +93,15 @@ function WriteInner() {
     getPost(editId).then((post) => {
       if (!active || !post) return;
       setTitle(post.title);
-      setContent(post.content);
+      // 분실물 글이면 JSON 파싱해서 분실장소/날짜/본문을 분리
+      if (post.board_type === "lost") {
+        const parsed = parseLostContent(post.content);
+        setLostLocation(parsed.location);
+        setLostDate(parsed.lostDate);
+        setContent(parsed.description);
+      } else {
+        setContent(post.content);
+      }
       setOriginalImageUrl(post.image_url);
       setImagePreview(post.image_url);
       setOriginalFileUrl(post.file_url);
@@ -132,7 +154,42 @@ function WriteInner() {
     );
   }
 
+  // 공지사항: admin / teacher 만 작성 가능
+  const role = profile.role as string;
+  if (boardType === "notice" && role !== "admin" && role !== "teacher") {
+    return (
+      <div className="mx-auto max-w-screen-md px-4 py-10">
+        <Link
+          href="/board/notice"
+          className="inline-flex items-center gap-1 text-xs text-gray-500 transition hover:text-gray-800 dark:hover:text-gray-200"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          공지사항으로 돌아가기
+        </Link>
+        <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-8 text-center dark:border-white/[0.07] dark:bg-[#16162a]">
+          <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-xl bg-violet-500/15 text-violet-500 dark:text-violet-300">
+            <Lock className="h-5 w-5" />
+          </div>
+          <h2 className="text-base font-bold text-gray-900 dark:text-white">
+            공지사항은 관리자만 작성할 수 있습니다
+          </h2>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            중요한 안내사항은 학교 측에서 등록합니다. 일반 게시글은 자유게시판을
+            이용해주세요.
+          </p>
+          <Link
+            href="/board/free"
+            className="mt-5 inline-flex items-center rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-violet-700"
+          >
+            자유게시판으로 이동
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   const isChallenge = boardType === "challenge";
+  const isLost = boardType === "lost";
 
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -192,10 +249,23 @@ function WriteInner() {
       setError("챌린지 게시판은 인증샷 이미지가 필요해요.");
       return;
     }
+    if (isLost && !lostLocation.trim()) {
+      setError("분실 장소를 입력해주세요.");
+      return;
+    }
     if (!user) {
       setError("로그인이 필요합니다.");
       return;
     }
+
+    // 분실물 글: 본문은 JSON 으로 구조화 저장
+    const finalContent = isLost
+      ? stringifyLostContent({
+          location: lostLocation,
+          lostDate,
+          description: content,
+        })
+      : content.trim();
 
     // 1) 이미지/PDF 업로드 — 새 파일이 있으면 업로드, 없으면 기존 값 유지/제거
     let imageUrl: string | null = originalImageUrl;
@@ -247,7 +317,7 @@ function WriteInner() {
     if (editId) {
       const { error: e } = await updatePost(editId, {
         title: title.trim(),
-        content: content.trim(),
+        content: finalContent,
         imageUrl,
         fileUrl,
         fileName,
@@ -263,7 +333,7 @@ function WriteInner() {
         authorId: user.id,
         boardType,
         title: title.trim(),
-        content: content.trim(),
+        content: finalContent,
         imageUrl,
         fileUrl,
         fileName,
@@ -316,14 +386,63 @@ function WriteInner() {
           />
         </div>
 
+        {isLost && (
+          <>
+            <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2.5 text-[11px] leading-relaxed text-cyan-700 dark:border-cyan-900/40 dark:bg-cyan-900/15 dark:text-cyan-200">
+              <div className="flex items-center gap-1.5 font-semibold">
+                <Camera className="h-3.5 w-3.5" />
+                분실물 사진을 첨부하면 찾을 확률이 높아져요!
+              </div>
+              <p className="mt-0.5 opacity-80">
+                물건의 색·모양이 잘 보이는 사진을 함께 올리면 좋아요.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                  <MapPin className="h-3 w-3" />
+                  분실 장소
+                </label>
+                <input
+                  type="text"
+                  value={lostLocation}
+                  onChange={(e) => setLostLocation(e.target.value)}
+                  placeholder="예) 3층 화장실 앞"
+                  maxLength={60}
+                  disabled={submitting}
+                  className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                  <CalendarDays className="h-3 w-3" />
+                  분실 날짜
+                </label>
+                <input
+                  type="date"
+                  value={lostDate}
+                  onChange={(e) => setLostDate(e.target.value)}
+                  disabled={submitting}
+                  className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+                />
+              </div>
+            </div>
+          </>
+        )}
+
         <div>
           <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
-            내용
+            {isLost ? "상세 설명" : "내용"}
           </label>
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="내용을 입력해주세요"
+            placeholder={
+              isLost
+                ? "분실물의 특징, 발견 시 연락 방법 등을 적어주세요."
+                : "내용을 입력해주세요"
+            }
             rows={10}
             disabled={submitting}
             className="mt-1.5 w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"

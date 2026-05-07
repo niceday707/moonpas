@@ -17,6 +17,7 @@ const ROLE_GRADIENT: Record<Author["role"], string> = {
   teacher: "linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)",
   parent: "linear-gradient(135deg, #10b981 0%, #06b6d4 100%)",
   alumni: "linear-gradient(135deg, #f59e0b 0%, #f97316 100%)",
+  admin: "linear-gradient(135deg, #f43f5e 0%, #7c3aed 100%)",
 };
 
 const ANON_GRADIENT =

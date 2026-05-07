@@ -24,13 +24,13 @@ type Item = {
 
 const ITEMS: Item[] = [
   { href: "/dashboard", label: "홈", icon: Home },
-  { href: "/feed", label: "메인 피드", icon: Hash },
-  { href: "/curriculum", label: "교육과정 가이드", icon: BookOpen },
-  { href: "/admission", label: "2028 대입 정보", icon: GraduationCap },
-  { href: "/youtube", label: "문튜브", icon: PlayCircle },
-  { href: "/lost", label: "분실물센터", icon: Package },
-  { href: "/market", label: "나눔장터", icon: Package },
-  { href: "/notices", label: "공지사항", icon: Bell },
+  { href: "/board/free", label: "자유게시판", icon: Hash },
+  { href: "/board/curriculum", label: "교육과정", icon: BookOpen },
+  { href: "/board/college", label: "대입정보", icon: GraduationCap },
+  { href: "/board/youtube", label: "문튜브", icon: PlayCircle },
+  { href: "/board/lost", label: "분실물센터", icon: Package },
+  { href: "/board/market", label: "나눔장터", icon: Package },
+  { href: "/board/notice", label: "공지사항", icon: Bell },
   { href: "/profile", label: "내 프로필", icon: UserRound },
 ];
 

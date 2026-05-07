@@ -21,7 +21,7 @@ type NavItem = {
 
 const ITEMS: NavItem[] = [
   { href: "/dashboard", label: "홈", icon: Home },
-  { href: "/feed", label: "피드", icon: LayoutList },
+  { href: "/board/free", label: "피드", icon: LayoutList },
   { action: "compose", label: "글쓰기", icon: PencilLine, primary: true },
   { href: "/notifications", label: "알림", icon: Bell, badge: true },
   { href: "/profile", label: "내정보", icon: UserRound },

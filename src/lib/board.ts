@@ -306,6 +306,20 @@ export type UserStats = {
   receivedLikes: number;
 };
 
+/** 모든 board_type 별 게시글 개수 — TopBar 메가메뉴 표시용 */
+export async function getBoardCounts(): Promise<Partial<Record<BoardType, number>>> {
+  const { data, error } = await supabase.from("posts").select("board_type");
+  if (error || !data) {
+    if (error) console.error("[getBoardCounts] 실패", error);
+    return {};
+  }
+  const counts: Partial<Record<BoardType, number>> = {};
+  for (const row of data as Array<{ board_type: BoardType }>) {
+    counts[row.board_type] = (counts[row.board_type] ?? 0) + 1;
+  }
+  return counts;
+}
+
 export async function getUserStats(userId: string): Promise<UserStats> {
   const [postsRes, commentsRes, likesRes] = await Promise.all([
     supabase

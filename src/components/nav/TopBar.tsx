@@ -10,49 +10,55 @@ import { GraduationCap, ChevronDown, Users, Menu, X, Search, Bell } from "lucide
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useNotifications } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
+import { getBoardCounts, type BoardType } from "@/lib/board";
 
 // ── 메뉴 정의 ───────────────────────────────────────────────────────────
-type NavItem = { href: string; label: string; count: number };
+// boardType 을 단일 source of truth 로 두고 href = /board/{boardType}, 카운트는 Supabase 에서 조회.
+type NavItem = { boardType: BoardType; label: string };
 type NavGroup = { label: string; items: NavItem[] };
 
 const MEGA_NAV: NavGroup[] = [
   {
     label: "커뮤니티",
     items: [
-      { href: "/feed", label: "자유게시판", count: 1234 },
-      { href: "/notices", label: "공지사항", count: 87 },
-      { href: "/lost", label: "분실물센터", count: 78 },
-      { href: "/market", label: "나눔장터", count: 78 },
-      { href: "/debate", label: "이슈토론", count: 432 },
+      { boardType: "free", label: "자유게시판" },
+      { boardType: "notice", label: "공지사항" },
+      { boardType: "lost", label: "분실물센터" },
+      { boardType: "market", label: "나눔장터" },
+      { boardType: "issue", label: "이슈토론" },
+      { boardType: "challenge", label: "챌린지" },
     ],
   },
   {
     label: "재학생",
     items: [
-      { href: "/admission", label: "2028 대입 정보센터", count: 248 },
-      { href: "/curriculum", label: "교육과정 가이드", count: 312 },
-      { href: "/council", label: "학생자치회", count: 67 },
-      { href: "/qna", label: "학습 Q&A", count: 891 },
-      { href: "/career", label: "진로진학 상담", count: 145 },
+      { boardType: "college", label: "대입정보" },
+      { boardType: "curriculum", label: "교육과정" },
+      { boardType: "council", label: "학생회" },
+      { boardType: "qa", label: "Q&A" },
     ],
   },
   {
     label: "문태생활",
     items: [
-      { href: "/youtube", label: "문튜브", count: 124 },
-      { href: "/resources", label: "자료실", count: 567 },
-      { href: "/study", label: "스터디", count: 89 },
-      { href: "/news", label: "문태뉴스", count: 203 },
+      { boardType: "youtube", label: "문튜브" },
+      { boardType: "resources", label: "자료실" },
+      { boardType: "study", label: "스터디" },
+      { boardType: "news", label: "뉴스" },
     ],
   },
   {
     label: "문태교우",
     items: [
-      { href: "/alumni", label: "졸업생 게시판", count: 178 },
-      { href: "/reviews", label: "선배 후기", count: 94 },
+      { boardType: "alumni", label: "졸업생" },
+      { boardType: "senior", label: "선배후기" },
     ],
   },
 ];
+
+function itemHref(item: NavItem): string {
+  return `/board/${item.boardType}`;
+}
 
 const SINGLE_NAV = [{ href: "/profile", label: "내 프로필" }];
 
@@ -70,7 +76,19 @@ export function TopBar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [counts, setCounts] = useState<Partial<Record<BoardType, number>>>({});
   const { unreadCount } = useNotifications();
+
+  // Supabase posts 테이블에서 board_type 별 카운트 조회 (마운트 1회)
+  useEffect(() => {
+    let active = true;
+    getBoardCounts().then((c) => {
+      if (active) setCounts(c);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // lg 이상에서 메뉴 자동 닫기
   useEffect(() => {
@@ -312,25 +330,29 @@ export function TopBar() {
                               className="overflow-hidden bg-gray-50 dark:bg-white/[0.02]"
                             >
                               <ul>
-                                {nav.items.map((item) => (
-                                  <li key={item.href}>
-                                    <Link
-                                      href={item.href}
-                                      onClick={closeMenu}
-                                      className={cn(
-                                        "flex min-h-[48px] items-center justify-between px-7 py-2.5 text-sm transition-colors",
-                                        pathname.startsWith(item.href)
-                                          ? "text-violet-600 dark:text-violet-400"
-                                          : "text-gray-600 hover:text-violet-600 dark:text-gray-300 dark:hover:text-violet-400",
-                                      )}
-                                    >
-                                      <span className="font-medium">{item.label}</span>
-                                      <span className="text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
-                                        {item.count.toLocaleString()}
-                                      </span>
-                                    </Link>
-                                  </li>
-                                ))}
+                                {nav.items.map((item) => {
+                                  const href = itemHref(item);
+                                  const cnt = counts[item.boardType] ?? 0;
+                                  return (
+                                    <li key={href}>
+                                      <Link
+                                        href={href}
+                                        onClick={closeMenu}
+                                        className={cn(
+                                          "flex min-h-[48px] items-center justify-between px-7 py-2.5 text-sm transition-colors",
+                                          pathname.startsWith(href)
+                                            ? "text-violet-600 dark:text-violet-400"
+                                            : "text-gray-600 hover:text-violet-600 dark:text-gray-300 dark:hover:text-violet-400",
+                                        )}
+                                      >
+                                        <span className="font-medium">{item.label}</span>
+                                        <span className="text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+                                          {cnt.toLocaleString()}
+                                        </span>
+                                      </Link>
+                                    </li>
+                                  );
+                                })}
                               </ul>
                             </motion.div>
                           )}
@@ -381,11 +403,13 @@ export function TopBar() {
                 </h3>
                 <ul className="space-y-1">
                   {nav.items.map((item) => {
-                    const isActive = pathname.startsWith(item.href);
+                    const href = itemHref(item);
+                    const cnt = counts[item.boardType] ?? 0;
+                    const isActive = pathname.startsWith(href);
                     return (
-                      <li key={item.href}>
+                      <li key={href}>
                         <Link
-                          href={item.href}
+                          href={href}
                           className={cn(
                             "group flex items-center justify-between gap-2 rounded-md px-1.5 py-1.5 text-[13px] transition-colors",
                             isActive
@@ -402,7 +426,7 @@ export function TopBar() {
                                 : "text-gray-400 group-hover:text-violet-500 dark:text-gray-500 dark:group-hover:text-violet-400",
                             )}
                           >
-                            {item.count.toLocaleString()}
+                            {cnt.toLocaleString()}
                           </span>
                         </Link>
                       </li>

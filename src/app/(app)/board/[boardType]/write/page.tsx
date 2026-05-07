@@ -29,6 +29,7 @@ import {
   QA_SUBJECTS,
   RESOURCE_CATEGORIES,
   STUDY_SUBJECTS,
+  YOUTUBE_CATEGORIES,
   createPost,
   extractYoutubeId,
   getPost,
@@ -58,6 +59,7 @@ import {
   type QaSubject,
   type ResourceCategory,
   type StudySubject,
+  type YoutubeCategory,
 } from "@/lib/board";
 import { cn } from "@/lib/utils";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
@@ -112,6 +114,7 @@ function WriteInner() {
   const [qaSubject, setQaSubject] = useState<QaSubject>("etc");
   // 문튜브 전용
   const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [youtubeCategory, setYoutubeCategory] = useState<YoutubeCategory>("etc");
   // 자료실 전용 — 카테고리
   const [resourceCategory, setResourceCategory] = useState<ResourceCategory>("study");
   // 스터디 전용
@@ -182,6 +185,7 @@ function WriteInner() {
       } else if (post.board_type === "youtube") {
         const parsed = parseYoutubeContent(post.content);
         setYoutubeUrl(parsed.youtubeUrl);
+        setYoutubeCategory(parsed.category);
         setContent(parsed.description);
       } else if (post.board_type === "resources") {
         const parsed = parseResourceContent(post.content);
@@ -460,6 +464,7 @@ function WriteInner() {
         })
       : isYoutube
       ? stringifyYoutubeContent({
+          category: youtubeCategory,
           youtubeUrl,
           videoId: extractYoutubeId(youtubeUrl) ?? "",
           description: content,
@@ -665,7 +670,36 @@ function WriteInner() {
         )}
 
         {isYoutube && (
-          <div>
+          <div className="space-y-3">
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                카테고리 (필수)
+              </label>
+              <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {YOUTUBE_CATEGORIES.map((c) => {
+                  const active = youtubeCategory === c.value;
+                  return (
+                    <button
+                      key={c.value}
+                      type="button"
+                      onClick={() => setYoutubeCategory(c.value)}
+                      disabled={submitting}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-semibold transition disabled:opacity-50",
+                        active
+                          ? "border-red-500 bg-red-500/10 text-red-600 dark:text-red-300"
+                          : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+                      )}
+                    >
+                      <span className="text-base leading-none">{c.emoji}</span>
+                      <span className="text-[12px]">{c.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
             <label className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
               <PlayCircle className="h-3 w-3 text-red-500" />
               YouTube URL (필수)
@@ -697,6 +731,7 @@ function WriteInner() {
                 </div>
               );
             })()}
+            </div>
           </div>
         )}
 

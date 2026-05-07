@@ -680,7 +680,34 @@ export function stringifyQaContent(input: QaContent): string {
 // 문튜브 — content 안에 { youtubeUrl, videoId, description } JSON
 // ─────────────────────────────────────────────────────────
 
+/** 문튜브 카테고리 */
+export const YOUTUBE_CATEGORIES = [
+  { value: "exam", label: "수능·입시", emoji: "📐" },
+  { value: "record", label: "생기부·세특", emoji: "📝" },
+  { value: "knowledge", label: "교양·지식", emoji: "🧠" },
+  { value: "etc", label: "기타", emoji: "🎮" },
+] as const;
+
+export type YoutubeCategory = (typeof YOUTUBE_CATEGORIES)[number]["value"];
+
+const YOUTUBE_CATEGORY_VALUES: ReadonlySet<string> = new Set(
+  YOUTUBE_CATEGORIES.map((c) => c.value),
+);
+
+export function getYoutubeCategoryLabel(c: YoutubeCategory): string {
+  return YOUTUBE_CATEGORIES.find((x) => x.value === c)?.label ?? "기타";
+}
+
+export const YOUTUBE_CATEGORY_STYLE: Record<YoutubeCategory, string> = {
+  exam: "bg-rose-500/15 text-rose-600 ring-rose-500/30 dark:text-rose-300",
+  record: "bg-amber-500/15 text-amber-600 ring-amber-500/30 dark:text-amber-300",
+  knowledge: "bg-cyan-500/15 text-cyan-600 ring-cyan-500/30 dark:text-cyan-300",
+  etc: "bg-gray-500/15 text-gray-600 ring-gray-500/30 dark:text-gray-300",
+};
+
 export type YoutubeContent = {
+  /** 카테고리 — 수능·입시 / 생기부·세특 / 교양·지식 / 기타 */
+  category: YoutubeCategory;
   /** 사용자가 입력한 원본 URL (참조용) */
   youtubeUrl: string;
   /** 추출된 11자리 비디오 ID */
@@ -725,11 +752,17 @@ export function parseYoutubeContent(content: string): YoutubeContent {
       typeof (obj as { videoId: unknown }).videoId === "string"
     ) {
       const o = obj as {
+        category?: unknown;
         youtubeUrl?: unknown;
         videoId: string;
         description?: unknown;
       };
+      const category: YoutubeCategory =
+        typeof o.category === "string" && YOUTUBE_CATEGORY_VALUES.has(o.category)
+          ? (o.category as YoutubeCategory)
+          : "etc";
       return {
+        category,
         youtubeUrl: typeof o.youtubeUrl === "string" ? o.youtubeUrl : "",
         videoId: o.videoId,
         description: typeof o.description === "string" ? o.description : "",
@@ -739,11 +772,17 @@ export function parseYoutubeContent(content: string): YoutubeContent {
     // 일반 텍스트 — videoId 추출 시도
   }
   const id = extractYoutubeId(content);
-  return { youtubeUrl: id ? content : "", videoId: id ?? "", description: id ? "" : content };
+  return {
+    category: "etc",
+    youtubeUrl: id ? content : "",
+    videoId: id ?? "",
+    description: id ? "" : content,
+  };
 }
 
 export function stringifyYoutubeContent(input: YoutubeContent): string {
   return JSON.stringify({
+    category: input.category,
     youtubeUrl: input.youtubeUrl.trim(),
     videoId: input.videoId.trim(),
     description: input.description.trim(),

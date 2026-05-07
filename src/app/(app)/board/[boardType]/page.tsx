@@ -42,7 +42,11 @@ import { AlumniIntro } from "@/components/board/AlumniIntro";
 import { CollegeIntro } from "@/components/board/CollegeIntro";
 import { CurriculumIntro } from "@/components/board/CurriculumIntro";
 import { CouncilIntro } from "@/components/board/CouncilIntro";
+import { NewsIntro } from "@/components/board/NewsIntro";
+import { ResourcesIntro } from "@/components/board/ResourcesIntro";
 import { SeniorIntro } from "@/components/board/SeniorIntro";
+import { StudyIntro } from "@/components/board/StudyIntro";
+import { YoutubeIntro } from "@/components/board/YoutubeIntro";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
 import { addLikedPost, getLikedPosts } from "@/lib/local-state";
 import { cn } from "@/lib/utils";
@@ -52,15 +56,16 @@ import {
   POSTS_PER_PAGE,
   QA_SUBJECTS,
   QA_SUBJECT_STYLE,
-  RESOURCE_CATEGORIES,
   RESOURCE_CATEGORY_STYLE,
   STUDY_SUBJECT_STYLE,
+  YOUTUBE_CATEGORY_STYLE,
   getAlumniCategoryLabel,
   getCareerTrackLabel,
   getChallengeStats,
   getQaSubjectLabel,
   getResourceCategoryLabel,
   getStudySubjectLabel,
+  getYoutubeCategoryLabel,
   incrementLikeCount,
   listPosts,
   parseAlumniContent,
@@ -81,6 +86,8 @@ import {
   type PostStatus,
   type QaSubject,
   type ResourceCategory,
+  type StudySubject,
+  type YoutubeCategory,
 } from "@/lib/board";
 
 const VALID_BOARDS = Object.keys(BOARD_LABEL) as BoardType[];
@@ -167,10 +174,12 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     "news",
   ];
   const canWrite = adminOnlyBoards.includes(boardType) ? isStaff : true;
-  // 자료실 카테고리 / 졸업생 카테고리 / 선배 계열 필터
+  // 자료실 카테고리 / 졸업생 카테고리 / 선배 계열 / 문튜브 카테고리 / 스터디 과목 필터
   const [resourceFilter, setResourceFilter] = useState<"" | ResourceCategory>("");
   const [alumniCategoryFilter, setAlumniCategoryFilter] = useState<"" | AlumniCategory>("");
   const [seniorTrackFilter, setSeniorTrackFilter] = useState<CareerTrack>("science");
+  const [youtubeCategoryFilter, setYoutubeCategoryFilter] = useState<"" | YoutubeCategory>("");
+  const [studySubjectFilter, setStudySubjectFilter] = useState<"" | StudySubject>("");
 
   const [page, setPage] = useState(1);
   const [posts, setPosts] = useState<PostRow[]>([]);
@@ -195,6 +204,8 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     resourceFilter,
     alumniCategoryFilter,
     seniorTrackFilter,
+    youtubeCategoryFilter,
+    studySubjectFilter,
     boardType,
   ]);
 
@@ -202,7 +213,8 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     let active = true;
     setLoading(true);
     // content 안에 JSON 키워드 매칭으로 필터링
-    //  - Q&A 과목 / 자료실 카테고리 / 졸업생 카테고리 / 선배 인터뷰 계열
+    //  - Q&A 과목 / 자료실 카테고리 / 졸업생 카테고리 / 선배 인터뷰 계열 /
+    //    문튜브 카테고리 / 스터디 과목
     let contentLike: string | null = null;
     if (isQa && qaSubjectFilter) {
       contentLike = `%"subject":"${qaSubjectFilter}"%`;
@@ -213,6 +225,10 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     } else if (isSenior) {
       // 선배 인터뷰는 항상 계열로 필터 — 탭이 기본 선택값을 가짐
       contentLike = `%"track":"${seniorTrackFilter}"%`;
+    } else if (isYoutube && youtubeCategoryFilter) {
+      contentLike = `%"category":"${youtubeCategoryFilter}"%`;
+    } else if (isStudy && studySubjectFilter) {
+      contentLike = `%"subject":"${studySubjectFilter}"%`;
     }
 
     listPosts(boardType, page, {
@@ -236,12 +252,16 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     isResources,
     isAlumni,
     isSenior,
+    isYoutube,
+    isStudy,
     supportsStatusFilter,
     statusFilter,
     qaSubjectFilter,
     resourceFilter,
     alumniCategoryFilter,
     seniorTrackFilter,
+    youtubeCategoryFilter,
+    studySubjectFilter,
   ]);
 
   // 챌린지 보드 진입 시 통계 fetch
@@ -282,7 +302,16 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
   }
 
   const totalPages = Math.max(1, Math.ceil(total / POSTS_PER_PAGE));
-  const hasIntro = isCollege || isCurriculum || isCouncil || isAlumni || isSenior;
+  const hasIntro =
+    isCollege ||
+    isCurriculum ||
+    isCouncil ||
+    isAlumni ||
+    isSenior ||
+    isYoutube ||
+    isResources ||
+    isStudy ||
+    isNews;
 
   return (
     <motion.div
@@ -291,7 +320,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
       transition={{ duration: 0.3 }}
       className="mx-auto max-w-screen-lg px-4 py-6"
     >
-      {/* 인트로 (대입정보/교육과정/학생자치회/졸업생/선배인터뷰) */}
+      {/* 인트로 (대입정보/교육과정/학생자치회/졸업생/선배인터뷰/문튜브/자료실/스터디/문태뉴스) */}
       {isCollege && <CollegeIntro />}
       {isCurriculum && <CurriculumIntro />}
       {isCouncil && <CouncilIntro />}
@@ -304,6 +333,19 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
       {isSenior && (
         <SeniorIntro selected={seniorTrackFilter} onSelect={setSeniorTrackFilter} />
       )}
+      {isYoutube && (
+        <YoutubeIntro
+          selected={youtubeCategoryFilter}
+          onSelect={setYoutubeCategoryFilter}
+        />
+      )}
+      {isResources && (
+        <ResourcesIntro selected={resourceFilter} onSelect={setResourceFilter} />
+      )}
+      {isStudy && (
+        <StudyIntro selected={studySubjectFilter} onSelect={setStudySubjectFilter} />
+      )}
+      {isNews && <NewsIntro />}
 
       {/* 헤더 — 인트로가 있으면 압축, 없으면 표준 */}
       <div className={cn("flex items-end justify-between", hasIntro ? "mt-2 mb-3" : "mb-4")}>
@@ -380,41 +422,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
         </div>
       )}
 
-      {/* 자료실 — 카테고리 필터 탭 */}
-      {isResources && (
-        <div className="mb-4 flex flex-wrap gap-1.5">
-          <button
-            type="button"
-            onClick={() => setResourceFilter("")}
-            className={cn(
-              "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
-              resourceFilter === ""
-                ? "border-violet-500 bg-violet-500/10 text-violet-600 dark:text-violet-300"
-                : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
-            )}
-          >
-            전체
-          </button>
-          {RESOURCE_CATEGORIES.map((c) => {
-            const active = resourceFilter === c.value;
-            return (
-              <button
-                key={c.value}
-                type="button"
-                onClick={() => setResourceFilter(c.value)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-xs font-semibold transition ring-1 ring-inset",
-                  active
-                    ? RESOURCE_CATEGORY_STYLE[c.value] + " border-transparent"
-                    : "border-gray-200 bg-white text-gray-500 ring-transparent hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
-                )}
-              >
-                {c.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* 자료실 카테고리 필터는 ResourcesIntro 카드에서 처리 */}
 
       {/* 졸업생 카테고리 필터는 AlumniIntro 카드에서 직접 처리 */}
 
@@ -464,18 +472,11 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
           <Loader2 className="h-6 w-6 animate-spin" />
         </div>
       ) : posts.length === 0 ? (
-        <div className="rounded-xl border border-gray-200 bg-white px-6 py-16 text-center dark:border-white/[0.07] dark:bg-[#16162a]">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            {(supportsStatusFilter && statusFilter)
-              ? "조건에 해당하는 글이 없습니다."
-              : "아직 게시글이 없습니다."}
-          </p>
-          {canWrite && !statusFilter && (
-            <p className="mt-1 text-xs text-gray-400">
-              첫 번째 글을 작성해보세요!
-            </p>
-          )}
-        </div>
+        <EmptyState
+          boardType={boardType}
+          canWrite={canWrite}
+          filtered={(supportsStatusFilter && !!statusFilter) || !!youtubeCategoryFilter || !!studySubjectFilter || !!resourceFilter}
+        />
       ) : isLost ? (
         <LostGrid posts={posts} />
       ) : isMarket ? (
@@ -1382,6 +1383,19 @@ function YoutubeCard({ post }: { post: PostRow }) {
       </div>
 
       <div className="flex flex-1 flex-col gap-1.5 p-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
+              YOUTUBE_CATEGORY_STYLE[info.category],
+            )}
+          >
+            {getYoutubeCategoryLabel(info.category)}
+          </span>
+          <span className="ml-auto text-[10px] text-gray-400 tabular-nums">
+            {formatDate(post.created_at)}
+          </span>
+        </div>
         <p className="line-clamp-2 text-sm font-bold text-gray-900 dark:text-white">
           {post.title}
         </p>
@@ -1421,20 +1435,61 @@ function ResourceList({ posts }: { posts: PostRow[] }) {
   );
 }
 
+/** 첨부파일 확장자별 아이콘 컬러 */
+function fileExtStyle(fileName: string | null): {
+  label: string;
+  bg: string;
+  text: string;
+} {
+  const ext = (fileName ?? "").split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "pdf") {
+    return {
+      label: "PDF",
+      bg: "bg-rose-500/10 dark:bg-rose-500/15",
+      text: "text-rose-500 dark:text-rose-300",
+    };
+  }
+  if (ext === "hwp" || ext === "hwpx") {
+    return {
+      label: "HWP",
+      bg: "bg-blue-500/10 dark:bg-blue-500/15",
+      text: "text-blue-500 dark:text-blue-300",
+    };
+  }
+  return {
+    label: ext ? ext.toUpperCase() : "FILE",
+    bg: "bg-gray-500/10 dark:bg-gray-500/15",
+    text: "text-gray-500 dark:text-gray-300",
+  };
+}
+
 function ResourceRow({ post }: { post: PostRow }) {
   const info = useMemo(() => parseResourceContent(post.content), [post.content]);
   const fresh = isNewPost(post.created_at);
   const hasFile = !!post.file_url;
+  const fileStyle = fileExtStyle(post.file_name);
 
   return (
     <li>
       <Link
         href={`/board/resources/${post.id}`}
-        className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-[0_8px_22px_rgba(124,58,237,0.15)] dark:border-white/[0.07] dark:bg-[#16162a]"
+        className="group flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-[0_8px_22px_rgba(124,58,237,0.15)] dark:border-white/[0.07] dark:bg-[#16162a]"
       >
-        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-violet-500/10 text-violet-500 dark:bg-violet-500/15">
+        {/* 왼쪽: 파일 아이콘 + 확장자 라벨 (PDF=빨강 / HWP=파랑 / 기타=회색) */}
+        <span
+          className={cn(
+            "relative grid h-14 w-14 shrink-0 place-items-center rounded-xl",
+            fileStyle.bg,
+            fileStyle.text,
+          )}
+        >
           <FileText className="h-6 w-6" />
+          <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-md bg-white px-1 text-[8.5px] font-extrabold leading-none ring-1 ring-inset ring-current dark:bg-[#16162a]">
+            {fileStyle.label}
+          </span>
         </span>
+
+        {/* 가운데: 제목 + 카테고리 뱃지 + 설명 */}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span
@@ -1445,47 +1500,47 @@ function ResourceRow({ post }: { post: PostRow }) {
             >
               {getResourceCategoryLabel(info.category)}
             </span>
-            {hasFile && (
-              <span className="inline-flex items-center gap-0.5 rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
-                <Paperclip className="h-2.5 w-2.5" />
-                PDF
-              </span>
-            )}
             {fresh && (
               <span className="inline-flex items-center rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
                 NEW
               </span>
             )}
-            <span className="ml-auto text-[11px] text-gray-400">
-              {formatDate(post.created_at)}
-            </span>
           </div>
           <p className="mt-1.5 line-clamp-1 text-sm font-extrabold text-gray-900 dark:text-white">
             {post.title}
           </p>
           {info.description && (
-            <p className="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
+            <p className="mt-0.5 line-clamp-1 text-xs text-gray-500 dark:text-gray-400">
               {info.description}
             </p>
           )}
-          <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500">
+          <div className="mt-1.5 flex items-center gap-2 text-[11px] text-gray-500">
             <span className="font-medium text-gray-700 dark:text-gray-300">
               {post.author?.nickname ?? "(알수없음)"}
             </span>
             {post.author && (
               <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
             )}
-            <span className="ml-auto flex items-center gap-2 text-gray-400">
-              <span className="flex items-center gap-0.5">
-                <Eye className="h-3 w-3" />
-                {post.view_count}
-              </span>
-              <span className="flex items-center gap-0.5">
-                <MessageSquare className="h-3 w-3" />
-                {post.comment_count}
-              </span>
-            </span>
           </div>
+        </div>
+
+        {/* 오른쪽: 다운로드 수(view_count 활용) + 날짜 + 다운로드 CTA */}
+        <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+            DL
+          </span>
+          <span className="text-base font-extrabold tabular-nums text-violet-600 dark:text-violet-300">
+            {post.view_count}
+          </span>
+          <span className="text-[10px] tabular-nums text-gray-400">
+            {formatDate(post.created_at)}
+          </span>
+          {hasFile && (
+            <span className="mt-1 inline-flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1 text-[10px] font-bold text-white shadow-sm transition group-hover:bg-violet-700">
+              <Paperclip className="h-2.5 w-2.5" />
+              다운로드
+            </span>
+          )}
         </div>
       </Link>
     </li>
@@ -1510,17 +1565,19 @@ function StudyCard({ post }: { post: PostRow }) {
   // 댓글 수 = 모집된 인원 수 비슷한 의미로 활용 (작성자 + 댓글 단 사람)
   // 단순화: comment_count + 1 (작성자) 를 가입 의사 표현 인원으로 가정. 상한은 maxMembers.
   const joined = Math.min(info.maxMembers, post.comment_count + 1);
+  const full = !closed && joined >= info.maxMembers;
 
   return (
     <Link
       href={`/board/study/${post.id}`}
       className={cn(
-        "group flex h-full flex-col rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(124,58,237,0.15)] dark:bg-[#16162a]",
+        "group relative flex h-full flex-col rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(16,185,129,0.18)] dark:bg-[#16162a]",
         closed
-          ? "border-gray-200 opacity-80 dark:border-white/[0.05]"
+          ? "border-gray-200 opacity-60 dark:border-white/[0.05]"
           : "border-gray-200 dark:border-white/[0.07]",
       )}
     >
+      {/* 카드 상단: 과목 뱃지 */}
       <div className="flex flex-wrap items-center gap-1.5">
         <span
           className={cn(
@@ -1530,48 +1587,48 @@ function StudyCard({ post }: { post: PostRow }) {
         >
           {getStudySubjectLabel(info.subject)}
         </span>
-        <span
-          className={cn(
-            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
-            closed
-              ? "bg-gray-500/15 text-gray-500 ring-gray-500/30 dark:text-gray-300"
-              : "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300",
-          )}
-        >
-          {closed ? "마감" : "모집중"}
-        </span>
         {fresh && !closed && (
           <span className="inline-flex items-center rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
             NEW
           </span>
         )}
+        <span className="ml-auto text-[10px] tabular-nums text-gray-400">
+          {formatDate(post.created_at)}
+        </span>
       </div>
 
       <p className="mt-2 line-clamp-1 text-base font-extrabold text-gray-900 dark:text-white">
         {post.title}
       </p>
 
+      {/* 정보 행: 인원 / 스케줄 / 장소 */}
       <div className="mt-2 grid gap-1 text-[11px] text-gray-500 dark:text-gray-400">
         <span className="flex items-center gap-1.5">
-          <Users className="h-3.5 w-3.5 text-violet-500" />
-          <span className="font-semibold text-gray-700 dark:text-gray-200 tabular-nums">
-            {joined}/{info.maxMembers}명 모집
+          <Users className="h-3.5 w-3.5 text-emerald-500" />
+          <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">
+            {joined}/{info.maxMembers}명
           </span>
+          {full && (
+            <span className="ml-1 rounded-md bg-rose-500/15 px-1.5 py-0.5 text-[9px] font-bold text-rose-600 ring-1 ring-inset ring-rose-500/30 dark:text-rose-300">
+              정원 마감
+            </span>
+          )}
         </span>
         {info.schedule && (
           <span className="flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5 text-violet-500" />
+            <Clock className="h-3.5 w-3.5 text-emerald-500" />
             <span className="line-clamp-1">{info.schedule}</span>
           </span>
         )}
         {info.location && (
           <span className="flex items-center gap-1.5">
-            <MapPin className="h-3.5 w-3.5 text-violet-500" />
+            <MapPin className="h-3.5 w-3.5 text-emerald-500" />
             <span className="line-clamp-1">{info.location}</span>
           </span>
         )}
       </div>
 
+      {/* 하단: 작성자 + 상태 뱃지 */}
       <div className="mt-auto flex items-center justify-between pt-3 text-[11px] text-gray-500">
         <span className="flex items-center gap-1.5">
           <span className="font-medium text-gray-700 dark:text-gray-300">
@@ -1581,17 +1638,24 @@ function StudyCard({ post }: { post: PostRow }) {
             <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
           )}
         </span>
-        <span className="flex items-center gap-2 text-gray-400">
-          <span className="flex items-center gap-0.5">
-            <Eye className="h-3 w-3" />
-            {post.view_count}
-          </span>
-          <span className="flex items-center gap-0.5">
-            <MessageSquare className="h-3 w-3" />
-            {post.comment_count}
-          </span>
+        <span
+          className={cn(
+            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
+            closed
+              ? "bg-gray-500/15 text-gray-500 ring-gray-500/30 dark:text-gray-300"
+              : "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300",
+          )}
+        >
+          {closed ? "⬜ 마감" : "🟢 모집중"}
         </span>
       </div>
+
+      {/* 마감 오버레이 — 카드 위 대각선 워터마크 */}
+      {closed && (
+        <span className="pointer-events-none absolute right-3 top-3 rotate-6 rounded-md bg-gray-900/85 px-2 py-1 text-[10px] font-extrabold text-white shadow-lg ring-1 ring-white/10">
+          마감
+        </span>
+      )}
     </Link>
   );
 }
@@ -1934,5 +1998,64 @@ function SeniorCard({ post }: { post: PostRow }) {
         </span>
       </div>
     </Link>
+  );
+}
+
+// ── 빈 상태 — 게시판별 아이콘/문구 ─────────────────────────
+function EmptyState({
+  boardType,
+  canWrite,
+  filtered,
+}: {
+  boardType: BoardType;
+  canWrite: boolean;
+  filtered: boolean;
+}) {
+  // 게시판별 아이콘과 안내 문구
+  const meta: Partial<
+    Record<BoardType, { Icon: typeof PlayCircle; message: string; hint?: string }>
+  > = {
+    youtube: {
+      Icon: PlayCircle,
+      message: "아직 등록된 영상이 없습니다",
+      hint: "교사 선생님이 추천 영상을 곧 올려드릴 거예요.",
+    },
+    resources: {
+      Icon: FileText,
+      message: "아직 등록된 자료가 없습니다",
+      hint: "기출문제·학습자료·양식이 곧 업로드될 예정이에요.",
+    },
+    study: {
+      Icon: Users,
+      message: "모집 중인 스터디가 없습니다",
+      hint: canWrite ? "첫 번째 스터디를 모집해보세요!" : undefined,
+    },
+    news: {
+      Icon: Newspaper,
+      message: "아직 등록된 뉴스가 없습니다",
+      hint: "학교 소식이 올라오면 이곳에 표시돼요.",
+    },
+  };
+  const m = meta[boardType];
+  const Icon = m?.Icon ?? FileText;
+  const message = filtered
+    ? "조건에 해당하는 콘텐츠가 없습니다"
+    : m?.message ?? "아직 게시글이 없습니다";
+
+  return (
+    <div className="flex flex-col items-center justify-center rounded-xl border border-gray-200 bg-white px-6 py-16 text-center dark:border-white/[0.07] dark:bg-[#16162a]">
+      <span className="mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-violet-500/10 text-violet-500 dark:text-violet-300">
+        <Icon className="h-7 w-7" />
+      </span>
+      <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+        {message}
+      </p>
+      {!filtered && m?.hint && (
+        <p className="mt-1 text-xs text-gray-400">{m.hint}</p>
+      )}
+      {!filtered && canWrite && !m?.hint && (
+        <p className="mt-1 text-xs text-gray-400">첫 번째 글을 작성해보세요!</p>
+      )}
+    </div>
   );
 }

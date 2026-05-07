@@ -60,7 +60,7 @@ export default function LoginPage() {
         const email = session.user.email ?? "";
         const inviteCode =
           typeof window !== "undefined"
-            ? sessionStorage.getItem(SS_INVITE_CODE)
+            ? sessionStorage.getItem(SS_INVITE_CODE)?.toLowerCase() ?? null
             : null;
 
         // 초대 코드 사용자: 도메인 체크 건너뜀 + used_count 증가
@@ -245,6 +245,15 @@ export default function LoginPage() {
   );
 }
 
+// 초대 코드: 소문자 1개 + 숫자 4개 (총 5자, 예: a2957)
+const CODE_LEN = 5;
+const LETTER_RE = /[a-zA-Z]/;
+const DIGIT_RE = /[0-9]/;
+
+function isValidPos(idx: number, ch: string): boolean {
+  return idx === 0 ? LETTER_RE.test(ch) : DIGIT_RE.test(ch);
+}
+
 function InviteCodeModal({
   open,
   onClose,
@@ -254,7 +263,7 @@ function InviteCodeModal({
   onClose: () => void;
   onError: (msg: string) => void;
 }) {
-  const [digits, setDigits] = useState<string[]>(["", "", "", "", "", ""]);
+  const [chars, setChars] = useState<string[]>(["", "", "", "", ""]);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [lockoutRemain, setLockoutRemain] = useState(0);
@@ -263,7 +272,7 @@ function InviteCodeModal({
   // 모달 열릴 때마다 상태 초기화 + 잠금 시간 갱신
   useEffect(() => {
     if (!open) return;
-    setDigits(["", "", "", "", "", ""]);
+    setChars(["", "", "", "", ""]);
     setLocalError(null);
     setLockoutRemain(readLockoutMs());
     setTimeout(() => inputsRef.current[0]?.focus(), 60);
@@ -281,17 +290,19 @@ function InviteCodeModal({
   }, [open, lockoutRemain]);
 
   function handleChange(idx: number, raw: string) {
-    const v = raw.replace(/\D/g, "").slice(0, 1);
-    setDigits((prev) => {
+    // 0번 칸은 소문자 1개, 그 외는 숫자 1개. 입력은 항상 소문자로 정규화.
+    const cleaned = raw.toLowerCase();
+    const ch = cleaned.split("").find((c) => isValidPos(idx, c)) ?? "";
+    setChars((prev) => {
       const next = [...prev];
-      next[idx] = v;
+      next[idx] = ch;
       return next;
     });
-    if (v && idx < 5) inputsRef.current[idx + 1]?.focus();
+    if (ch && idx < CODE_LEN - 1) inputsRef.current[idx + 1]?.focus();
   }
 
   function handleKeyDown(idx: number, e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Backspace" && !digits[idx] && idx > 0) {
+    if (e.key === "Backspace" && !chars[idx] && idx > 0) {
       inputsRef.current[idx - 1]?.focus();
     }
     if (e.key === "Enter") {
@@ -300,20 +311,28 @@ function InviteCodeModal({
   }
 
   function handlePaste(e: React.ClipboardEvent<HTMLInputElement>) {
-    const text = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
-    if (!text) return;
+    const raw = e.clipboardData
+      .getData("text")
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "")
+      .slice(0, CODE_LEN);
+    if (!raw) return;
     e.preventDefault();
-    const next = ["", "", "", "", "", ""];
-    for (let i = 0; i < text.length; i++) next[i] = text[i];
-    setDigits(next);
-    const focusIdx = Math.min(text.length, 5);
+    const next = ["", "", "", "", ""];
+    for (let i = 0; i < raw.length; i++) {
+      if (isValidPos(i, raw[i])) next[i] = raw[i];
+    }
+    setChars(next);
+    const filled = next.filter(Boolean).length;
+    const focusIdx = Math.min(filled, CODE_LEN - 1);
     inputsRef.current[focusIdx]?.focus();
   }
 
   async function handleSubmit() {
-    const code = digits.join("").trim();
-    if (code.length !== 6) {
-      setLocalError("6자리 숫자를 모두 입력해주세요.");
+    // 대소문자 구분 없이 매칭하기 위해 소문자로 정규화
+    const code = chars.join("").trim().toLowerCase();
+    if (code.length !== CODE_LEN || !/^[a-z][0-9]{4}$/.test(code)) {
+      setLocalError("형식이 올바르지 않습니다. (영문 1자 + 숫자 4자)");
       return;
     }
 
@@ -427,26 +446,29 @@ function InviteCodeModal({
             </div>
             <h2 className="text-lg font-bold text-white">초대 코드를 입력하세요</h2>
             <p className="mt-1 text-xs leading-relaxed text-white/60">
-              학부모/졸업생용 6자리 숫자 코드를 입력하면 Google 계정으로 가입할 수 있어요.
+              학부모/졸업생용 5자리 코드를 입력하세요. (영문 1자 + 숫자 4자, 예: a2957)
             </p>
 
-            {/* 6자리 입력 */}
-            <div className="mt-5 flex items-center justify-between gap-2">
-              {digits.map((d, i) => (
+            {/* 5자리 입력: 영문 1 + 숫자 4 */}
+            <div className="mt-5 flex items-center justify-center gap-2">
+              {chars.map((c, i) => (
                 <input
                   key={i}
                   ref={(el) => {
                     inputsRef.current[i] = el;
                   }}
                   type="text"
-                  inputMode="numeric"
+                  inputMode={i === 0 ? "text" : "numeric"}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   maxLength={1}
-                  value={d}
+                  value={c}
                   disabled={submitting || locked}
                   onChange={(e) => handleChange(i, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(i, e)}
                   onPaste={handlePaste}
-                  className="h-12 w-11 rounded-xl border border-white/10 bg-white/5 text-center text-lg font-bold text-white focus:border-violet-500 focus:outline-none disabled:opacity-40"
+                  className="h-12 w-11 rounded-xl border border-white/10 bg-white/5 text-center text-lg font-bold lowercase text-white focus:border-violet-500 focus:outline-none disabled:opacity-40"
                 />
               ))}
             </div>

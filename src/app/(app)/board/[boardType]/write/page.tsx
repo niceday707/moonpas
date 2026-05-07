@@ -21,8 +21,10 @@ import {
 } from "lucide-react";
 import { AuthGate } from "@/components/auth/AuthGate";
 import {
+  ALUMNI_CATEGORIES,
   ALUMNI_YEARS,
   BOARD_LABEL,
+  CAREER_TRACKS,
   MARKET_CONDITION_LABEL,
   QA_SUBJECTS,
   RESOURCE_CATEGORIES,
@@ -49,7 +51,9 @@ import {
   stringifyStudyContent,
   stringifyYoutubeContent,
   updatePost,
+  type AlumniCategory,
   type BoardType,
+  type CareerTrack,
   type MarketCondition,
   type QaSubject,
   type ResourceCategory,
@@ -115,11 +119,16 @@ function WriteInner() {
   const [studyMaxMembers, setStudyMaxMembers] = useState<number>(4);
   const [studySchedule, setStudySchedule] = useState("");
   const [studyLocation, setStudyLocation] = useState("");
-  // 졸업생 전용
+  // 졸업생(선배에게 물어봐) 전용
+  const [alumniCategory, setAlumniCategory] =
+    useState<AlumniCategory>("college-life");
+  const [alumniUniversity, setAlumniUniversity] = useState("");
+  const [alumniMajor, setAlumniMajor] = useState("");
   const [alumniYear, setAlumniYear] = useState<number>(
     ALUMNI_YEARS[0] ?? new Date().getFullYear(),
   );
-  // 선배의 한마디 전용
+  // 진로 탐색 로드맵(선배 인터뷰) 전용
+  const [seniorTrack, setSeniorTrack] = useState<CareerTrack>("science");
   const [seniorUniversity, setSeniorUniversity] = useState("");
   const [seniorMajor, setSeniorMajor] = useState("");
   const [seniorYear, setSeniorYear] = useState<number>(
@@ -187,10 +196,14 @@ function WriteInner() {
         setContent(parsed.description);
       } else if (post.board_type === "alumni") {
         const parsed = parseAlumniContent(post.content);
+        setAlumniCategory(parsed.category);
+        setAlumniUniversity(parsed.university);
+        setAlumniMajor(parsed.major);
         setAlumniYear(parsed.graduationYear);
         setContent(parsed.description);
       } else if (post.board_type === "senior") {
         const parsed = parseSeniorContent(post.content);
+        setSeniorTrack(parsed.track);
         setSeniorUniversity(parsed.university);
         setSeniorMajor(parsed.major);
         setSeniorYear(parsed.graduationYear);
@@ -466,11 +479,15 @@ function WriteInner() {
         })
       : isAlumni
       ? stringifyAlumniContent({
+          category: alumniCategory,
+          university: alumniUniversity,
+          major: alumniMajor,
           graduationYear: alumniYear,
           description: content,
         })
       : isSenior
       ? stringifySeniorContent({
+          track: seniorTrack,
           university: seniorUniversity,
           major: seniorMajor,
           graduationYear: seniorYear,
@@ -795,28 +812,121 @@ function WriteInner() {
         )}
 
         {isAlumni && (
-          <div>
-            <label className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
-              <GraduationCap className="h-3 w-3" />
-              졸업연도
-            </label>
-            <select
-              value={alumniYear}
-              onChange={(e) => setAlumniYear(Number(e.target.value))}
-              disabled={submitting}
-              className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
-            >
-              {ALUMNI_YEARS.map((y) => (
-                <option key={y} value={y}>
-                  {y}년 졸업
-                </option>
-              ))}
-            </select>
+          <div className="space-y-3">
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                카테고리 (필수)
+              </label>
+              <div className="mt-1.5 grid grid-cols-2 gap-2">
+                {ALUMNI_CATEGORIES.map((c) => {
+                  const active = alumniCategory === c.value;
+                  return (
+                    <button
+                      key={c.value}
+                      type="button"
+                      onClick={() => setAlumniCategory(c.value)}
+                      disabled={submitting}
+                      className={cn(
+                        "flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition disabled:opacity-50",
+                        active
+                          ? "border-violet-500 bg-violet-500/15 text-violet-700 dark:text-violet-200"
+                          : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+                      )}
+                    >
+                      <span className="text-lg leading-none">{c.emoji}</span>
+                      <span className="text-[12px] leading-tight">{c.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1.5 text-[10px] text-gray-400">
+                카테고리는 목록에서 뱃지로 표시되고, 후배들이 주제별로 글을
+                찾아볼 수 있게 도와줘요.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                  대학명 (선택)
+                </label>
+                <input
+                  type="text"
+                  value={alumniUniversity}
+                  onChange={(e) => setAlumniUniversity(e.target.value)}
+                  placeholder="예) 서울대학교"
+                  maxLength={40}
+                  disabled={submitting}
+                  className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                  전공 (선택)
+                </label>
+                <input
+                  type="text"
+                  value={alumniMajor}
+                  onChange={(e) => setAlumniMajor(e.target.value)}
+                  placeholder="예) 컴퓨터공학"
+                  maxLength={40}
+                  disabled={submitting}
+                  className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                  <GraduationCap className="h-3 w-3" />
+                  졸업연도
+                </label>
+                <select
+                  value={alumniYear}
+                  onChange={(e) => setAlumniYear(Number(e.target.value))}
+                  disabled={submitting}
+                  className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+                >
+                  {ALUMNI_YEARS.map((y) => (
+                    <option key={y} value={y}>
+                      {y}년 졸업
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
         )}
 
         {isSenior && (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-3">
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                계열 (필수)
+              </label>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {CAREER_TRACKS.map((t) => {
+                  const active = seniorTrack === t.value;
+                  return (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => setSeniorTrack(t.value)}
+                      disabled={submitting}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50",
+                        active
+                          ? "border-violet-500 bg-violet-500/15 text-violet-700 dark:text-violet-200"
+                          : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+                      )}
+                    >
+                      <span className="text-sm leading-none">{t.emoji}</span>
+                      <span>{t.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
                 대학명
@@ -876,6 +986,7 @@ function WriteInner() {
                 disabled={submitting}
                 className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
               />
+            </div>
             </div>
           </div>
         )}

@@ -38,14 +38,15 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { AuthGate } from "@/components/auth/AuthGate";
+import { AlumniIntro } from "@/components/board/AlumniIntro";
 import { CollegeIntro } from "@/components/board/CollegeIntro";
 import { CurriculumIntro } from "@/components/board/CurriculumIntro";
 import { CouncilIntro } from "@/components/board/CouncilIntro";
+import { SeniorIntro } from "@/components/board/SeniorIntro";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
 import { addLikedPost, getLikedPosts } from "@/lib/local-state";
 import { cn } from "@/lib/utils";
 import {
-  ALUMNI_YEARS,
   BOARD_LABEL,
   MARKET_CONDITION_LABEL,
   POSTS_PER_PAGE,
@@ -54,6 +55,8 @@ import {
   RESOURCE_CATEGORIES,
   RESOURCE_CATEGORY_STYLE,
   STUDY_SUBJECT_STYLE,
+  getAlumniCategoryLabel,
+  getCareerTrackLabel,
   getChallengeStats,
   getQaSubjectLabel,
   getResourceCategoryLabel,
@@ -70,7 +73,9 @@ import {
   parseStudyContent,
   parseYoutubeContent,
   youtubeThumbUrl,
+  type AlumniCategory,
   type BoardType,
+  type CareerTrack,
   type ChallengeStats,
   type PostRow,
   type PostStatus,
@@ -162,9 +167,10 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     "news",
   ];
   const canWrite = adminOnlyBoards.includes(boardType) ? isStaff : true;
-  // 자료실 카테고리 / 졸업생 연도 필터
+  // 자료실 카테고리 / 졸업생 카테고리 / 선배 계열 필터
   const [resourceFilter, setResourceFilter] = useState<"" | ResourceCategory>("");
-  const [alumniYearFilter, setAlumniYearFilter] = useState<"" | number>("");
+  const [alumniCategoryFilter, setAlumniCategoryFilter] = useState<"" | AlumniCategory>("");
+  const [seniorTrackFilter, setSeniorTrackFilter] = useState<CareerTrack>("science");
 
   const [page, setPage] = useState(1);
   const [posts, setPosts] = useState<PostRow[]>([]);
@@ -183,19 +189,30 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
 
   useEffect(() => {
     setPage(1);
-  }, [statusFilter, qaSubjectFilter, resourceFilter, alumniYearFilter, boardType]);
+  }, [
+    statusFilter,
+    qaSubjectFilter,
+    resourceFilter,
+    alumniCategoryFilter,
+    seniorTrackFilter,
+    boardType,
+  ]);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    // content 안에 JSON 키워드 매칭으로 필터링 — Q&A 과목 / 자료실 카테고리 / 졸업생 연도
+    // content 안에 JSON 키워드 매칭으로 필터링
+    //  - Q&A 과목 / 자료실 카테고리 / 졸업생 카테고리 / 선배 인터뷰 계열
     let contentLike: string | null = null;
     if (isQa && qaSubjectFilter) {
       contentLike = `%"subject":"${qaSubjectFilter}"%`;
     } else if (isResources && resourceFilter) {
       contentLike = `%"category":"${resourceFilter}"%`;
-    } else if (isAlumni && alumniYearFilter !== "") {
-      contentLike = `%"graduationYear":${alumniYearFilter}%`;
+    } else if (isAlumni && alumniCategoryFilter) {
+      contentLike = `%"category":"${alumniCategoryFilter}"%`;
+    } else if (isSenior) {
+      // 선배 인터뷰는 항상 계열로 필터 — 탭이 기본 선택값을 가짐
+      contentLike = `%"track":"${seniorTrackFilter}"%`;
     }
 
     listPosts(boardType, page, {
@@ -218,11 +235,13 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     isQa,
     isResources,
     isAlumni,
+    isSenior,
     supportsStatusFilter,
     statusFilter,
     qaSubjectFilter,
     resourceFilter,
-    alumniYearFilter,
+    alumniCategoryFilter,
+    seniorTrackFilter,
   ]);
 
   // 챌린지 보드 진입 시 통계 fetch
@@ -263,7 +282,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
   }
 
   const totalPages = Math.max(1, Math.ceil(total / POSTS_PER_PAGE));
-  const hasIntro = isCollege || isCurriculum || isCouncil;
+  const hasIntro = isCollege || isCurriculum || isCouncil || isAlumni || isSenior;
 
   return (
     <motion.div
@@ -272,10 +291,19 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
       transition={{ duration: 0.3 }}
       className="mx-auto max-w-screen-lg px-4 py-6"
     >
-      {/* 인트로 (대입정보/교육과정/학생자치회) */}
+      {/* 인트로 (대입정보/교육과정/학생자치회/졸업생/선배인터뷰) */}
       {isCollege && <CollegeIntro />}
       {isCurriculum && <CurriculumIntro />}
       {isCouncil && <CouncilIntro />}
+      {isAlumni && (
+        <AlumniIntro
+          selected={alumniCategoryFilter}
+          onSelect={setAlumniCategoryFilter}
+        />
+      )}
+      {isSenior && (
+        <SeniorIntro selected={seniorTrackFilter} onSelect={setSeniorTrackFilter} />
+      )}
 
       {/* 헤더 — 인트로가 있으면 압축, 없으면 표준 */}
       <div className={cn("flex items-end justify-between", hasIntro ? "mt-2 mb-3" : "mb-4")}>
@@ -388,41 +416,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
         </div>
       )}
 
-      {/* 졸업생 — 연도별 필터 */}
-      {isAlumni && (
-        <div className="mb-4 flex flex-wrap gap-1.5">
-          <button
-            type="button"
-            onClick={() => setAlumniYearFilter("")}
-            className={cn(
-              "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
-              alumniYearFilter === ""
-                ? "border-violet-500 bg-violet-500/10 text-violet-600 dark:text-violet-300"
-                : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
-            )}
-          >
-            전체
-          </button>
-          {ALUMNI_YEARS.map((y) => {
-            const active = alumniYearFilter === y;
-            return (
-              <button
-                key={y}
-                type="button"
-                onClick={() => setAlumniYearFilter(y)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
-                  active
-                    ? "border-amber-400 bg-amber-500/10 text-amber-600 dark:text-amber-300"
-                    : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
-                )}
-              >
-                {y}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* 졸업생 카테고리 필터는 AlumniIntro 카드에서 직접 처리 */}
 
       {/* 상태 필터 (lost / market / study) */}
       {supportsStatusFilter && (
@@ -1766,21 +1760,50 @@ function AlumniList({ posts }: { posts: PostRow[] }) {
   );
 }
 
+/** 졸업생 카테고리별 색상 */
+const ALUMNI_CATEGORY_STYLE: Record<string, string> = {
+  "college-life":
+    "bg-violet-500/15 text-violet-600 ring-violet-500/30 dark:text-violet-300",
+  "why-this-major":
+    "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300",
+  "admission-tips":
+    "bg-amber-500/15 text-amber-600 ring-amber-500/30 dark:text-amber-300",
+  "looking-back":
+    "bg-cyan-500/15 text-cyan-600 ring-cyan-500/30 dark:text-cyan-300",
+};
+
 function AlumniRow({ post }: { post: PostRow }) {
   const info = useMemo(() => parseAlumniContent(post.content), [post.content]);
   const fresh = isNewPost(post.created_at);
   const preview = previewText(info.description, 140);
+  const isAlumniRole = post.author?.role === "alumni";
+  const catStyle =
+    ALUMNI_CATEGORY_STYLE[info.category] ?? ALUMNI_CATEGORY_STYLE["college-life"];
 
   return (
     <li>
       <Link
         href={`/board/alumni/${post.id}`}
-        className="block rounded-xl border border-gray-200 bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-[0_8px_22px_rgba(245,158,11,0.18)] dark:border-white/[0.07] dark:bg-[#16162a]"
+        className="block rounded-xl border border-gray-200 bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-[0_8px_22px_rgba(124,58,237,0.18)] dark:border-white/[0.07] dark:bg-[#16162a]"
       >
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600 ring-1 ring-inset ring-amber-500/30 dark:text-amber-300">
-            <GraduationCap className="h-3 w-3" />
-            {info.graduationYear} 졸업
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
+              catStyle,
+            )}
+          >
+            {getAlumniCategoryLabel(info.category)}
+          </span>
+          {(info.university || info.major) && (
+            <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">
+              {info.university}
+              {info.university && info.major && " · "}
+              {info.major}
+            </span>
+          )}
+          <span className="text-[11px] text-gray-400">
+            {info.graduationYear}년 졸업
           </span>
           {fresh && (
             <span className="inline-flex items-center rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
@@ -1805,6 +1828,12 @@ function AlumniRow({ post }: { post: PostRow }) {
           </span>
           {post.author && (
             <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
+          )}
+          {isAlumniRole && (
+            <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-600 ring-1 ring-inset ring-amber-500/30 dark:text-amber-300">
+              <GraduationCap className="h-2.5 w-2.5" />
+              졸업생 인증
+            </span>
           )}
           <span className="ml-auto flex items-center gap-2 text-gray-400">
             <span className="flex items-center gap-0.5">
@@ -1840,10 +1869,10 @@ function SeniorCard({ post }: { post: PostRow }) {
   return (
     <Link
       href={`/board/senior/${post.id}`}
-      className="group flex h-full flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(124,58,237,0.18)] dark:border-white/[0.07] dark:bg-[#16162a]"
+      className="group flex h-full flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(16,185,129,0.18)] dark:border-white/[0.07] dark:bg-[#16162a]"
     >
       <div className="flex items-start gap-3">
-        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-500 text-white shadow-md">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-cyan-500 text-white shadow-md">
           <School className="h-6 w-6" />
         </span>
         <div className="min-w-0 flex-1">
@@ -1857,6 +1886,12 @@ function SeniorCard({ post }: { post: PostRow }) {
         <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600 ring-1 ring-inset ring-amber-500/30 dark:text-amber-300">
           <GraduationCap className="h-3 w-3" />
           {info.graduationYear}
+        </span>
+      </div>
+
+      <div className="-mt-1 flex flex-wrap items-center gap-1.5">
+        <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-600 ring-1 ring-inset ring-emerald-500/30 dark:text-emerald-300">
+          {getCareerTrackLabel(info.track)} 계열
         </span>
       </div>
 

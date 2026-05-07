@@ -908,7 +908,8 @@ export function stringifyStudyContent(input: StudyContent): string {
 }
 
 // ─────────────────────────────────────────────────────────
-// 졸업생 — content 안에 { graduationYear, description } JSON
+// 졸업생 — "선배에게 물어봐" content JSON:
+//   { category, university, major, graduationYear, description }
 // ─────────────────────────────────────────────────────────
 
 /** 등록 가능한 졸업연도 후보 (최신 순) */
@@ -921,10 +922,40 @@ export const ALUMNI_YEARS: number[] = (() => {
   return arr;
 })();
 
+/** 선배에게 물어봐 카테고리 (1:1 멘토 매칭은 Coming Soon 이라 글쓰기에는 노출하지 않음) */
+export type AlumniCategory =
+  | "college-life" // 대학 생활 리얼 후기
+  | "why-this-major" // 이 과를 선택한 이유
+  | "admission-tips" // 입시 꿀팁 모음
+  | "looking-back"; // 학교 밖에서 본 문태고
+
+export const ALUMNI_CATEGORIES: { value: AlumniCategory; label: string; emoji: string }[] = [
+  { value: "college-life", label: "대학 생활 리얼 후기", emoji: "🏫" },
+  { value: "why-this-major", label: "이 과를 선택한 이유", emoji: "📚" },
+  { value: "admission-tips", label: "입시 꿀팁 모음", emoji: "💡" },
+  { value: "looking-back", label: "학교 밖에서 본 문태고", emoji: "🔙" },
+];
+
+export function getAlumniCategoryLabel(value: AlumniCategory | string): string {
+  return ALUMNI_CATEGORIES.find((c) => c.value === value)?.label ?? "기타";
+}
+
 export type AlumniContent = {
+  category: AlumniCategory;
+  university: string;
+  major: string;
   graduationYear: number;
   description: string;
 };
+
+function isAlumniCategory(v: unknown): v is AlumniCategory {
+  return (
+    v === "college-life" ||
+    v === "why-this-major" ||
+    v === "admission-tips" ||
+    v === "looking-back"
+  );
+}
 
 export function parseAlumniContent(content: string): AlumniContent {
   try {
@@ -935,17 +966,32 @@ export function parseAlumniContent(content: string): AlumniContent {
       "description" in obj &&
       typeof (obj as { description: unknown }).description === "string"
     ) {
-      const o = obj as { graduationYear?: unknown; description: string };
+      const o = obj as {
+        category?: unknown;
+        university?: unknown;
+        major?: unknown;
+        graduationYear?: unknown;
+        description: string;
+      };
       const y =
         typeof o.graduationYear === "number" && Number.isFinite(o.graduationYear)
           ? Math.floor(o.graduationYear)
           : ALUMNI_YEARS[0] ?? new Date().getFullYear();
-      return { graduationYear: y, description: o.description };
+      return {
+        category: isAlumniCategory(o.category) ? o.category : "college-life",
+        university: typeof o.university === "string" ? o.university : "",
+        major: typeof o.major === "string" ? o.major : "",
+        graduationYear: y,
+        description: o.description,
+      };
     }
   } catch {
     // 일반 텍스트
   }
   return {
+    category: "college-life",
+    university: "",
+    major: "",
     graduationYear: ALUMNI_YEARS[0] ?? new Date().getFullYear(),
     description: content,
   };
@@ -953,16 +999,51 @@ export function parseAlumniContent(content: string): AlumniContent {
 
 export function stringifyAlumniContent(input: AlumniContent): string {
   return JSON.stringify({
+    category: input.category,
+    university: input.university.trim(),
+    major: input.major.trim(),
     graduationYear: input.graduationYear,
     description: input.description.trim(),
   });
 }
 
 // ─────────────────────────────────────────────────────────
-// 선배의 한마디 — content 안에 { university, major, graduationYear, summary, review } JSON
+// 진로 탐색 로드맵 — content 안에
+//   { track, university, major, graduationYear, summary, review } JSON
 // ─────────────────────────────────────────────────────────
 
+/** 5개 진로 계열 */
+export type CareerTrack =
+  | "science" // 이공계
+  | "humanities" // 인문계
+  | "social" // 사회계
+  | "arts" // 예체능
+  | "medical"; // 의약계
+
+export const CAREER_TRACKS: { value: CareerTrack; label: string; emoji: string }[] = [
+  { value: "science", label: "이공계", emoji: "🔬" },
+  { value: "humanities", label: "인문계", emoji: "📖" },
+  { value: "social", label: "사회계", emoji: "🏛" },
+  { value: "arts", label: "예체능", emoji: "🎨" },
+  { value: "medical", label: "의약계", emoji: "🏥" },
+];
+
+export function getCareerTrackLabel(value: CareerTrack | string): string {
+  return CAREER_TRACKS.find((t) => t.value === value)?.label ?? "기타";
+}
+
+function isCareerTrack(v: unknown): v is CareerTrack {
+  return (
+    v === "science" ||
+    v === "humanities" ||
+    v === "social" ||
+    v === "arts" ||
+    v === "medical"
+  );
+}
+
 export type SeniorContent = {
+  track: CareerTrack;
   university: string;
   major: string;
   graduationYear: number;
@@ -982,6 +1063,7 @@ export function parseSeniorContent(content: string): SeniorContent {
       typeof (obj as { review: unknown }).review === "string"
     ) {
       const o = obj as {
+        track?: unknown;
         university?: unknown;
         major?: unknown;
         graduationYear?: unknown;
@@ -993,6 +1075,7 @@ export function parseSeniorContent(content: string): SeniorContent {
           ? Math.floor(o.graduationYear)
           : ALUMNI_YEARS[0] ?? new Date().getFullYear();
       return {
+        track: isCareerTrack(o.track) ? o.track : "science",
         university: typeof o.university === "string" ? o.university : "",
         major: typeof o.major === "string" ? o.major : "",
         graduationYear: y,
@@ -1004,6 +1087,7 @@ export function parseSeniorContent(content: string): SeniorContent {
     // 일반 텍스트
   }
   return {
+    track: "science",
     university: "",
     major: "",
     graduationYear: ALUMNI_YEARS[0] ?? new Date().getFullYear(),
@@ -1014,6 +1098,7 @@ export function parseSeniorContent(content: string): SeniorContent {
 
 export function stringifySeniorContent(input: SeniorContent): string {
   return JSON.stringify({
+    track: input.track,
     university: input.university.trim(),
     major: input.major.trim(),
     graduationYear: input.graduationYear,

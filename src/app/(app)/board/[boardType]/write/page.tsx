@@ -18,13 +18,20 @@ import {
 import { AuthGate } from "@/components/auth/AuthGate";
 import {
   BOARD_LABEL,
+  MARKET_CONDITION_LABEL,
   createPost,
   getPost,
+  parseIssueContent,
   parseLostContent,
+  parseMarketContent,
+  stringifyIssueContent,
   stringifyLostContent,
+  stringifyMarketContent,
   updatePost,
   type BoardType,
+  type MarketCondition,
 } from "@/lib/board";
+import { cn } from "@/lib/utils";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
 import {
   formatFileSize,
@@ -68,6 +75,11 @@ function WriteInner() {
   // 분실물 전용 필드 — content 에 JSON 으로 합쳐 저장
   const [lostLocation, setLostLocation] = useState("");
   const [lostDate, setLostDate] = useState("");
+  // 나눔장터 전용
+  const [marketCondition, setMarketCondition] = useState<MarketCondition>("good");
+  // 이슈토론 전용
+  const [optionA, setOptionA] = useState("찬성");
+  const [optionB, setOptionB] = useState("반대");
   // 이미지 상태 — 새로 고른 파일은 imageFile, 미리보기는 imagePreview, 수정 모드 시작 시 원본은 originalImageUrl
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -93,11 +105,20 @@ function WriteInner() {
     getPost(editId).then((post) => {
       if (!active || !post) return;
       setTitle(post.title);
-      // 분실물 글이면 JSON 파싱해서 분실장소/날짜/본문을 분리
+      // 게시판별 JSON 본문을 필드별로 분해
       if (post.board_type === "lost") {
         const parsed = parseLostContent(post.content);
         setLostLocation(parsed.location);
         setLostDate(parsed.lostDate);
+        setContent(parsed.description);
+      } else if (post.board_type === "market") {
+        const parsed = parseMarketContent(post.content);
+        setMarketCondition(parsed.condition);
+        setContent(parsed.description);
+      } else if (post.board_type === "issue") {
+        const parsed = parseIssueContent(post.content);
+        setOptionA(parsed.optionA);
+        setOptionB(parsed.optionB);
         setContent(parsed.description);
       } else {
         setContent(post.content);
@@ -190,6 +211,8 @@ function WriteInner() {
 
   const isChallenge = boardType === "challenge";
   const isLost = boardType === "lost";
+  const isMarket = boardType === "market";
+  const isIssue = boardType === "issue";
 
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -253,17 +276,32 @@ function WriteInner() {
       setError("분실 장소를 입력해주세요.");
       return;
     }
+    if (isIssue && (!optionA.trim() || !optionB.trim())) {
+      setError("선택지 두 개를 모두 입력해주세요.");
+      return;
+    }
     if (!user) {
       setError("로그인이 필요합니다.");
       return;
     }
 
-    // 분실물 글: 본문은 JSON 으로 구조화 저장
+    // 게시판별 본문 직렬화
     const finalContent = isLost
       ? stringifyLostContent({
           location: lostLocation,
           lostDate,
           description: content,
+        })
+      : isMarket
+      ? stringifyMarketContent({
+          condition: marketCondition,
+          description: content,
+        })
+      : isIssue
+      ? stringifyIssueContent({
+          description: content,
+          optionA,
+          optionB,
         })
       : content.trim();
 
@@ -373,18 +411,106 @@ function WriteInner() {
       <div className="mt-5 space-y-4 rounded-xl border border-gray-200 bg-white p-4 dark:border-white/[0.07] dark:bg-[#16162a]">
         <div>
           <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
-            제목
+            {isIssue ? "토론 주제" : "제목"}
           </label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="제목을 입력해주세요"
+            placeholder={
+              isIssue
+                ? "예) 야자 시간 자유롭게 선택할 수 있게 해야 한다"
+                : "제목을 입력해주세요"
+            }
             maxLength={100}
             disabled={submitting}
             className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
           />
         </div>
+
+        {isMarket && (
+          <>
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-[11px] leading-relaxed text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/15 dark:text-emerald-200">
+              <div className="flex items-center gap-1.5 font-semibold">
+                <Camera className="h-3.5 w-3.5" />
+                사진을 올리면 나눔이 빨라져요!
+              </div>
+              <p className="mt-0.5 opacity-80">
+                물품 사진을 첨부하면 받아갈 사람이 빨리 나타납니다.
+              </p>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                물품 상태
+              </label>
+              <div className="mt-1.5 grid grid-cols-3 gap-2">
+                {(Object.keys(MARKET_CONDITION_LABEL) as MarketCondition[]).map(
+                  (key) => {
+                    const active = marketCondition === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setMarketCondition(key)}
+                        disabled={submitting}
+                        className={cn(
+                          "rounded-xl border px-3 py-2.5 text-sm font-semibold transition disabled:opacity-50",
+                          active
+                            ? "border-violet-500 bg-violet-500/15 text-violet-700 dark:text-violet-200"
+                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+                        )}
+                      >
+                        {MARKET_CONDITION_LABEL[key]}
+                      </button>
+                    );
+                  },
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {isIssue && (
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+              선택지 (두 개)
+            </label>
+            <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-2 dark:border-blue-900/40 dark:bg-blue-900/15">
+                <p className="px-1 text-[10px] font-semibold text-blue-600 dark:text-blue-300">
+                  A 선택지 (찬성 측)
+                </p>
+                <input
+                  type="text"
+                  value={optionA}
+                  onChange={(e) => setOptionA(e.target.value)}
+                  placeholder="예: 찬성"
+                  maxLength={30}
+                  disabled={submitting}
+                  className="mt-1 w-full rounded-md bg-white px-2 py-1.5 text-sm focus:outline-none dark:bg-white/[0.05] dark:text-white"
+                />
+              </div>
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-2 dark:border-rose-900/40 dark:bg-rose-900/15">
+                <p className="px-1 text-[10px] font-semibold text-rose-600 dark:text-rose-300">
+                  B 선택지 (반대 측)
+                </p>
+                <input
+                  type="text"
+                  value={optionB}
+                  onChange={(e) => setOptionB(e.target.value)}
+                  placeholder="예: 반대"
+                  maxLength={30}
+                  disabled={submitting}
+                  className="mt-1 w-full rounded-md bg-white px-2 py-1.5 text-sm focus:outline-none dark:bg-white/[0.05] dark:text-white"
+                />
+              </div>
+            </div>
+            <p className="mt-1.5 text-[10px] text-gray-400">
+              제목은 토론 주제, 본문은 배경/설명이에요. 투표는 작성 후 상세 페이지에서 진행됩니다.
+            </p>
+          </div>
+        )}
 
         {isLost && (
           <>
@@ -433,7 +559,13 @@ function WriteInner() {
 
         <div>
           <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
-            {isLost ? "상세 설명" : "내용"}
+            {isLost
+              ? "상세 설명"
+              : isMarket
+              ? "물품 설명"
+              : isIssue
+              ? "주제 설명/배경"
+              : "내용"}
           </label>
           <textarea
             value={content}
@@ -441,6 +573,10 @@ function WriteInner() {
             placeholder={
               isLost
                 ? "분실물의 특징, 발견 시 연락 방법 등을 적어주세요."
+                : isMarket
+                ? "물품의 상세 정보, 인수 방법, 만남 장소 등을 적어주세요."
+                : isIssue
+                ? "왜 이 주제로 토론하고 싶은지, 배경 설명을 적어주세요."
                 : "내용을 입력해주세요"
             }
             rows={10}

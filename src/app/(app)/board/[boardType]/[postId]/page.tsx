@@ -8,35 +8,54 @@ import { motion } from "framer-motion";
 import {
   ArrowLeft,
   CalendarDays,
+  CheckCircle2,
   Download,
   Eye,
   FileText,
+  Heart,
   Loader2,
   MapPin,
+  MessageSquareWarning,
+  Package,
   Pencil,
   Pin,
   PinOff,
   Send,
   Trash2,
+  Vote,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { AuthGate } from "@/components/auth/AuthGate";
 import {
   BOARD_LABEL,
+  MARKET_CONDITION_LABEL,
   createComment,
   deleteComment,
   deletePost,
   getPost,
+  incrementLikeCount,
   incrementViewCount,
   listComments,
+  parseIssueContent,
   parseLostContent,
+  parseMarketContent,
   setPostStatus,
   togglePostPin,
+  votePost,
   type BoardType,
   type CommentRow,
+  type IssueContent,
+  type MarketContent,
   type PostRow,
   type PostStatus,
 } from "@/lib/board";
+import {
+  addLikedPost,
+  getVote,
+  isPostLiked,
+  recordVote,
+  type VoteChoice,
+} from "@/lib/local-state";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
 import { cn } from "@/lib/utils";
 
@@ -82,6 +101,10 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
   const [loading, setLoading] = useState(true);
   const [togglingPin, setTogglingPin] = useState(false);
   const [togglingStatus, setTogglingStatus] = useState(false);
+  const [voting, setVoting] = useState(false);
+  const [myVote, setMyVote] = useState<VoteChoice | null>(null);
+  const [liking, setLiking] = useState(false);
+  const [liked, setLiked] = useState(false);
   const viewCounted = useRef(false);
 
   const refreshComments = useCallback(async () => {
@@ -107,6 +130,10 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
       viewCounted.current = true;
       incrementViewCount(postId);
     }
+
+    // localStorage 기반 좋아요/투표 상태 복원
+    setMyVote(getVote(postId));
+    setLiked(isPostLiked(postId));
 
     return () => {
       active = false;
@@ -140,7 +167,19 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
   const canPin =
     boardType === "notice" && (role === "admin" || role === "teacher");
   const isLost = boardType === "lost";
+  const isMarket = boardType === "market";
+  const isIssue = boardType === "issue";
+  const isFree = boardType === "free";
   const lostInfo = isLost ? parseLostContent(post.content) : null;
+  const marketInfo: MarketContent | null = isMarket
+    ? parseMarketContent(post.content)
+    : null;
+  const issueInfo: IssueContent | null = isIssue
+    ? parseIssueContent(post.content)
+    : null;
+  const totalVotes = post.vote_a + post.vote_b;
+  const ratioA = totalVotes === 0 ? 50 : Math.round((post.vote_a / totalVotes) * 100);
+  const ratioB = totalVotes === 0 ? 50 : 100 - ratioA;
 
   async function handleDelete() {
     if (!post) return;
@@ -177,6 +216,36 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
       return;
     }
     setPost({ ...post, status: next });
+  }
+
+  async function handleVote(choice: VoteChoice) {
+    if (!post || voting || myVote) return;
+    setVoting(true);
+    const { error, voteA, voteB } = await votePost(post.id, choice);
+    setVoting(false);
+    if (error) {
+      window.alert("투표에 실패했어요.\n" + error);
+      return;
+    }
+    recordVote(post.id, choice);
+    setMyVote(choice);
+    setPost({ ...post, vote_a: voteA, vote_b: voteB });
+  }
+
+  async function handleLike() {
+    if (!post || liking || liked) return;
+    setLiking(true);
+    const { error, nextCount } = await incrementLikeCount(post.id);
+    setLiking(false);
+    if (error) {
+      window.alert("좋아요에 실패했어요.\n" + error);
+      return;
+    }
+    addLikedPost(post.id);
+    setLiked(true);
+    if (nextCount != null) {
+      setPost({ ...post, like_count: nextCount });
+    }
   }
 
   return (
@@ -218,6 +287,32 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
               )}
             >
               {post.status === "resolved" ? "찾았어요 🟢" : "찾는 중 🔴"}
+            </span>
+          )}
+          {isMarket && (
+            <>
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
+                  post.status === "resolved"
+                    ? "bg-gray-500/15 text-gray-500 ring-gray-500/30 dark:text-gray-300"
+                    : "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300",
+                )}
+              >
+                {post.status === "resolved" ? "나눔완료" : "나눔중"}
+              </span>
+              {marketInfo && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
+                  <Package className="h-3 w-3" />
+                  {MARKET_CONDITION_LABEL[marketInfo.condition]}
+                </span>
+              )}
+            </>
+          )}
+          {isIssue && totalVotes > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-bold text-orange-600 ring-1 ring-inset ring-orange-500/30 dark:text-orange-300">
+              <Vote className="h-3 w-3" />
+              {totalVotes.toLocaleString()}명 참여
             </span>
           )}
         </div>
@@ -275,6 +370,26 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
               >
                 {togglingStatus && <Loader2 className="h-3 w-3 animate-spin" />}
                 {post.status === "resolved" ? "다시 찾는중으로" : "찾았어요로 변경"}
+              </button>
+            )}
+            {isOwner && isMarket && (
+              <button
+                type="button"
+                onClick={handleToggleStatus}
+                disabled={togglingStatus}
+                className={cn(
+                  "flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition disabled:cursor-not-allowed disabled:opacity-50",
+                  post.status === "resolved"
+                    ? "border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/[0.05]"
+                    : "border-emerald-300 text-emerald-600 hover:bg-emerald-50 dark:border-emerald-500/40 dark:text-emerald-300 dark:hover:bg-emerald-500/10",
+                )}
+              >
+                {togglingStatus ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-3 w-3" />
+                )}
+                {post.status === "resolved" ? "다시 나눔중으로" : "나눔완료로 변경"}
               </button>
             )}
             {isOwner && (
@@ -339,9 +454,113 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
           </div>
         )}
 
+        {isMarket && marketInfo && (
+          <div className="mt-4 flex items-center gap-3 rounded-lg border border-gray-100 bg-gray-50/70 px-4 py-3 text-xs dark:border-white/[0.06] dark:bg-white/[0.03]">
+            <Package className="h-5 w-5 shrink-0 text-violet-500" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                물품 상태
+              </p>
+              <p className="mt-0.5 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                {MARKET_CONDITION_LABEL[marketInfo.condition]}
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="mt-5 whitespace-pre-wrap text-sm leading-relaxed text-gray-800 dark:text-gray-200">
-          {isLost && lostInfo ? lostInfo.description : post.content}
+          {isLost && lostInfo
+            ? lostInfo.description
+            : isMarket && marketInfo
+            ? marketInfo.description
+            : isIssue && issueInfo
+            ? issueInfo.description
+            : post.content}
         </div>
+
+        {/* 이슈 토론 — 투표 UI */}
+        {isIssue && issueInfo && (
+          <div className="mt-5 rounded-xl border border-gray-100 bg-gradient-to-br from-violet-50 to-cyan-50 p-4 dark:border-white/[0.06] dark:from-violet-500/[0.05] dark:to-cyan-500/[0.05]">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-violet-600 dark:text-violet-300">
+              <Vote className="h-3.5 w-3.5" />
+              어느 쪽에 동의하시나요?
+            </div>
+
+            {myVote == null ? (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => handleVote("a")}
+                  disabled={voting}
+                  className="rounded-xl border border-blue-300 bg-white px-4 py-4 text-sm font-bold text-blue-600 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-500/30 dark:bg-white/[0.03] dark:text-blue-300 dark:hover:bg-blue-500/10"
+                >
+                  {voting && <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" />}
+                  {issueInfo.optionA}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleVote("b")}
+                  disabled={voting}
+                  className="rounded-xl border border-rose-300 bg-white px-4 py-4 text-sm font-bold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-500/30 dark:bg-white/[0.03] dark:text-rose-300 dark:hover:bg-rose-500/10"
+                >
+                  {voting && <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" />}
+                  {issueInfo.optionB}
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 space-y-2">
+                <VoteBar
+                  label={issueInfo.optionA}
+                  count={post.vote_a}
+                  ratio={ratioA}
+                  voted={myVote === "a"}
+                  side="a"
+                />
+                <VoteBar
+                  label={issueInfo.optionB}
+                  count={post.vote_b}
+                  ratio={ratioB}
+                  voted={myVote === "b"}
+                  side="b"
+                />
+                <p className="pt-1 text-center text-[11px] text-gray-500 dark:text-gray-400">
+                  총 {totalVotes.toLocaleString()}명이 참여 ·{" "}
+                  {myVote === "a" ? issueInfo.optionA : issueInfo.optionB}에
+                  투표하셨어요
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 자유게시판 — 좋아요 버튼 */}
+        {isFree && (
+          <div className="mt-5 flex items-center justify-center">
+            <button
+              type="button"
+              onClick={handleLike}
+              disabled={liking || liked}
+              className={cn(
+                "flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed",
+                liked
+                  ? "border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300"
+                  : "border-gray-200 bg-white text-gray-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300",
+              )}
+            >
+              {liking ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Heart
+                  className={cn("h-4 w-4", liked && "fill-current")}
+                  strokeWidth={2.2}
+                />
+              )}
+              <span className="tabular-nums">
+                {liked ? "좋아요!" : "좋아요"} · {post.like_count.toLocaleString()}
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* PDF 다운로드 */}
         {post.file_url && (
@@ -486,6 +705,49 @@ function CommentInput({
         )}
         등록
       </button>
+    </div>
+  );
+}
+
+// 이슈 토론 — 결과 가로 비율 바
+function VoteBar({
+  label,
+  count,
+  ratio,
+  voted,
+  side,
+}: {
+  label: string;
+  count: number;
+  ratio: number;
+  voted: boolean;
+  side: "a" | "b";
+}) {
+  const colorBg = side === "a" ? "bg-blue-500" : "bg-rose-500";
+  const colorText =
+    side === "a"
+      ? "text-blue-700 dark:text-blue-300"
+      : "text-rose-700 dark:text-rose-300";
+
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs font-semibold">
+        <span className={cn("flex items-center gap-1", colorText)}>
+          {voted && <MessageSquareWarning className="h-3 w-3" />}
+          {label}
+        </span>
+        <span className={colorText}>
+          {ratio}% · {count.toLocaleString()}표
+        </span>
+      </div>
+      <div className="h-2.5 w-full overflow-hidden rounded-full bg-gray-200/70 dark:bg-white/[0.05]">
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${ratio}%` }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+          className={cn("h-full rounded-full", colorBg)}
+        />
+      </div>
     </div>
   );
 }

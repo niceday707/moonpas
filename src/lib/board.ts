@@ -60,6 +60,8 @@ export type PostRow = {
   like_count: number;
   is_pinned: boolean;
   status: PostStatus;
+  vote_a: number;
+  vote_b: number;
   created_at: string;
   updated_at: string;
   author: { id: string; nickname: string; role: Role } | null;
@@ -78,14 +80,19 @@ export type CommentRow = {
 // PostgREST 임베딩은 FK 컬럼명으로 가리키는 게 가장 안전 (FK constraint 이름이 환경마다 달라질 수 있어서).
 const POST_SELECT = `
   id, author_id, board_type, title, content, image_url, file_url, file_name,
-  view_count, like_count, is_pinned, status, created_at, updated_at,
+  view_count, like_count, is_pinned, status, vote_a, vote_b, created_at, updated_at,
   author:profiles!author_id ( id, nickname, role ),
   comments_aggregate:comments(count)
 `;
 
-type RawPost = Omit<PostRow, "author" | "comment_count" | "is_pinned" | "status"> & {
+type RawPost = Omit<
+  PostRow,
+  "author" | "comment_count" | "is_pinned" | "status" | "vote_a" | "vote_b"
+> & {
   is_pinned: boolean | null;
   status: PostStatus | null;
+  vote_a: number | null;
+  vote_b: number | null;
   author: { id: string; nickname: string; role: Role } | null;
   comments_aggregate: { count: number }[] | null;
 };
@@ -105,6 +112,8 @@ function normalizePost(raw: RawPost): PostRow {
     like_count: raw.like_count,
     is_pinned: raw.is_pinned ?? false,
     status: (raw.status as PostStatus | null) ?? "active",
+    vote_a: raw.vote_a ?? 0,
+    vote_b: raw.vote_b ?? 0,
     created_at: raw.created_at,
     updated_at: raw.updated_at,
     author: raw.author,
@@ -477,6 +486,307 @@ export async function getBoardCounts(): Promise<Partial<Record<BoardType, number
     counts[row.board_type] = (counts[row.board_type] ?? 0) + 1;
   }
   return counts;
+}
+
+// ─────────────────────────────────────────────────────────
+// 나눔장터 — content 안에 { condition, description } JSON
+// ─────────────────────────────────────────────────────────
+
+export type MarketCondition = "new" | "good" | "used";
+export const MARKET_CONDITION_LABEL: Record<MarketCondition, string> = {
+  new: "새상품",
+  good: "사용감 있음",
+  used: "사용감 많음",
+};
+
+export type MarketContent = {
+  condition: MarketCondition;
+  description: string;
+};
+
+const VALID_CONDITIONS: MarketCondition[] = ["new", "good", "used"];
+
+/** 한국어 라벨도 받아주는 호환 파서 (시드 데이터가 한글로 저장된 경우 대비) */
+function normalizeCondition(input: unknown): MarketCondition {
+  if (typeof input !== "string") return "good";
+  if ((VALID_CONDITIONS as string[]).includes(input)) {
+    return input as MarketCondition;
+  }
+  // 한국어 → 키
+  if (input.includes("새")) return "new";
+  if (input.includes("많음")) return "used";
+  if (input.includes("있음")) return "good";
+  return "good";
+}
+
+export function parseMarketContent(content: string): MarketContent {
+  try {
+    const obj: unknown = JSON.parse(content);
+    if (
+      obj &&
+      typeof obj === "object" &&
+      "description" in obj &&
+      typeof (obj as { description: unknown }).description === "string"
+    ) {
+      const o = obj as { condition?: unknown; description: string };
+      return {
+        condition: normalizeCondition(o.condition),
+        description: o.description,
+      };
+    }
+  } catch {
+    // 일반 텍스트
+  }
+  return { condition: "good", description: content };
+}
+
+export function stringifyMarketContent(input: MarketContent): string {
+  return JSON.stringify({
+    condition: input.condition,
+    description: input.description.trim(),
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// 이슈토론 — content 안에 { description, optionA, optionB } JSON
+// ─────────────────────────────────────────────────────────
+
+export type IssueContent = {
+  /** 토론 배경/설명 */
+  description: string;
+  /** A 선택지 라벨 (기본: 찬성) */
+  optionA: string;
+  /** B 선택지 라벨 (기본: 반대) */
+  optionB: string;
+};
+
+export function parseIssueContent(content: string): IssueContent {
+  try {
+    const obj: unknown = JSON.parse(content);
+    if (
+      obj &&
+      typeof obj === "object" &&
+      "description" in obj &&
+      typeof (obj as { description: unknown }).description === "string"
+    ) {
+      const o = obj as {
+        description: string;
+        optionA?: unknown;
+        optionB?: unknown;
+      };
+      return {
+        description: o.description,
+        optionA: typeof o.optionA === "string" && o.optionA.trim() ? o.optionA : "찬성",
+        optionB: typeof o.optionB === "string" && o.optionB.trim() ? o.optionB : "반대",
+      };
+    }
+  } catch {
+    // 일반 텍스트
+  }
+  return { description: content, optionA: "찬성", optionB: "반대" };
+}
+
+export function stringifyIssueContent(input: IssueContent): string {
+  return JSON.stringify({
+    description: input.description.trim(),
+    optionA: input.optionA.trim() || "찬성",
+    optionB: input.optionB.trim() || "반대",
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// 좋아요 / 투표 mutator
+// ─────────────────────────────────────────────────────────
+
+/**
+ * 좋아요 +1 — read-then-update.
+ * 동시 요청 시 race condition 가능성 있으나 학교 커뮤니티 트래픽에는 충분.
+ * 정확한 카운트가 필요하면 SQL 함수로 옮길 것.
+ */
+export async function incrementLikeCount(
+  postId: string,
+): Promise<{ error: string | null; nextCount: number | null }> {
+  const { data, error: readErr } = await supabase
+    .from("posts")
+    .select("like_count")
+    .eq("id", postId)
+    .maybeSingle();
+  if (readErr || !data) {
+    return { error: readErr?.message ?? "글을 찾을 수 없어요.", nextCount: null };
+  }
+  const next = (data.like_count ?? 0) + 1;
+  const { error: writeErr } = await supabase
+    .from("posts")
+    .update({ like_count: next })
+    .eq("id", postId);
+  if (writeErr) {
+    return { error: writeErr.message, nextCount: null };
+  }
+  return { error: null, nextCount: next };
+}
+
+/** 이슈 토론 투표 +1 (a or b) — read-then-update */
+export async function votePost(
+  postId: string,
+  choice: "a" | "b",
+): Promise<{ error: string | null; voteA: number; voteB: number }> {
+  const col = choice === "a" ? "vote_a" : "vote_b";
+  const { data, error: readErr } = await supabase
+    .from("posts")
+    .select("vote_a, vote_b")
+    .eq("id", postId)
+    .maybeSingle();
+  if (readErr || !data) {
+    return {
+      error: readErr?.message ?? "글을 찾을 수 없어요.",
+      voteA: 0,
+      voteB: 0,
+    };
+  }
+  const voteA = data.vote_a ?? 0;
+  const voteB = data.vote_b ?? 0;
+  const next = (col === "vote_a" ? voteA : voteB) + 1;
+  const { error: writeErr } = await supabase
+    .from("posts")
+    .update({ [col]: next })
+    .eq("id", postId);
+  if (writeErr) {
+    return { error: writeErr.message, voteA, voteB };
+  }
+  return {
+    error: null,
+    voteA: choice === "a" ? next : voteA,
+    voteB: choice === "b" ? next : voteB,
+  };
+}
+
+// ─────────────────────────────────────────────────────────
+// 챌린지 — 연속 인증, 주간 랭킹
+// ─────────────────────────────────────────────────────────
+
+const STREAK_LOOKBACK_DAYS = 60; // 연속 계산 시 충분히 거슬러 올라가는 범위
+const RANKING_LOOKBACK_DAYS = 7;
+
+type ChallengePost = {
+  author_id: string;
+  created_at: string;
+  author: { id: string; nickname: string; role: Role } | null;
+};
+
+function ymdInKst(iso: string): string {
+  // 학교가 있는 한국 기준으로 날짜만 추출. timezone offset 처리.
+  const d = new Date(iso);
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10); // yyyy-mm-dd
+}
+
+function todayKst(): string {
+  return ymdInKst(new Date().toISOString());
+}
+
+function dateBefore(ymd: string, days: number): string {
+  const d = new Date(ymd + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** 챌린지 글의 작성자별 연속 인증일수 + 주간 랭킹 캐시 */
+export type ChallengeStats = {
+  /** author_id → 현재 연속일수 (오늘 또는 어제부터 거꾸로) */
+  streakByAuthor: Record<string, number>;
+  /** 최근 7일 랭킹 (글 많은 순, 동률은 닉네임 가나다) */
+  weeklyRanking: Array<{
+    author_id: string;
+    nickname: string;
+    role: Role;
+    count: number;
+  }>;
+};
+
+export async function getChallengeStats(): Promise<ChallengeStats> {
+  const since = dateBefore(todayKst(), STREAK_LOOKBACK_DAYS);
+  const { data, error } = await supabase
+    .from("posts")
+    .select(
+      "author_id, created_at, author:profiles!author_id ( id, nickname, role )",
+    )
+    .eq("board_type", "challenge")
+    .gte("created_at", since + "T00:00:00+09:00")
+    .order("created_at", { ascending: false });
+
+  if (error || !data) {
+    if (error) console.error("[getChallengeStats] 실패", error);
+    return { streakByAuthor: {}, weeklyRanking: [] };
+  }
+
+  const rows = data as unknown as ChallengePost[];
+
+  // 작성자별 인증 날짜 (KST yyyy-mm-dd) 집합
+  const datesByAuthor = new Map<string, Set<string>>();
+  // 작성자 메타 캐시
+  const authorMeta = new Map<string, { nickname: string; role: Role }>();
+  // 7일 카운트
+  const weeklyCounts = new Map<string, number>();
+  const weeklyCutoff = dateBefore(todayKst(), RANKING_LOOKBACK_DAYS - 1);
+
+  for (const row of rows) {
+    const day = ymdInKst(row.created_at);
+    if (!datesByAuthor.has(row.author_id)) {
+      datesByAuthor.set(row.author_id, new Set());
+    }
+    datesByAuthor.get(row.author_id)!.add(day);
+
+    if (row.author && !authorMeta.has(row.author_id)) {
+      authorMeta.set(row.author_id, {
+        nickname: row.author.nickname,
+        role: row.author.role,
+      });
+    }
+
+    if (day >= weeklyCutoff) {
+      weeklyCounts.set(row.author_id, (weeklyCounts.get(row.author_id) ?? 0) + 1);
+    }
+  }
+
+  // 연속일수 계산 — 오늘 또는 어제부터 거꾸로 카운트 (한 번의 grace 적용)
+  const today = todayKst();
+  const yesterday = dateBefore(today, 1);
+  const streakByAuthor: Record<string, number> = {};
+
+  for (const [authorId, set] of datesByAuthor.entries()) {
+    let cursor: string;
+    if (set.has(today)) cursor = today;
+    else if (set.has(yesterday)) cursor = yesterday;
+    else {
+      streakByAuthor[authorId] = 0;
+      continue;
+    }
+    let count = 0;
+    while (set.has(cursor)) {
+      count++;
+      cursor = dateBefore(cursor, 1);
+    }
+    streakByAuthor[authorId] = count;
+  }
+
+  // 주간 랭킹 정렬
+  const weeklyRanking = Array.from(weeklyCounts.entries())
+    .map(([author_id, count]) => {
+      const meta = authorMeta.get(author_id);
+      return {
+        author_id,
+        nickname: meta?.nickname ?? "(알수없음)",
+        role: meta?.role ?? ("student" as Role),
+        count,
+      };
+    })
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return a.nickname.localeCompare(b.nickname, "ko");
+    })
+    .slice(0, 5);
+
+  return { streakByAuthor, weeklyRanking };
 }
 
 export async function getUserStats(userId: string): Promise<UserStats> {

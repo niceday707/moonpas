@@ -24,6 +24,8 @@ export const supabase = new Proxy({} as SupabaseClient, {
     const value = (client as unknown as Record<string | symbol, unknown>)[
       prop as string | symbol
     ];
-    return typeof value === "function" ? (value as Function).bind(client) : value;
+    return typeof value === "function"
+      ? (value as (...args: unknown[]) => unknown).bind(client)
+      : value;
   },
 });

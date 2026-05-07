@@ -1,0 +1,21 @@
+{
+  "name": "문파스 - 문태고등학교 커뮤니티",
+  "short_name": "문파스",
+  "description": "문태고등학교 커뮤니티",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f0f1a",
+  "theme_color": "#7c3aed",
+  "icons": [
+    {
+      "src": "/logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "/logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}

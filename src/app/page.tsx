@@ -7,12 +7,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, Menu, LogIn } from "lucide-react";
 import { FullscreenMenu } from "@/components/landing/FullscreenMenu";
 
-// 배경 슬라이드: 4장의 사진을 6초 간격으로 페이드 전환, 각자 다른 Ken Burns 모션
+// 배경 슬라이드: 5장의 사진을 6초 간격으로 페이드 전환, 각자 다른 Ken Burns 모션
 const SLIDES = [
   { src: "/school1.jpg", kb: "kb-zoom-in" },
   { src: "/school2.jpg", kb: "kb-pan-left-right" },
   { src: "/school3.jpg", kb: "kb-pan-right-left" },
   { src: "/school4.jpg", kb: "kb-zoom-out" },
+  { src: "/school5.jpg", kb: "kb-zoom-in" },
 ] as const;
 
 const SLIDE_INTERVAL_MS = 6000;
@@ -91,8 +92,13 @@ export default function LandingPage() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
-          className="select-none"
+          className="flex select-none items-center gap-3"
         >
+          <img
+            src="/logo.jpg"
+            alt="문태고 로고"
+            style={{ width: 40, height: 40, borderRadius: "50%" }}
+          />
           <span className="text-xl font-bold tracking-[0.3em] md:text-2xl">
             MOONTAE
           </span>

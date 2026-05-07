@@ -6,6 +6,8 @@ export const metadata: Metadata = {
   title: "문파스 - 문태고등학교 커뮤니티",
   description:
     "문태고등학교 학생, 교사, 학부모, 졸업생을 위한 커뮤니티 플랫폼. 일상부터 입시 정보까지.",
+  manifest: "/manifest.json",
+  icons: { icon: "/logo.jpg", apple: "/logo.jpg" },
 };
 
 export const viewport: Viewport = {

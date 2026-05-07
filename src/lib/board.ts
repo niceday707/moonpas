@@ -52,6 +52,8 @@ export type PostRow = {
   title: string;
   content: string;
   image_url: string | null;
+  file_url: string | null;
+  file_name: string | null;
   view_count: number;
   like_count: number;
   created_at: string;
@@ -71,7 +73,7 @@ export type CommentRow = {
 
 // PostgREST 임베딩은 FK 컬럼명으로 가리키는 게 가장 안전 (FK constraint 이름이 환경마다 달라질 수 있어서).
 const POST_SELECT = `
-  id, author_id, board_type, title, content, image_url,
+  id, author_id, board_type, title, content, image_url, file_url, file_name,
   view_count, like_count, created_at, updated_at,
   author:profiles!author_id ( id, nickname, role ),
   comments_aggregate:comments(count)
@@ -91,6 +93,8 @@ function normalizePost(raw: RawPost): PostRow {
     title: raw.title,
     content: raw.content,
     image_url: raw.image_url,
+    file_url: raw.file_url,
+    file_name: raw.file_name,
     view_count: raw.view_count,
     like_count: raw.like_count,
     created_at: raw.created_at,
@@ -151,6 +155,8 @@ export async function createPost(input: {
   title: string;
   content: string;
   imageUrl?: string | null;
+  fileUrl?: string | null;
+  fileName?: string | null;
 }): Promise<{
   id: string | null;
   error: string | null;
@@ -168,6 +174,7 @@ export async function createPost(input: {
     titleLen: input.title.length,
     contentLen: input.content.length,
     hasImage: !!input.imageUrl,
+    hasFile: !!input.fileUrl,
   });
 
   const { data, error } = await supabase
@@ -178,6 +185,8 @@ export async function createPost(input: {
       title: input.title,
       content: input.content,
       image_url: input.imageUrl ?? null,
+      file_url: input.fileUrl ?? null,
+      file_name: input.fileName ?? null,
     })
     .select("id")
     .single();
@@ -217,17 +226,23 @@ export async function createPost(input: {
 
 export async function updatePost(
   postId: string,
-  patch: { title: string; content: string; imageUrl?: string | null },
+  patch: {
+    title: string;
+    content: string;
+    imageUrl?: string | null;
+    fileUrl?: string | null;
+    fileName?: string | null;
+  },
 ): Promise<{ error: string | null }> {
   const update: Record<string, unknown> = {
     title: patch.title,
     content: patch.content,
     updated_at: new Date().toISOString(),
   };
-  // imageUrl 이 정의되어 있을 때만 image_url 컬럼을 갱신 (undefined 면 변경 없음, null 이면 명시적 제거)
-  if (patch.imageUrl !== undefined) {
-    update.image_url = patch.imageUrl;
-  }
+  // 정의된(=undefined 가 아닌) 필드만 업데이트. null 이면 명시적 제거.
+  if (patch.imageUrl !== undefined) update.image_url = patch.imageUrl;
+  if (patch.fileUrl !== undefined) update.file_url = patch.fileUrl;
+  if (patch.fileName !== undefined) update.file_name = patch.fileName;
 
   const { error } = await supabase.from("posts").update(update).eq("id", postId);
 

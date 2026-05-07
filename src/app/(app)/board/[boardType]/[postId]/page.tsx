@@ -7,11 +7,13 @@ import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
-  Loader2,
+  Download,
   Eye,
+  FileText,
+  Loader2,
   Pencil,
-  Trash2,
   Send,
+  Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { AuthGate } from "@/components/auth/AuthGate";
@@ -201,6 +203,30 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
         <div className="mt-5 whitespace-pre-wrap text-sm leading-relaxed text-gray-800 dark:text-gray-200">
           {post.content}
         </div>
+
+        {/* PDF 다운로드 */}
+        {post.file_url && (
+          <a
+            href={post.file_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-5 flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 transition hover:bg-gray-100 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
+          >
+            <FileText className="h-6 w-6 shrink-0 text-violet-500" />
+            <div className="min-w-0 flex-1">
+              <p className="line-clamp-1 text-sm font-semibold text-gray-800 dark:text-gray-100">
+                {post.file_name ?? "첨부 파일"}
+              </p>
+              <p className="text-[10px] text-gray-500">
+                새 탭에서 열기 / 다운로드
+              </p>
+            </div>
+            <span className="flex shrink-0 items-center gap-1 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white">
+              <Download className="h-3.5 w-3.5" />
+              다운로드
+            </span>
+          </a>
+        )}
       </article>
 
       {/* 댓글 ─────────────────────── */}

@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { Eye, MessageSquare, PenSquare, Loader2 } from "lucide-react";
+import { Eye, MessageSquare, PenSquare, Loader2, Paperclip } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { AuthGate } from "@/components/auth/AuthGate";
 import {
@@ -128,8 +128,14 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
                   )}
 
                   <div className="min-w-0 flex-1">
-                    <p className="line-clamp-1 text-sm font-semibold text-gray-900 dark:text-white">
-                      {post.title}
+                    <p className="line-clamp-1 flex items-center gap-1 text-sm font-semibold text-gray-900 dark:text-white">
+                      <span className="truncate">{post.title}</span>
+                      {post.file_url && (
+                        <Paperclip
+                          aria-label="PDF 첨부"
+                          className="h-3.5 w-3.5 shrink-0 text-violet-500"
+                        />
+                      )}
                     </p>
                     <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-500">
                       <span className="font-medium text-gray-700 dark:text-gray-300">

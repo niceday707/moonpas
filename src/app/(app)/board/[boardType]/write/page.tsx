@@ -5,7 +5,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, FileText, Loader2, X } from "lucide-react";
 import { AuthGate } from "@/components/auth/AuthGate";
 import {
   BOARD_LABEL,
@@ -15,7 +15,12 @@ import {
   type BoardType,
 } from "@/lib/board";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
-import { uploadImage } from "@/lib/storage";
+import {
+  formatFileSize,
+  uploadFile,
+  uploadImage,
+  validatePdfFile,
+} from "@/lib/storage";
 
 const VALID_BOARDS = Object.keys(BOARD_LABEL) as BoardType[];
 
@@ -53,6 +58,14 @@ function WriteInner() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [originalImageUrl, setOriginalImageUrl] = useState<string | null>(null);
+
+  // PDF 첨부 상태 — 새 파일은 pdfFile, 표시명은 pdfDisplayName, 수정 모드 시작 시 원본은 originalFileUrl
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfDisplayName, setPdfDisplayName] = useState<string | null>(null);
+  const [pdfDisplaySize, setPdfDisplaySize] = useState<number | null>(null);
+  const [originalFileUrl, setOriginalFileUrl] = useState<string | null>(null);
+  const [originalFileName, setOriginalFileName] = useState<string | null>(null);
+
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loadingExisting, setLoadingExisting] = useState(!!editId);
@@ -69,6 +82,9 @@ function WriteInner() {
       setContent(post.content);
       setOriginalImageUrl(post.image_url);
       setImagePreview(post.image_url);
+      setOriginalFileUrl(post.file_url);
+      setOriginalFileName(post.file_name);
+      setPdfDisplayName(post.file_name);
       setLoadingExisting(false);
     });
     return () => {
@@ -139,6 +155,28 @@ function WriteInner() {
     setImagePreview(null);
   }
 
+  function handlePdfChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const validation = validatePdfFile(file);
+    if (validation) {
+      setError(validation.message);
+      // input 초기화 — 같은 파일 다시 고를 수 있게
+      e.target.value = "";
+      return;
+    }
+    setPdfFile(file);
+    setPdfDisplayName(file.name);
+    setPdfDisplaySize(file.size);
+    setError(null);
+  }
+
+  function handlePdfRemove() {
+    setPdfFile(null);
+    setPdfDisplayName(null);
+    setPdfDisplaySize(null);
+  }
+
   async function handleSubmit() {
     setError(null);
     if (!title.trim()) {
@@ -159,22 +197,41 @@ function WriteInner() {
       return;
     }
 
-    // 1) 이미지 처리 — 새 파일이 있으면 업로드, 없으면 기존 값 유지/제거
+    // 1) 이미지/PDF 업로드 — 새 파일이 있으면 업로드, 없으면 기존 값 유지/제거
     let imageUrl: string | null = originalImageUrl;
+    let fileUrl: string | null = originalFileUrl;
+    let fileName: string | null = originalFileName;
+
+    if (imageFile || pdfFile) setUploading(true);
+
     if (imageFile) {
-      setUploading(true);
       const url = await uploadImage(imageFile, user.id);
-      setUploading(false);
       if (!url) {
+        setUploading(false);
         setError("이미지 업로드에 실패했어요. 잠시 후 다시 시도해주세요.");
         return;
       }
       imageUrl = url;
     } else if (imagePreview === null) {
-      // 사용자가 기존 이미지를 제거했고 새 파일도 안 골랐을 때
       imageUrl = null;
     }
 
+    if (pdfFile) {
+      const result = await uploadFile(pdfFile, user.id);
+      if (!result) {
+        setUploading(false);
+        setError("PDF 업로드에 실패했어요. 잠시 후 다시 시도해주세요.");
+        return;
+      }
+      fileUrl = result.url;
+      fileName = result.fileName;
+    } else if (pdfDisplayName === null) {
+      // 사용자가 기존 PDF 를 제거했고 새 파일도 안 골랐을 때
+      fileUrl = null;
+      fileName = null;
+    }
+
+    setUploading(false);
     setSubmitting(true);
 
     console.log("[write] 저장 시도", {
@@ -183,6 +240,8 @@ function WriteInner() {
       boardType,
       editId,
       imageUrl,
+      fileUrl,
+      fileName,
     });
 
     if (editId) {
@@ -190,6 +249,8 @@ function WriteInner() {
         title: title.trim(),
         content: content.trim(),
         imageUrl,
+        fileUrl,
+        fileName,
       });
       setSubmitting(false);
       if (e) {
@@ -204,6 +265,8 @@ function WriteInner() {
         title: title.trim(),
         content: content.trim(),
         imageUrl,
+        fileUrl,
+        fileName,
       });
       setSubmitting(false);
       if (result.error || !result.id) {
@@ -294,6 +357,47 @@ function WriteInner() {
                 className="absolute right-2 top-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-black/90 disabled:opacity-50"
               >
                 이미지 제거
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* PDF 첨부 — 모든 게시판에서 선택사항 */}
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+            PDF 첨부 (선택)
+          </label>
+          <input
+            type="file"
+            accept="application/pdf"
+            onChange={handlePdfChange}
+            disabled={submitting || uploading}
+            className="mt-1.5 block w-full text-xs text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white file:hover:bg-violet-700 dark:text-gray-300"
+          />
+          <p className="mt-1 text-[10px] text-gray-400">
+            10MB 이하의 PDF 파일만 업로드할 수 있어요.
+          </p>
+          {pdfDisplayName && (
+            <div className="mt-3 flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 dark:border-white/10 dark:bg-white/[0.03]">
+              <FileText className="h-5 w-5 shrink-0 text-violet-500" />
+              <div className="min-w-0 flex-1">
+                <p className="line-clamp-1 text-xs font-semibold text-gray-800 dark:text-gray-100">
+                  {pdfDisplayName}
+                </p>
+                {pdfDisplaySize !== null && (
+                  <p className="text-[10px] text-gray-500">
+                    {formatFileSize(pdfDisplaySize)}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handlePdfRemove}
+                disabled={submitting || uploading}
+                aria-label="PDF 제거"
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-gray-500 transition hover:bg-gray-200 disabled:opacity-50 dark:hover:bg-white/10"
+              >
+                <X className="h-4 w-4" />
               </button>
             </div>
           )}

@@ -27,6 +27,14 @@ import {
   Flame,
   Trophy,
   Package,
+  PlayCircle,
+  FileText,
+  Clock,
+  Users,
+  Newspaper,
+  GraduationCap,
+  School,
+  Quote,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { AuthGate } from "@/components/auth/AuthGate";
@@ -37,24 +45,37 @@ import { useSupabaseProfile } from "@/lib/supabase-profile";
 import { addLikedPost, getLikedPosts } from "@/lib/local-state";
 import { cn } from "@/lib/utils";
 import {
+  ALUMNI_YEARS,
   BOARD_LABEL,
   MARKET_CONDITION_LABEL,
   POSTS_PER_PAGE,
   QA_SUBJECTS,
   QA_SUBJECT_STYLE,
+  RESOURCE_CATEGORIES,
+  RESOURCE_CATEGORY_STYLE,
+  STUDY_SUBJECT_STYLE,
   getChallengeStats,
   getQaSubjectLabel,
+  getResourceCategoryLabel,
+  getStudySubjectLabel,
   incrementLikeCount,
   listPosts,
+  parseAlumniContent,
   parseIssueContent,
   parseLostContent,
   parseMarketContent,
   parseQaContent,
+  parseResourceContent,
+  parseSeniorContent,
+  parseStudyContent,
+  parseYoutubeContent,
+  youtubeThumbUrl,
   type BoardType,
   type ChallengeStats,
   type PostRow,
   type PostStatus,
   type QaSubject,
+  type ResourceCategory,
 } from "@/lib/board";
 
 const VALID_BOARDS = Object.keys(BOARD_LABEL) as BoardType[];
@@ -120,13 +141,30 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
   const isCurriculum = boardType === "curriculum";
   const isCouncil = boardType === "council";
   const isQa = boardType === "qa";
-  const supportsStatusFilter = isLost || isMarket;
+  const isYoutube = boardType === "youtube";
+  const isResources = boardType === "resources";
+  const isStudy = boardType === "study";
+  const isNews = boardType === "news";
+  const isAlumni = boardType === "alumni";
+  const isSenior = boardType === "senior";
+  // 모집중/마감 필터를 지원하는 게시판 — lost/market 외에 study 도 active/resolved 상태 사용
+  const supportsStatusFilter = isLost || isMarket || isStudy;
 
   const { user, profile } = useSupabaseProfile();
   const role = (profile?.role ?? "") as string;
   const isStaff = role === "admin" || role === "teacher";
-  const adminOnlyBoards: BoardType[] = ["notice", "college", "curriculum"];
+  const adminOnlyBoards: BoardType[] = [
+    "notice",
+    "college",
+    "curriculum",
+    "youtube",
+    "resources",
+    "news",
+  ];
   const canWrite = adminOnlyBoards.includes(boardType) ? isStaff : true;
+  // 자료실 카테고리 / 졸업생 연도 필터
+  const [resourceFilter, setResourceFilter] = useState<"" | ResourceCategory>("");
+  const [alumniYearFilter, setAlumniYearFilter] = useState<"" | number>("");
 
   const [page, setPage] = useState(1);
   const [posts, setPosts] = useState<PostRow[]>([]);
@@ -145,18 +183,25 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
 
   useEffect(() => {
     setPage(1);
-  }, [statusFilter, qaSubjectFilter, boardType]);
+  }, [statusFilter, qaSubjectFilter, resourceFilter, alumniYearFilter, boardType]);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
+    // content 안에 JSON 키워드 매칭으로 필터링 — Q&A 과목 / 자료실 카테고리 / 졸업생 연도
+    let contentLike: string | null = null;
+    if (isQa && qaSubjectFilter) {
+      contentLike = `%"subject":"${qaSubjectFilter}"%`;
+    } else if (isResources && resourceFilter) {
+      contentLike = `%"category":"${resourceFilter}"%`;
+    } else if (isAlumni && alumniYearFilter !== "") {
+      contentLike = `%"graduationYear":${alumniYearFilter}%`;
+    }
+
     listPosts(boardType, page, {
       pinnedFirst: isNotice,
       status: supportsStatusFilter && statusFilter ? statusFilter : null,
-      contentLike:
-        isQa && qaSubjectFilter
-          ? `%"subject":"${qaSubjectFilter}"%`
-          : null,
+      contentLike,
     }).then((res) => {
       if (!active) return;
       setPosts(res.posts);
@@ -171,9 +216,13 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     page,
     isNotice,
     isQa,
+    isResources,
+    isAlumni,
     supportsStatusFilter,
     statusFilter,
     qaSubjectFilter,
+    resourceFilter,
+    alumniYearFilter,
   ]);
 
   // 챌린지 보드 진입 시 통계 fetch
@@ -303,7 +352,79 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
         </div>
       )}
 
-      {/* 상태 필터 (lost / market) */}
+      {/* 자료실 — 카테고리 필터 탭 */}
+      {isResources && (
+        <div className="mb-4 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setResourceFilter("")}
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+              resourceFilter === ""
+                ? "border-violet-500 bg-violet-500/10 text-violet-600 dark:text-violet-300"
+                : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+            )}
+          >
+            전체
+          </button>
+          {RESOURCE_CATEGORIES.map((c) => {
+            const active = resourceFilter === c.value;
+            return (
+              <button
+                key={c.value}
+                type="button"
+                onClick={() => setResourceFilter(c.value)}
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs font-semibold transition ring-1 ring-inset",
+                  active
+                    ? RESOURCE_CATEGORY_STYLE[c.value] + " border-transparent"
+                    : "border-gray-200 bg-white text-gray-500 ring-transparent hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+                )}
+              >
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 졸업생 — 연도별 필터 */}
+      {isAlumni && (
+        <div className="mb-4 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setAlumniYearFilter("")}
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+              alumniYearFilter === ""
+                ? "border-violet-500 bg-violet-500/10 text-violet-600 dark:text-violet-300"
+                : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+            )}
+          >
+            전체
+          </button>
+          {ALUMNI_YEARS.map((y) => {
+            const active = alumniYearFilter === y;
+            return (
+              <button
+                key={y}
+                type="button"
+                onClick={() => setAlumniYearFilter(y)}
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                  active
+                    ? "border-amber-400 bg-amber-500/10 text-amber-600 dark:text-amber-300"
+                    : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+                )}
+              >
+                {y}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 상태 필터 (lost / market / study) */}
       {supportsStatusFilter && (
         <div className="mb-4 flex flex-wrap gap-1.5">
           {(
@@ -311,11 +432,15 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
               { value: "", label: "전체" },
               {
                 value: "active",
-                label: isLost ? "찾는 중 🔴" : "나눔중 🟢",
+                label: isLost
+                  ? "찾는 중 🔴"
+                  : isStudy
+                  ? "모집중 🟢"
+                  : "나눔중 🟢",
               },
               {
                 value: "resolved",
-                label: isLost ? "찾았어요 🟢" : "나눔완료",
+                label: isLost ? "찾았어요 🟢" : isStudy ? "마감" : "나눔완료",
               },
             ] as Array<{ value: "" | PostStatus; label: string }>
           ).map((opt) => {
@@ -377,6 +502,18 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
         />
       ) : isQa ? (
         <QaList posts={posts} />
+      ) : isYoutube ? (
+        <YoutubeGrid posts={posts} />
+      ) : isResources ? (
+        <ResourceList posts={posts} />
+      ) : isStudy ? (
+        <StudyGrid posts={posts} />
+      ) : isNews ? (
+        <NewsMagazine posts={posts} />
+      ) : isAlumni ? (
+        <AlumniList posts={posts} />
+      ) : isSenior ? (
+        <SeniorGrid posts={posts} />
       ) : (
         <DefaultList
           posts={posts}
@@ -1195,5 +1332,572 @@ function QaRow({ post }: { post: PostRow }) {
         </div>
       </Link>
     </li>
+  );
+}
+
+// ── 문튜브 — YouTube 썸네일 그리드 ───────────────────────────
+function YoutubeGrid({ posts }: { posts: PostRow[] }) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {posts.map((post) => (
+        <YoutubeCard key={post.id} post={post} />
+      ))}
+    </div>
+  );
+}
+
+function YoutubeCard({ post }: { post: PostRow }) {
+  const info = useMemo(() => parseYoutubeContent(post.content), [post.content]);
+  const fresh = isNewPost(post.created_at);
+  // videoId 없으면 보라색 그라디언트 fallback
+  const thumb = info.videoId ? youtubeThumbUrl(info.videoId) : null;
+
+  return (
+    <Link
+      href={`/board/youtube/${post.id}`}
+      className="group flex h-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(124,58,237,0.18)] dark:border-white/[0.07] dark:bg-[#16162a]"
+    >
+      <div className="relative aspect-video w-full overflow-hidden bg-gray-100 dark:bg-white/[0.04]">
+        {thumb ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={thumb}
+            alt=""
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            loading="lazy"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-500 to-cyan-500 text-white">
+            <PlayCircle className="h-12 w-12 opacity-90" />
+          </div>
+        )}
+        {/* ▶️ 재생 아이콘 오버레이 */}
+        <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/15 opacity-0 transition-opacity group-hover:opacity-100">
+          <span className="grid h-14 w-14 place-items-center rounded-full bg-red-600/95 text-white shadow-xl ring-2 ring-white/40">
+            <PlayCircle className="h-8 w-8" />
+          </span>
+        </div>
+        <span className="pointer-events-none absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-red-600/90 text-white ring-1 ring-white/20 backdrop-blur-sm">
+          <PlayCircle className="h-4 w-4" />
+        </span>
+        {fresh && (
+          <span className="absolute left-2 top-2 rounded-full bg-violet-500/85 px-2 py-0.5 text-[10px] font-bold text-white ring-1 ring-inset ring-white/20 backdrop-blur-sm">
+            NEW
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-1 flex-col gap-1.5 p-3">
+        <p className="line-clamp-2 text-sm font-bold text-gray-900 dark:text-white">
+          {post.title}
+        </p>
+        <div className="mt-auto flex items-center justify-between pt-1 text-[11px] text-gray-400">
+          <span className="flex items-center gap-1.5">
+            <span className="font-medium text-gray-600 dark:text-gray-300">
+              {post.author?.nickname ?? "(알수없음)"}
+            </span>
+            {post.author && (
+              <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
+            )}
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="flex items-center gap-0.5">
+              <Eye className="h-3 w-3" />
+              {post.view_count}
+            </span>
+            <span className="flex items-center gap-0.5">
+              <MessageSquare className="h-3 w-3" />
+              {post.comment_count}
+            </span>
+          </span>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+// ── 자료실 — PDF 중심 리스트 ──────────────────────────────
+function ResourceList({ posts }: { posts: PostRow[] }) {
+  return (
+    <ul className="space-y-2.5">
+      {posts.map((post) => (
+        <ResourceRow key={post.id} post={post} />
+      ))}
+    </ul>
+  );
+}
+
+function ResourceRow({ post }: { post: PostRow }) {
+  const info = useMemo(() => parseResourceContent(post.content), [post.content]);
+  const fresh = isNewPost(post.created_at);
+  const hasFile = !!post.file_url;
+
+  return (
+    <li>
+      <Link
+        href={`/board/resources/${post.id}`}
+        className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-[0_8px_22px_rgba(124,58,237,0.15)] dark:border-white/[0.07] dark:bg-[#16162a]"
+      >
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-violet-500/10 text-violet-500 dark:bg-violet-500/15">
+          <FileText className="h-6 w-6" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
+                RESOURCE_CATEGORY_STYLE[info.category],
+              )}
+            >
+              {getResourceCategoryLabel(info.category)}
+            </span>
+            {hasFile && (
+              <span className="inline-flex items-center gap-0.5 rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
+                <Paperclip className="h-2.5 w-2.5" />
+                PDF
+              </span>
+            )}
+            {fresh && (
+              <span className="inline-flex items-center rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
+                NEW
+              </span>
+            )}
+            <span className="ml-auto text-[11px] text-gray-400">
+              {formatDate(post.created_at)}
+            </span>
+          </div>
+          <p className="mt-1.5 line-clamp-1 text-sm font-extrabold text-gray-900 dark:text-white">
+            {post.title}
+          </p>
+          {info.description && (
+            <p className="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
+              {info.description}
+            </p>
+          )}
+          <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500">
+            <span className="font-medium text-gray-700 dark:text-gray-300">
+              {post.author?.nickname ?? "(알수없음)"}
+            </span>
+            {post.author && (
+              <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
+            )}
+            <span className="ml-auto flex items-center gap-2 text-gray-400">
+              <span className="flex items-center gap-0.5">
+                <Eye className="h-3 w-3" />
+                {post.view_count}
+              </span>
+              <span className="flex items-center gap-0.5">
+                <MessageSquare className="h-3 w-3" />
+                {post.comment_count}
+              </span>
+            </span>
+          </div>
+        </div>
+      </Link>
+    </li>
+  );
+}
+
+// ── 스터디 — 모집 카드 그리드 ─────────────────────────────
+function StudyGrid({ posts }: { posts: PostRow[] }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {posts.map((post) => (
+        <StudyCard key={post.id} post={post} />
+      ))}
+    </div>
+  );
+}
+
+function StudyCard({ post }: { post: PostRow }) {
+  const info = useMemo(() => parseStudyContent(post.content), [post.content]);
+  const fresh = isNewPost(post.created_at);
+  const closed = post.status === "resolved";
+  // 댓글 수 = 모집된 인원 수 비슷한 의미로 활용 (작성자 + 댓글 단 사람)
+  // 단순화: comment_count + 1 (작성자) 를 가입 의사 표현 인원으로 가정. 상한은 maxMembers.
+  const joined = Math.min(info.maxMembers, post.comment_count + 1);
+
+  return (
+    <Link
+      href={`/board/study/${post.id}`}
+      className={cn(
+        "group flex h-full flex-col rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(124,58,237,0.15)] dark:bg-[#16162a]",
+        closed
+          ? "border-gray-200 opacity-80 dark:border-white/[0.05]"
+          : "border-gray-200 dark:border-white/[0.07]",
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span
+          className={cn(
+            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
+            STUDY_SUBJECT_STYLE[info.subject],
+          )}
+        >
+          {getStudySubjectLabel(info.subject)}
+        </span>
+        <span
+          className={cn(
+            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
+            closed
+              ? "bg-gray-500/15 text-gray-500 ring-gray-500/30 dark:text-gray-300"
+              : "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300",
+          )}
+        >
+          {closed ? "마감" : "모집중"}
+        </span>
+        {fresh && !closed && (
+          <span className="inline-flex items-center rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
+            NEW
+          </span>
+        )}
+      </div>
+
+      <p className="mt-2 line-clamp-1 text-base font-extrabold text-gray-900 dark:text-white">
+        {post.title}
+      </p>
+
+      <div className="mt-2 grid gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+        <span className="flex items-center gap-1.5">
+          <Users className="h-3.5 w-3.5 text-violet-500" />
+          <span className="font-semibold text-gray-700 dark:text-gray-200 tabular-nums">
+            {joined}/{info.maxMembers}명 모집
+          </span>
+        </span>
+        {info.schedule && (
+          <span className="flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5 text-violet-500" />
+            <span className="line-clamp-1">{info.schedule}</span>
+          </span>
+        )}
+        {info.location && (
+          <span className="flex items-center gap-1.5">
+            <MapPin className="h-3.5 w-3.5 text-violet-500" />
+            <span className="line-clamp-1">{info.location}</span>
+          </span>
+        )}
+      </div>
+
+      <div className="mt-auto flex items-center justify-between pt-3 text-[11px] text-gray-500">
+        <span className="flex items-center gap-1.5">
+          <span className="font-medium text-gray-700 dark:text-gray-300">
+            {post.author?.nickname ?? "(알수없음)"}
+          </span>
+          {post.author && (
+            <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
+          )}
+        </span>
+        <span className="flex items-center gap-2 text-gray-400">
+          <span className="flex items-center gap-0.5">
+            <Eye className="h-3 w-3" />
+            {post.view_count}
+          </span>
+          <span className="flex items-center gap-0.5">
+            <MessageSquare className="h-3 w-3" />
+            {post.comment_count}
+          </span>
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+// ── 문태뉴스 — 매거진 레이아웃 (히어로 + 가로형 카드) ────────
+function NewsMagazine({ posts }: { posts: PostRow[] }) {
+  if (posts.length === 0) return null;
+  const [hero, ...rest] = posts;
+  return (
+    <div className="space-y-5">
+      <NewsHero post={hero} />
+      {rest.length > 0 && (
+        <ul className="space-y-3">
+          {rest.map((post) => (
+            <NewsRow key={post.id} post={post} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function NewsHero({ post }: { post: PostRow }) {
+  const fresh = isNewPost(post.created_at);
+  const preview = previewText(post.content, 180);
+  return (
+    <Link
+      href={`/board/news/${post.id}`}
+      className="group block overflow-hidden rounded-2xl border border-gray-200 bg-white transition hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(124,58,237,0.2)] dark:border-white/[0.07] dark:bg-[#16162a]"
+    >
+      <div className="relative aspect-[16/8] w-full overflow-hidden">
+        {post.image_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={post.image_url}
+            alt=""
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            loading="lazy"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-600 via-violet-500 to-cyan-500 text-white">
+            <Newspaper className="h-16 w-16 opacity-80" />
+          </div>
+        )}
+        <div className="absolute left-3 top-3 flex flex-wrap gap-1">
+          <span className="inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-0.5 text-[10px] font-bold text-violet-700 ring-1 ring-inset ring-white/40 backdrop-blur-sm">
+            <Newspaper className="h-3 w-3" />
+            메인 뉴스
+          </span>
+          {fresh && (
+            <span className="rounded-full bg-violet-500/85 px-2 py-0.5 text-[10px] font-bold text-white ring-1 ring-inset ring-white/20 backdrop-blur-sm">
+              NEW
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="p-5">
+        <h2 className="line-clamp-2 text-xl font-extrabold leading-snug text-gray-900 dark:text-white">
+          {post.title}
+        </h2>
+        {preview && (
+          <p className="mt-2 line-clamp-2 text-sm text-gray-500 dark:text-gray-400">
+            {preview}
+          </p>
+        )}
+        <div className="mt-3 flex items-center gap-2 text-[11px] text-gray-500">
+          <span className="font-medium text-gray-700 dark:text-gray-300">
+            {post.author?.nickname ?? "(알수없음)"}
+          </span>
+          {post.author && (
+            <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
+          )}
+          <span className="text-gray-300">·</span>
+          <span className="tabular-nums">{formatDate(post.created_at)}</span>
+          <span className="ml-auto flex items-center gap-2 text-gray-400">
+            <span className="flex items-center gap-0.5">
+              <Eye className="h-3 w-3" />
+              {post.view_count}
+            </span>
+            <span className="flex items-center gap-0.5">
+              <MessageSquare className="h-3 w-3" />
+              {post.comment_count}
+            </span>
+          </span>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function NewsRow({ post }: { post: PostRow }) {
+  const fresh = isNewPost(post.created_at);
+  const preview = previewText(post.content, 120);
+  return (
+    <li>
+      <Link
+        href={`/board/news/${post.id}`}
+        className="flex gap-4 rounded-xl border border-gray-200 bg-white p-3 transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(124,58,237,0.15)] dark:border-white/[0.07] dark:bg-[#16162a]"
+      >
+        <div className="relative h-24 w-32 shrink-0 overflow-hidden rounded-lg sm:h-28 sm:w-40">
+          {post.image_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={post.image_url}
+              alt=""
+              className="h-full w-full object-cover"
+              loading="lazy"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-500 to-cyan-500 text-white">
+              <Newspaper className="h-7 w-7 opacity-90" />
+            </div>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {fresh && (
+              <span className="inline-flex items-center rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
+                NEW
+              </span>
+            )}
+            <span className="text-[11px] text-gray-400">
+              {formatDate(post.created_at)}
+            </span>
+          </div>
+          <p className="mt-1 line-clamp-2 text-sm font-extrabold leading-snug text-gray-900 dark:text-white">
+            {post.title}
+          </p>
+          {preview && (
+            <p className="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
+              {preview}
+            </p>
+          )}
+          <div className="mt-1.5 flex items-center gap-2 text-[11px] text-gray-500">
+            <span className="font-medium text-gray-700 dark:text-gray-300">
+              {post.author?.nickname ?? "(알수없음)"}
+            </span>
+            {post.author && (
+              <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
+            )}
+            <span className="ml-auto flex items-center gap-2 text-gray-400">
+              <span className="flex items-center gap-0.5">
+                <Eye className="h-3 w-3" />
+                {post.view_count}
+              </span>
+              <span className="flex items-center gap-0.5">
+                <MessageSquare className="h-3 w-3" />
+                {post.comment_count}
+              </span>
+            </span>
+          </div>
+        </div>
+      </Link>
+    </li>
+  );
+}
+
+// ── 졸업생 — 연도 뱃지 리스트 ─────────────────────────────
+function AlumniList({ posts }: { posts: PostRow[] }) {
+  return (
+    <ul className="space-y-2.5">
+      {posts.map((post) => (
+        <AlumniRow key={post.id} post={post} />
+      ))}
+    </ul>
+  );
+}
+
+function AlumniRow({ post }: { post: PostRow }) {
+  const info = useMemo(() => parseAlumniContent(post.content), [post.content]);
+  const fresh = isNewPost(post.created_at);
+  const preview = previewText(info.description, 140);
+
+  return (
+    <li>
+      <Link
+        href={`/board/alumni/${post.id}`}
+        className="block rounded-xl border border-gray-200 bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-[0_8px_22px_rgba(245,158,11,0.18)] dark:border-white/[0.07] dark:bg-[#16162a]"
+      >
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600 ring-1 ring-inset ring-amber-500/30 dark:text-amber-300">
+            <GraduationCap className="h-3 w-3" />
+            {info.graduationYear} 졸업
+          </span>
+          {fresh && (
+            <span className="inline-flex items-center rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
+              NEW
+            </span>
+          )}
+          <span className="ml-auto text-[11px] text-gray-400">
+            {formatDate(post.created_at)}
+          </span>
+        </div>
+        <p className="mt-1.5 line-clamp-1 text-sm font-extrabold text-gray-900 dark:text-white">
+          {post.title}
+        </p>
+        {preview && (
+          <p className="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
+            {preview}
+          </p>
+        )}
+        <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500">
+          <span className="font-medium text-gray-700 dark:text-gray-300">
+            {post.author?.nickname ?? "(알수없음)"}
+          </span>
+          {post.author && (
+            <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
+          )}
+          <span className="ml-auto flex items-center gap-2 text-gray-400">
+            <span className="flex items-center gap-0.5">
+              <Eye className="h-3 w-3" />
+              {post.view_count}
+            </span>
+            <span className="flex items-center gap-0.5">
+              <MessageSquare className="h-3 w-3" />
+              {post.comment_count}
+            </span>
+          </span>
+        </div>
+      </Link>
+    </li>
+  );
+}
+
+// ── 선배의 한마디 — 대학/학과 카드 ──────────────────────────
+function SeniorGrid({ posts }: { posts: PostRow[] }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {posts.map((post) => (
+        <SeniorCard key={post.id} post={post} />
+      ))}
+    </div>
+  );
+}
+
+function SeniorCard({ post }: { post: PostRow }) {
+  const info = useMemo(() => parseSeniorContent(post.content), [post.content]);
+  const fresh = isNewPost(post.created_at);
+
+  return (
+    <Link
+      href={`/board/senior/${post.id}`}
+      className="group flex h-full flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(124,58,237,0.18)] dark:border-white/[0.07] dark:bg-[#16162a]"
+    >
+      <div className="flex items-start gap-3">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-500 text-white shadow-md">
+          <School className="h-6 w-6" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-1 text-base font-extrabold text-gray-900 dark:text-white">
+            {info.university || "(대학명 미입력)"}
+          </p>
+          <p className="line-clamp-1 text-xs text-gray-500 dark:text-gray-400">
+            {info.major || "(학과 미입력)"}
+          </p>
+        </div>
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600 ring-1 ring-inset ring-amber-500/30 dark:text-amber-300">
+          <GraduationCap className="h-3 w-3" />
+          {info.graduationYear}
+        </span>
+      </div>
+
+      {info.summary && (
+        <div className="rounded-lg bg-violet-500/[0.06] px-3 py-2.5 text-sm font-semibold text-violet-700 ring-1 ring-inset ring-violet-500/20 dark:text-violet-200">
+          <span className="mr-1 inline-flex items-center text-violet-500">
+            <Quote className="h-3.5 w-3.5" />
+          </span>
+          {info.summary}
+        </div>
+      )}
+
+      <p className="line-clamp-1 text-sm font-bold text-gray-900 dark:text-white">
+        {post.title}
+      </p>
+
+      <div className="mt-auto flex items-center justify-between text-[11px] text-gray-500">
+        <span className="flex items-center gap-1.5">
+          <span className="font-medium text-gray-700 dark:text-gray-300">
+            {post.author?.nickname ?? "(알수없음)"}
+          </span>
+          {post.author && (
+            <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
+          )}
+          {fresh && (
+            <span className="ml-1 inline-flex items-center rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
+              NEW
+            </span>
+          )}
+        </span>
+        <span className="flex items-center gap-2 text-gray-400">
+          <span className="flex items-center gap-0.5">
+            <Eye className="h-3 w-3" />
+            {post.view_count}
+          </span>
+          <span className="flex items-center gap-0.5">
+            <MessageSquare className="h-3 w-3" />
+            {post.comment_count}
+          </span>
+        </span>
+      </div>
+    </Link>
   );
 }

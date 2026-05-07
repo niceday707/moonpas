@@ -9,9 +9,11 @@ import {
   ArrowLeft,
   CalendarDays,
   CheckCircle2,
+  Clock,
   Download,
   Eye,
   FileText,
+  GraduationCap,
   Heart,
   Loader2,
   MapPin,
@@ -20,8 +22,12 @@ import {
   Pencil,
   Pin,
   PinOff,
+  PlayCircle,
+  Quote,
+  School,
   Send,
   Trash2,
+  Users,
   Vote,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
@@ -30,21 +36,32 @@ import {
   BOARD_LABEL,
   MARKET_CONDITION_LABEL,
   QA_SUBJECT_STYLE,
+  RESOURCE_CATEGORY_STYLE,
+  STUDY_SUBJECT_STYLE,
   createComment,
   deleteComment,
   deletePost,
   getPost,
   getQaSubjectLabel,
+  getResourceCategoryLabel,
+  getStudySubjectLabel,
   incrementLikeCount,
   incrementViewCount,
   listComments,
+  parseAlumniContent,
   parseIssueContent,
   parseLostContent,
   parseMarketContent,
   parseQaContent,
+  parseResourceContent,
+  parseSeniorContent,
+  parseStudyContent,
+  parseYoutubeContent,
   setPostStatus,
   togglePostPin,
   votePost,
+  youtubeEmbedUrl,
+  type AlumniContent,
   type BoardType,
   type CommentRow,
   type IssueContent,
@@ -52,6 +69,10 @@ import {
   type PostRow,
   type PostStatus,
   type QaContent,
+  type ResourceContent,
+  type SeniorContent,
+  type StudyContent,
+  type YoutubeContent,
 } from "@/lib/board";
 import {
   addLikedPost,
@@ -175,6 +196,11 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
   const isIssue = boardType === "issue";
   const isFree = boardType === "free";
   const isQa = boardType === "qa";
+  const isYoutube = boardType === "youtube";
+  const isResources = boardType === "resources";
+  const isStudy = boardType === "study";
+  const isAlumni = boardType === "alumni";
+  const isSenior = boardType === "senior";
   const lostInfo = isLost ? parseLostContent(post.content) : null;
   const marketInfo: MarketContent | null = isMarket
     ? parseMarketContent(post.content)
@@ -183,7 +209,25 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
     ? parseIssueContent(post.content)
     : null;
   const qaInfo: QaContent | null = isQa ? parseQaContent(post.content) : null;
+  const youtubeInfo: YoutubeContent | null = isYoutube
+    ? parseYoutubeContent(post.content)
+    : null;
+  const resourceInfo: ResourceContent | null = isResources
+    ? parseResourceContent(post.content)
+    : null;
+  const studyInfo: StudyContent | null = isStudy
+    ? parseStudyContent(post.content)
+    : null;
+  const alumniInfo: AlumniContent | null = isAlumni
+    ? parseAlumniContent(post.content)
+    : null;
+  const seniorInfo: SeniorContent | null = isSenior
+    ? parseSeniorContent(post.content)
+    : null;
   const answered = isQa && comments.length > 0;
+  const studyJoined = studyInfo
+    ? Math.min(studyInfo.maxMembers, comments.length + 1)
+    : 0;
   const totalVotes = post.vote_a + post.vote_b;
   const ratioA = totalVotes === 0 ? 50 : Math.round((post.vote_a / totalVotes) * 100);
   const ratioB = totalVotes === 0 ? 50 : 100 - ratioA;
@@ -344,6 +388,56 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
               </span>
             </>
           )}
+          {isResources && resourceInfo && (
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
+                RESOURCE_CATEGORY_STYLE[resourceInfo.category],
+              )}
+            >
+              {getResourceCategoryLabel(resourceInfo.category)}
+            </span>
+          )}
+          {isStudy && studyInfo && (
+            <>
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
+                  STUDY_SUBJECT_STYLE[studyInfo.subject],
+                )}
+              >
+                {getStudySubjectLabel(studyInfo.subject)}
+              </span>
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
+                  post.status === "resolved"
+                    ? "bg-gray-500/15 text-gray-500 ring-gray-500/30 dark:text-gray-300"
+                    : "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300",
+                )}
+              >
+                {post.status === "resolved" ? "마감" : "모집중"}
+              </span>
+            </>
+          )}
+          {isAlumni && alumniInfo && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600 ring-1 ring-inset ring-amber-500/30 dark:text-amber-300">
+              <GraduationCap className="h-3 w-3" />
+              {alumniInfo.graduationYear} 졸업
+            </span>
+          )}
+          {isSenior && seniorInfo && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600 ring-1 ring-inset ring-amber-500/30 dark:text-amber-300">
+              <GraduationCap className="h-3 w-3" />
+              {seniorInfo.graduationYear} 졸업
+            </span>
+          )}
+          {isYoutube && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-bold text-red-600 ring-1 ring-inset ring-red-500/30 dark:text-red-300">
+              <PlayCircle className="h-3 w-3" />
+              문튜브
+            </span>
+          )}
         </div>
         <h1 className="mt-1 text-xl font-extrabold leading-snug text-gray-900 dark:text-white">
           {post.title}
@@ -421,6 +515,26 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
                 {post.status === "resolved" ? "다시 나눔중으로" : "나눔완료로 변경"}
               </button>
             )}
+            {isOwner && isStudy && (
+              <button
+                type="button"
+                onClick={handleToggleStatus}
+                disabled={togglingStatus}
+                className={cn(
+                  "flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition disabled:cursor-not-allowed disabled:opacity-50",
+                  post.status === "resolved"
+                    ? "border-emerald-300 text-emerald-600 hover:bg-emerald-50 dark:border-emerald-500/40 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
+                    : "border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/[0.05]",
+                )}
+              >
+                {togglingStatus ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-3 w-3" />
+                )}
+                {post.status === "resolved" ? "다시 모집중으로" : "마감하기"}
+              </button>
+            )}
             {isOwner && (
               <>
                 <Link
@@ -443,14 +557,27 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
           </span>
         </div>
 
-        {post.image_url && (
+        {/* 문튜브 — YouTube iframe 임베드 (이미지 자리 대신) */}
+        {isYoutube && youtubeInfo?.videoId ? (
+          <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-black dark:border-white/[0.07]">
+            <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
+              <iframe
+                src={youtubeEmbedUrl(youtubeInfo.videoId)}
+                title={post.title}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                className="absolute inset-0 h-full w-full"
+              />
+            </div>
+          </div>
+        ) : post.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={post.image_url}
             alt=""
             className="mt-4 max-h-96 w-full rounded-lg object-contain"
           />
-        )}
+        ) : null}
 
         {isLost && lostInfo && (lostInfo.location || lostInfo.lostDate) && (
           <div className="mt-4 grid gap-2 rounded-lg border border-gray-100 bg-gray-50/70 px-4 py-3 text-xs sm:grid-cols-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
@@ -497,6 +624,75 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
           </div>
         )}
 
+        {/* 스터디 — 모집 정보 패널 */}
+        {isStudy && studyInfo && (
+          <div className="mt-4 grid gap-2 rounded-lg border border-gray-100 bg-gray-50/70 px-4 py-3 text-xs sm:grid-cols-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 shrink-0 text-violet-500" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                  모집 인원
+                </p>
+                <p className="mt-0.5 truncate text-sm text-gray-800 dark:text-gray-200 tabular-nums">
+                  {studyJoined}/{studyInfo.maxMembers}명
+                </p>
+              </div>
+            </div>
+            {studyInfo.schedule && (
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 shrink-0 text-violet-500" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                    시간대
+                  </p>
+                  <p className="mt-0.5 truncate text-sm text-gray-800 dark:text-gray-200">
+                    {studyInfo.schedule}
+                  </p>
+                </div>
+              </div>
+            )}
+            {studyInfo.location && (
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 shrink-0 text-violet-500" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                    장소
+                  </p>
+                  <p className="mt-0.5 truncate text-sm text-gray-800 dark:text-gray-200">
+                    {studyInfo.location}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 선배의 한마디 — 대학/학과/요약 패널 */}
+        {isSenior && seniorInfo && (
+          <div className="mt-4 rounded-xl border border-gray-100 bg-gradient-to-br from-violet-50 to-cyan-50 p-4 dark:border-white/[0.06] dark:from-violet-500/[0.05] dark:to-cyan-500/[0.05]">
+            <div className="flex items-start gap-3">
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-500 text-white shadow-md">
+                <School className="h-6 w-6" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-extrabold text-gray-900 dark:text-white">
+                  {seniorInfo.university || "(대학명 미입력)"}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {seniorInfo.major || "(학과 미입력)"} · {seniorInfo.graduationYear}년
+                  졸업
+                </p>
+              </div>
+            </div>
+            {seniorInfo.summary && (
+              <p className="mt-3 flex items-start gap-2 rounded-lg bg-white/60 px-3 py-2.5 text-sm font-semibold text-violet-700 ring-1 ring-inset ring-violet-500/20 dark:bg-white/[0.04] dark:text-violet-200">
+                <Quote className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-500" />
+                {seniorInfo.summary}
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="mt-5 whitespace-pre-wrap text-sm leading-relaxed text-gray-800 dark:text-gray-200">
           {isLost && lostInfo
             ? lostInfo.description
@@ -506,6 +702,16 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
             ? issueInfo.description
             : isQa && qaInfo
             ? qaInfo.question
+            : isYoutube && youtubeInfo
+            ? youtubeInfo.description
+            : isResources && resourceInfo
+            ? resourceInfo.description
+            : isStudy && studyInfo
+            ? studyInfo.description
+            : isAlumni && alumniInfo
+            ? alumniInfo.description
+            : isSenior && seniorInfo
+            ? seniorInfo.review
             : post.content}
         </div>
 

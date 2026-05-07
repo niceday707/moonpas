@@ -677,6 +677,352 @@ export function stringifyQaContent(input: QaContent): string {
 }
 
 // ─────────────────────────────────────────────────────────
+// 문튜브 — content 안에 { youtubeUrl, videoId, description } JSON
+// ─────────────────────────────────────────────────────────
+
+export type YoutubeContent = {
+  /** 사용자가 입력한 원본 URL (참조용) */
+  youtubeUrl: string;
+  /** 추출된 11자리 비디오 ID */
+  videoId: string;
+  /** 영상 설명 */
+  description: string;
+};
+
+/** 유튜브 URL 또는 11자리 ID 에서 videoId 추출. 실패 시 null. */
+export function extractYoutubeId(input: string): string | null {
+  const v = input.trim();
+  if (!v) return null;
+  if (/^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
+  const patterns = [
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+    /[?&]v=([a-zA-Z0-9_-]{11})/,
+    /\/embed\/([a-zA-Z0-9_-]{11})/,
+    /\/shorts\/([a-zA-Z0-9_-]{11})/,
+  ];
+  for (const re of patterns) {
+    const m = v.match(re);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+export function youtubeThumbUrl(videoId: string): string {
+  return `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+}
+
+export function youtubeEmbedUrl(videoId: string): string {
+  return `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1`;
+}
+
+export function parseYoutubeContent(content: string): YoutubeContent {
+  try {
+    const obj: unknown = JSON.parse(content);
+    if (
+      obj &&
+      typeof obj === "object" &&
+      "videoId" in obj &&
+      typeof (obj as { videoId: unknown }).videoId === "string"
+    ) {
+      const o = obj as {
+        youtubeUrl?: unknown;
+        videoId: string;
+        description?: unknown;
+      };
+      return {
+        youtubeUrl: typeof o.youtubeUrl === "string" ? o.youtubeUrl : "",
+        videoId: o.videoId,
+        description: typeof o.description === "string" ? o.description : "",
+      };
+    }
+  } catch {
+    // 일반 텍스트 — videoId 추출 시도
+  }
+  const id = extractYoutubeId(content);
+  return { youtubeUrl: id ? content : "", videoId: id ?? "", description: id ? "" : content };
+}
+
+export function stringifyYoutubeContent(input: YoutubeContent): string {
+  return JSON.stringify({
+    youtubeUrl: input.youtubeUrl.trim(),
+    videoId: input.videoId.trim(),
+    description: input.description.trim(),
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// 자료실 — content 안에 { category, description } JSON
+// ─────────────────────────────────────────────────────────
+
+export const RESOURCE_CATEGORIES = [
+  { value: "exam", label: "기출문제" },
+  { value: "study", label: "학습자료" },
+  { value: "form", label: "양식·서류" },
+] as const;
+
+export type ResourceCategory = (typeof RESOURCE_CATEGORIES)[number]["value"];
+
+const RESOURCE_CATEGORY_VALUES: ReadonlySet<string> = new Set(
+  RESOURCE_CATEGORIES.map((c) => c.value),
+);
+
+export function getResourceCategoryLabel(c: ResourceCategory): string {
+  return RESOURCE_CATEGORIES.find((x) => x.value === c)?.label ?? "학습자료";
+}
+
+export const RESOURCE_CATEGORY_STYLE: Record<ResourceCategory, string> = {
+  exam: "bg-rose-500/15 text-rose-600 ring-rose-500/30 dark:text-rose-300",
+  study: "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300",
+  form: "bg-blue-500/15 text-blue-600 ring-blue-500/30 dark:text-blue-300",
+};
+
+export type ResourceContent = {
+  category: ResourceCategory;
+  description: string;
+};
+
+export function parseResourceContent(content: string): ResourceContent {
+  try {
+    const obj: unknown = JSON.parse(content);
+    if (
+      obj &&
+      typeof obj === "object" &&
+      "description" in obj &&
+      typeof (obj as { description: unknown }).description === "string"
+    ) {
+      const o = obj as { category?: unknown; description: string };
+      const category: ResourceCategory =
+        typeof o.category === "string" && RESOURCE_CATEGORY_VALUES.has(o.category)
+          ? (o.category as ResourceCategory)
+          : "study";
+      return { category, description: o.description };
+    }
+  } catch {
+    // 일반 텍스트
+  }
+  return { category: "study", description: content };
+}
+
+export function stringifyResourceContent(input: ResourceContent): string {
+  return JSON.stringify({
+    category: input.category,
+    description: input.description.trim(),
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// 스터디 — content 안에 { subject, maxMembers, schedule, location, description } JSON
+// ─────────────────────────────────────────────────────────
+
+export const STUDY_SUBJECTS = [
+  { value: "korean", label: "국어" },
+  { value: "english", label: "영어" },
+  { value: "math", label: "수학" },
+  { value: "science", label: "과학" },
+  { value: "social", label: "사회" },
+  { value: "etc", label: "기타" },
+] as const;
+
+export type StudySubject = (typeof STUDY_SUBJECTS)[number]["value"];
+
+const STUDY_SUBJECT_VALUES: ReadonlySet<string> = new Set(
+  STUDY_SUBJECTS.map((s) => s.value),
+);
+
+export function getStudySubjectLabel(s: StudySubject): string {
+  return STUDY_SUBJECTS.find((x) => x.value === s)?.label ?? "기타";
+}
+
+export const STUDY_SUBJECT_STYLE: Record<StudySubject, string> = {
+  korean: "bg-rose-500/15 text-rose-600 ring-rose-500/30 dark:text-rose-300",
+  english: "bg-blue-500/15 text-blue-600 ring-blue-500/30 dark:text-blue-300",
+  math: "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300",
+  science: "bg-violet-500/15 text-violet-600 ring-violet-500/30 dark:text-violet-300",
+  social: "bg-orange-500/15 text-orange-600 ring-orange-500/30 dark:text-orange-300",
+  etc: "bg-gray-500/15 text-gray-600 ring-gray-500/30 dark:text-gray-300",
+};
+
+export type StudyContent = {
+  subject: StudySubject;
+  /** 최대 모집 인원 */
+  maxMembers: number;
+  /** 시간대 ("매주 월/수 18-20시" 등 자유서술) */
+  schedule: string;
+  /** 장소 ("도서관 3층 그룹실" 등) */
+  location: string;
+  description: string;
+};
+
+export function parseStudyContent(content: string): StudyContent {
+  try {
+    const obj: unknown = JSON.parse(content);
+    if (
+      obj &&
+      typeof obj === "object" &&
+      "description" in obj &&
+      typeof (obj as { description: unknown }).description === "string"
+    ) {
+      const o = obj as {
+        subject?: unknown;
+        maxMembers?: unknown;
+        schedule?: unknown;
+        location?: unknown;
+        description: string;
+      };
+      const subject: StudySubject =
+        typeof o.subject === "string" && STUDY_SUBJECT_VALUES.has(o.subject)
+          ? (o.subject as StudySubject)
+          : "etc";
+      const max =
+        typeof o.maxMembers === "number" && Number.isFinite(o.maxMembers)
+          ? Math.max(1, Math.min(99, Math.floor(o.maxMembers)))
+          : 4;
+      return {
+        subject,
+        maxMembers: max,
+        schedule: typeof o.schedule === "string" ? o.schedule : "",
+        location: typeof o.location === "string" ? o.location : "",
+        description: o.description,
+      };
+    }
+  } catch {
+    // 일반 텍스트
+  }
+  return {
+    subject: "etc",
+    maxMembers: 4,
+    schedule: "",
+    location: "",
+    description: content,
+  };
+}
+
+export function stringifyStudyContent(input: StudyContent): string {
+  return JSON.stringify({
+    subject: input.subject,
+    maxMembers: input.maxMembers,
+    schedule: input.schedule.trim(),
+    location: input.location.trim(),
+    description: input.description.trim(),
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// 졸업생 — content 안에 { graduationYear, description } JSON
+// ─────────────────────────────────────────────────────────
+
+/** 등록 가능한 졸업연도 후보 (최신 순) */
+export const ALUMNI_YEARS: number[] = (() => {
+  const now = new Date().getFullYear();
+  // 2020 ~ 현재 연도까지 최신순으로
+  const min = 2020;
+  const arr: number[] = [];
+  for (let y = now; y >= min; y--) arr.push(y);
+  return arr;
+})();
+
+export type AlumniContent = {
+  graduationYear: number;
+  description: string;
+};
+
+export function parseAlumniContent(content: string): AlumniContent {
+  try {
+    const obj: unknown = JSON.parse(content);
+    if (
+      obj &&
+      typeof obj === "object" &&
+      "description" in obj &&
+      typeof (obj as { description: unknown }).description === "string"
+    ) {
+      const o = obj as { graduationYear?: unknown; description: string };
+      const y =
+        typeof o.graduationYear === "number" && Number.isFinite(o.graduationYear)
+          ? Math.floor(o.graduationYear)
+          : ALUMNI_YEARS[0] ?? new Date().getFullYear();
+      return { graduationYear: y, description: o.description };
+    }
+  } catch {
+    // 일반 텍스트
+  }
+  return {
+    graduationYear: ALUMNI_YEARS[0] ?? new Date().getFullYear(),
+    description: content,
+  };
+}
+
+export function stringifyAlumniContent(input: AlumniContent): string {
+  return JSON.stringify({
+    graduationYear: input.graduationYear,
+    description: input.description.trim(),
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// 선배의 한마디 — content 안에 { university, major, graduationYear, summary, review } JSON
+// ─────────────────────────────────────────────────────────
+
+export type SeniorContent = {
+  university: string;
+  major: string;
+  graduationYear: number;
+  /** 한줄 요약 */
+  summary: string;
+  /** 본문 후기 */
+  review: string;
+};
+
+export function parseSeniorContent(content: string): SeniorContent {
+  try {
+    const obj: unknown = JSON.parse(content);
+    if (
+      obj &&
+      typeof obj === "object" &&
+      "review" in obj &&
+      typeof (obj as { review: unknown }).review === "string"
+    ) {
+      const o = obj as {
+        university?: unknown;
+        major?: unknown;
+        graduationYear?: unknown;
+        summary?: unknown;
+        review: string;
+      };
+      const y =
+        typeof o.graduationYear === "number" && Number.isFinite(o.graduationYear)
+          ? Math.floor(o.graduationYear)
+          : ALUMNI_YEARS[0] ?? new Date().getFullYear();
+      return {
+        university: typeof o.university === "string" ? o.university : "",
+        major: typeof o.major === "string" ? o.major : "",
+        graduationYear: y,
+        summary: typeof o.summary === "string" ? o.summary : "",
+        review: o.review,
+      };
+    }
+  } catch {
+    // 일반 텍스트
+  }
+  return {
+    university: "",
+    major: "",
+    graduationYear: ALUMNI_YEARS[0] ?? new Date().getFullYear(),
+    summary: "",
+    review: content,
+  };
+}
+
+export function stringifySeniorContent(input: SeniorContent): string {
+  return JSON.stringify({
+    university: input.university.trim(),
+    major: input.major.trim(),
+    graduationYear: input.graduationYear,
+    summary: input.summary.trim(),
+    review: input.review.trim(),
+  });
+}
+
+// ─────────────────────────────────────────────────────────
 // 좋아요 / 투표 mutator
 // ─────────────────────────────────────────────────────────
 

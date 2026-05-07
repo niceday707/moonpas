@@ -13,27 +13,47 @@ import {
   Lock,
   MapPin,
   CalendarDays,
+  GraduationCap,
+  Clock,
+  Users,
+  PlayCircle,
   X,
 } from "lucide-react";
 import { AuthGate } from "@/components/auth/AuthGate";
 import {
+  ALUMNI_YEARS,
   BOARD_LABEL,
   MARKET_CONDITION_LABEL,
   QA_SUBJECTS,
+  RESOURCE_CATEGORIES,
+  STUDY_SUBJECTS,
   createPost,
+  extractYoutubeId,
   getPost,
+  parseAlumniContent,
   parseIssueContent,
   parseLostContent,
   parseMarketContent,
   parseQaContent,
+  parseResourceContent,
+  parseSeniorContent,
+  parseStudyContent,
+  parseYoutubeContent,
+  stringifyAlumniContent,
   stringifyIssueContent,
   stringifyLostContent,
   stringifyMarketContent,
   stringifyQaContent,
+  stringifyResourceContent,
+  stringifySeniorContent,
+  stringifyStudyContent,
+  stringifyYoutubeContent,
   updatePost,
   type BoardType,
   type MarketCondition,
   type QaSubject,
+  type ResourceCategory,
+  type StudySubject,
 } from "@/lib/board";
 import { cn } from "@/lib/utils";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
@@ -86,6 +106,26 @@ function WriteInner() {
   const [optionB, setOptionB] = useState("반대");
   // 학습 Q&A 전용 — 과목 태그
   const [qaSubject, setQaSubject] = useState<QaSubject>("etc");
+  // 문튜브 전용
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  // 자료실 전용 — 카테고리
+  const [resourceCategory, setResourceCategory] = useState<ResourceCategory>("study");
+  // 스터디 전용
+  const [studySubject, setStudySubject] = useState<StudySubject>("etc");
+  const [studyMaxMembers, setStudyMaxMembers] = useState<number>(4);
+  const [studySchedule, setStudySchedule] = useState("");
+  const [studyLocation, setStudyLocation] = useState("");
+  // 졸업생 전용
+  const [alumniYear, setAlumniYear] = useState<number>(
+    ALUMNI_YEARS[0] ?? new Date().getFullYear(),
+  );
+  // 선배의 한마디 전용
+  const [seniorUniversity, setSeniorUniversity] = useState("");
+  const [seniorMajor, setSeniorMajor] = useState("");
+  const [seniorYear, setSeniorYear] = useState<number>(
+    ALUMNI_YEARS[0] ?? new Date().getFullYear(),
+  );
+  const [seniorSummary, setSeniorSummary] = useState("");
   // 이미지 상태 — 새로 고른 파일은 imageFile, 미리보기는 imagePreview, 수정 모드 시작 시 원본은 originalImageUrl
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -130,6 +170,32 @@ function WriteInner() {
         const parsed = parseQaContent(post.content);
         setQaSubject(parsed.subject);
         setContent(parsed.question);
+      } else if (post.board_type === "youtube") {
+        const parsed = parseYoutubeContent(post.content);
+        setYoutubeUrl(parsed.youtubeUrl);
+        setContent(parsed.description);
+      } else if (post.board_type === "resources") {
+        const parsed = parseResourceContent(post.content);
+        setResourceCategory(parsed.category);
+        setContent(parsed.description);
+      } else if (post.board_type === "study") {
+        const parsed = parseStudyContent(post.content);
+        setStudySubject(parsed.subject);
+        setStudyMaxMembers(parsed.maxMembers);
+        setStudySchedule(parsed.schedule);
+        setStudyLocation(parsed.location);
+        setContent(parsed.description);
+      } else if (post.board_type === "alumni") {
+        const parsed = parseAlumniContent(post.content);
+        setAlumniYear(parsed.graduationYear);
+        setContent(parsed.description);
+      } else if (post.board_type === "senior") {
+        const parsed = parseSeniorContent(post.content);
+        setSeniorUniversity(parsed.university);
+        setSeniorMajor(parsed.major);
+        setSeniorYear(parsed.graduationYear);
+        setSeniorSummary(parsed.summary);
+        setContent(parsed.review);
       } else {
         setContent(post.content);
       }
@@ -185,9 +251,16 @@ function WriteInner() {
     );
   }
 
-  // 관리자/교사만 작성 가능한 게시판: 공지사항·대입정보·교육과정
+  // 관리자/교사만 작성 가능한 게시판: 공지사항·대입정보·교육과정·문튜브·자료실·뉴스
   const role = profile.role as string;
-  const ADMIN_ONLY: BoardType[] = ["notice", "college", "curriculum"];
+  const ADMIN_ONLY: BoardType[] = [
+    "notice",
+    "college",
+    "curriculum",
+    "youtube",
+    "resources",
+    "news",
+  ];
   if (
     ADMIN_ONLY.includes(boardType) &&
     role !== "admin" &&
@@ -197,6 +270,9 @@ function WriteInner() {
       notice: "공지사항은 관리자만 작성할 수 있습니다",
       college: "대입정보는 관리자/교사만 작성할 수 있습니다",
       curriculum: "교육과정 가이드는 관리자/교사만 작성할 수 있습니다",
+      youtube: "문튜브는 관리자/교사만 영상을 추가할 수 있습니다",
+      resources: "자료실은 관리자/교사만 자료를 등록할 수 있습니다",
+      news: "문태뉴스는 관리자/교사만 작성할 수 있습니다",
     };
     return (
       <div className="mx-auto max-w-screen-md px-4 py-10">
@@ -234,6 +310,11 @@ function WriteInner() {
   const isMarket = boardType === "market";
   const isIssue = boardType === "issue";
   const isQa = boardType === "qa";
+  const isYoutube = boardType === "youtube";
+  const isResources = boardType === "resources";
+  const isStudy = boardType === "study";
+  const isAlumni = boardType === "alumni";
+  const isSenior = boardType === "senior";
 
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -301,6 +382,41 @@ function WriteInner() {
       setError("선택지 두 개를 모두 입력해주세요.");
       return;
     }
+    if (isYoutube) {
+      const id = extractYoutubeId(youtubeUrl);
+      if (!id) {
+        setError("유효한 YouTube URL 또는 11자리 영상 ID 를 입력해주세요.");
+        return;
+      }
+    }
+    if (isStudy) {
+      if (!Number.isFinite(studyMaxMembers) || studyMaxMembers < 1) {
+        setError("모집 인원은 1명 이상이어야 합니다.");
+        return;
+      }
+      if (!studySchedule.trim()) {
+        setError("스터디 시간대를 입력해주세요.");
+        return;
+      }
+      if (!studyLocation.trim()) {
+        setError("스터디 장소를 입력해주세요.");
+        return;
+      }
+    }
+    if (isSenior) {
+      if (!seniorUniversity.trim()) {
+        setError("대학명을 입력해주세요.");
+        return;
+      }
+      if (!seniorMajor.trim()) {
+        setError("학과명을 입력해주세요.");
+        return;
+      }
+      if (!seniorSummary.trim()) {
+        setError("한줄 요약을 입력해주세요.");
+        return;
+      }
+    }
     if (!user) {
       setError("로그인이 필요합니다.");
       return;
@@ -328,6 +444,38 @@ function WriteInner() {
       ? stringifyQaContent({
           subject: qaSubject,
           question: content,
+        })
+      : isYoutube
+      ? stringifyYoutubeContent({
+          youtubeUrl,
+          videoId: extractYoutubeId(youtubeUrl) ?? "",
+          description: content,
+        })
+      : isResources
+      ? stringifyResourceContent({
+          category: resourceCategory,
+          description: content,
+        })
+      : isStudy
+      ? stringifyStudyContent({
+          subject: studySubject,
+          maxMembers: studyMaxMembers,
+          schedule: studySchedule,
+          location: studyLocation,
+          description: content,
+        })
+      : isAlumni
+      ? stringifyAlumniContent({
+          graduationYear: alumniYear,
+          description: content,
+        })
+      : isSenior
+      ? stringifySeniorContent({
+          university: seniorUniversity,
+          major: seniorMajor,
+          graduationYear: seniorYear,
+          summary: seniorSummary,
+          review: content,
         })
       : content.trim();
 
@@ -499,6 +647,239 @@ function WriteInner() {
           </>
         )}
 
+        {isYoutube && (
+          <div>
+            <label className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+              <PlayCircle className="h-3 w-3 text-red-500" />
+              YouTube URL (필수)
+            </label>
+            <input
+              type="url"
+              value={youtubeUrl}
+              onChange={(e) => setYoutubeUrl(e.target.value)}
+              placeholder="https://www.youtube.com/watch?v=..."
+              disabled={submitting}
+              className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+            />
+            <p className="mt-1 text-[10px] text-gray-400">
+              youtu.be / watch?v= / shorts / embed 어떤 형식이든 OK. 영상 ID 만
+              입력해도 됩니다.
+            </p>
+            {/* 미리보기 — 유효한 ID 추출되면 썸네일 보여주기 */}
+            {(() => {
+              const id = extractYoutubeId(youtubeUrl);
+              if (!id) return null;
+              return (
+                <div className="mt-3 inline-block overflow-hidden rounded-lg border border-gray-200 dark:border-white/10">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`https://img.youtube.com/vi/${id}/mqdefault.jpg`}
+                    alt="YouTube 썸네일 미리보기"
+                    className="block h-32 w-auto"
+                  />
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {isResources && (
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+              카테고리 (필수)
+            </label>
+            <div className="mt-1.5 grid grid-cols-3 gap-2">
+              {RESOURCE_CATEGORIES.map((c) => {
+                const active = resourceCategory === c.value;
+                return (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => setResourceCategory(c.value)}
+                    disabled={submitting}
+                    className={cn(
+                      "rounded-xl border px-3 py-2.5 text-sm font-semibold transition disabled:opacity-50",
+                      active
+                        ? "border-violet-500 bg-violet-500/15 text-violet-700 dark:text-violet-200"
+                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+                    )}
+                  >
+                    {c.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1.5 text-[10px] text-gray-400">
+              자료실은 PDF 첨부가 핵심이에요. 아래 PDF 첨부 영역에서 파일을
+              올려주세요.
+            </p>
+          </div>
+        )}
+
+        {isStudy && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                과목
+              </label>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {STUDY_SUBJECTS.map((s) => {
+                  const active = studySubject === s.value;
+                  return (
+                    <button
+                      key={s.value}
+                      type="button"
+                      onClick={() => setStudySubject(s.value)}
+                      disabled={submitting}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50",
+                        active
+                          ? "border-violet-500 bg-violet-500/15 text-violet-700 dark:text-violet-200"
+                          : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+                      )}
+                    >
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <label className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                <Users className="h-3 w-3" />
+                모집 인원
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={99}
+                value={studyMaxMembers}
+                onChange={(e) =>
+                  setStudyMaxMembers(Math.max(1, Math.min(99, Number(e.target.value) || 1)))
+                }
+                disabled={submitting}
+                className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                <Clock className="h-3 w-3" />
+                시간대
+              </label>
+              <input
+                type="text"
+                value={studySchedule}
+                onChange={(e) => setStudySchedule(e.target.value)}
+                placeholder="예) 매주 월/수 18-20시"
+                maxLength={60}
+                disabled={submitting}
+                className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                <MapPin className="h-3 w-3" />
+                장소
+              </label>
+              <input
+                type="text"
+                value={studyLocation}
+                onChange={(e) => setStudyLocation(e.target.value)}
+                placeholder="예) 도서관 3층 그룹실"
+                maxLength={60}
+                disabled={submitting}
+                className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+              />
+            </div>
+          </div>
+        )}
+
+        {isAlumni && (
+          <div>
+            <label className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+              <GraduationCap className="h-3 w-3" />
+              졸업연도
+            </label>
+            <select
+              value={alumniYear}
+              onChange={(e) => setAlumniYear(Number(e.target.value))}
+              disabled={submitting}
+              className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+            >
+              {ALUMNI_YEARS.map((y) => (
+                <option key={y} value={y}>
+                  {y}년 졸업
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {isSenior && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                대학명
+              </label>
+              <input
+                type="text"
+                value={seniorUniversity}
+                onChange={(e) => setSeniorUniversity(e.target.value)}
+                placeholder="예) 서울대학교"
+                maxLength={40}
+                disabled={submitting}
+                className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                학과명
+              </label>
+              <input
+                type="text"
+                value={seniorMajor}
+                onChange={(e) => setSeniorMajor(e.target.value)}
+                placeholder="예) 컴퓨터공학부"
+                maxLength={40}
+                disabled={submitting}
+                className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                <GraduationCap className="h-3 w-3" />
+                졸업연도
+              </label>
+              <select
+                value={seniorYear}
+                onChange={(e) => setSeniorYear(Number(e.target.value))}
+                disabled={submitting}
+                className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+              >
+                {ALUMNI_YEARS.map((y) => (
+                  <option key={y} value={y}>
+                    {y}년 졸업
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                한줄 요약
+              </label>
+              <input
+                type="text"
+                value={seniorSummary}
+                onChange={(e) => setSeniorSummary(e.target.value)}
+                placeholder="예) 동아리 활동에 진심이면 합격해요!"
+                maxLength={60}
+                disabled={submitting}
+                className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+              />
+            </div>
+          </div>
+        )}
+
         {isQa && (
           <div>
             <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
@@ -627,6 +1008,16 @@ function WriteInner() {
               ? "주제 설명/배경"
               : isQa
               ? "질문 내용"
+              : isYoutube
+              ? "영상 설명"
+              : isResources
+              ? "자료 설명"
+              : isStudy
+              ? "스터디 소개"
+              : isAlumni
+              ? "후배에게 한마디"
+              : isSenior
+              ? "후기 본문"
               : "내용"}
           </label>
           <textarea
@@ -641,6 +1032,16 @@ function WriteInner() {
                 ? "왜 이 주제로 토론하고 싶은지, 배경 설명을 적어주세요."
                 : isQa
                 ? "어디까지 풀었는지, 어디서 막혔는지 자세히 적으면 답변이 빨라요."
+                : isYoutube
+                ? "영상에 대한 소개와 추천 이유를 적어주세요."
+                : isResources
+                ? "자료의 출처, 분량, 활용 팁을 적어주세요."
+                : isStudy
+                ? "어떤 사람과 어떻게 공부할지 자유롭게 적어주세요."
+                : isAlumni
+                ? "재학생들에게 들려주고 싶은 이야기를 자유롭게 적어주세요."
+                : isSenior
+                ? "지원 동기, 면접 준비, 합격 비결 등 자세히 적어주세요."
                 : "내용을 입력해주세요"
             }
             rows={10}

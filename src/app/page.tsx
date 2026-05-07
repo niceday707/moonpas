@@ -68,6 +68,7 @@ export default function LandingPage() {
                   setFailed((prev) => ({ ...prev, [i]: true }))
                 }
                 className={`h-full w-full object-cover ${slide.kb}`}
+                style={{ objectPosition: "30% center" }}
                 draggable={false}
               />
             </div>
@@ -92,14 +93,14 @@ export default function LandingPage() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
-          className="flex select-none items-center gap-3"
+          className="flex select-none items-center gap-2 md:gap-3"
         >
           <img
             src="/logo.jpg"
             alt="문태고 로고"
-            style={{ width: 40, height: 40, borderRadius: "50%" }}
+            className="h-8 w-8 rounded-full md:h-10 md:w-10"
           />
-          <span className="text-xl font-bold tracking-[0.3em] md:text-2xl">
+          <span className="text-sm font-bold tracking-[0.3em] md:text-2xl">
             MOONTAE
           </span>
         </motion.div>
@@ -108,7 +109,7 @@ export default function LandingPage() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.1, ease: "easeOut" }}
-          className="flex items-center gap-2 md:gap-4"
+          className="flex items-center gap-1 md:gap-4"
         >
           <button
             type="button"
@@ -120,15 +121,16 @@ export default function LandingPage() {
           </button>
           <Link
             href="/login"
-            className="flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold tracking-widest text-white/95 backdrop-blur-sm transition hover:bg-white/20"
+            aria-label="로그인"
+            className="flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-2 text-sm font-semibold tracking-widest text-white/95 backdrop-blur-sm transition hover:bg-white/20 md:px-4"
           >
             <LogIn className="h-4 w-4" />
-            로그인
+            <span className="hidden md:inline">로그인</span>
           </Link>
           <button
             type="button"
             onClick={() => setMenuOpen(true)}
-            className="flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold tracking-widest text-white/95 transition hover:bg-white/10"
+            className="flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold tracking-widest text-white/95 transition hover:bg-white/10 md:px-4"
           >
             <Menu className="h-4 w-4" />
             MENU

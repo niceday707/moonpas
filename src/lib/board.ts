@@ -217,12 +217,19 @@ export async function createPost(input: {
 
 export async function updatePost(
   postId: string,
-  patch: { title: string; content: string },
+  patch: { title: string; content: string; imageUrl?: string | null },
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase
-    .from("posts")
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq("id", postId);
+  const update: Record<string, unknown> = {
+    title: patch.title,
+    content: patch.content,
+    updated_at: new Date().toISOString(),
+  };
+  // imageUrl 이 정의되어 있을 때만 image_url 컬럼을 갱신 (undefined 면 변경 없음, null 이면 명시적 제거)
+  if (patch.imageUrl !== undefined) {
+    update.image_url = patch.imageUrl;
+  }
+
+  const { error } = await supabase.from("posts").update(update).eq("id", postId);
 
   if (error) {
     console.error("[updatePost] 실패", error);

@@ -15,6 +15,7 @@ import {
   type BoardType,
 } from "@/lib/board";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
+import { uploadImage } from "@/lib/storage";
 
 const VALID_BOARDS = Object.keys(BOARD_LABEL) as BoardType[];
 
@@ -48,7 +49,11 @@ function WriteInner() {
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  // 이미지 상태 — 새로 고른 파일은 imageFile, 미리보기는 imagePreview, 수정 모드 시작 시 원본은 originalImageUrl
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [originalImageUrl, setOriginalImageUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loadingExisting, setLoadingExisting] = useState(!!editId);
   const [error, setError] = useState<string | null>(null);
@@ -62,13 +67,24 @@ function WriteInner() {
       if (!active || !post) return;
       setTitle(post.title);
       setContent(post.content);
-      setImageDataUrl(post.image_url);
+      setOriginalImageUrl(post.image_url);
+      setImagePreview(post.image_url);
       setLoadingExisting(false);
     });
     return () => {
       active = false;
     };
   }, [editId]);
+
+  // 컴포넌트 언마운트 또는 새 파일 선택 시 이전 object URL 메모리 해제
+  useEffect(() => {
+    return () => {
+      if (imagePreview && imagePreview.startsWith("blob:")) {
+        URL.revokeObjectURL(imagePreview);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!VALID_BOARDS.includes(boardType)) {
     return (
@@ -102,48 +118,25 @@ function WriteInner() {
 
   const isChallenge = boardType === "challenge";
 
-  // 클라이언트에서 Canvas 로 이미지 리사이즈 + JPEG 재압축. 임시 조치 — 곧 Storage 업로드로 교체 예정.
-  async function compressImage(
-    file: File,
-    maxWidth = 1200,
-    quality = 0.7,
-  ): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      const objUrl = URL.createObjectURL(file);
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const ratio = Math.min(maxWidth / img.width, 1);
-        canvas.width = Math.round(img.width * ratio);
-        canvas.height = Math.round(img.height * ratio);
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          URL.revokeObjectURL(objUrl);
-          reject(new Error("Canvas 2D context 생성 실패"));
-          return;
-        }
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        URL.revokeObjectURL(objUrl);
-        resolve(canvas.toDataURL("image/jpeg", quality));
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(objUrl);
-        reject(new Error("이미지 로드 실패"));
-      };
-      img.src = objUrl;
-    });
-  }
-
-  async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    try {
-      const dataUrl = await compressImage(file);
-      setImageDataUrl(dataUrl);
-    } catch (err) {
-      console.error("[handleImageChange] 압축 실패", err);
-      setError("이미지를 처리할 수 없어요. 다른 사진으로 시도해주세요.");
+    // 이전 object URL 정리
+    if (imagePreview && imagePreview.startsWith("blob:")) {
+      URL.revokeObjectURL(imagePreview);
     }
+    const objUrl = URL.createObjectURL(file);
+    setImageFile(file);
+    setImagePreview(objUrl);
+    setError(null);
+  }
+
+  function handleImageRemove() {
+    if (imagePreview && imagePreview.startsWith("blob:")) {
+      URL.revokeObjectURL(imagePreview);
+    }
+    setImageFile(null);
+    setImagePreview(null);
   }
 
   async function handleSubmit() {
@@ -156,7 +149,8 @@ function WriteInner() {
       setError("내용을 입력해주세요.");
       return;
     }
-    if (isChallenge && !imageDataUrl) {
+    // 챌린지는 이미지 필수 — 새 파일이거나 기존 이미지가 있어야 함
+    if (isChallenge && !imageFile && !imagePreview) {
       setError("챌린지 게시판은 인증샷 이미지가 필요해요.");
       return;
     }
@@ -164,20 +158,38 @@ function WriteInner() {
       setError("로그인이 필요합니다.");
       return;
     }
+
+    // 1) 이미지 처리 — 새 파일이 있으면 업로드, 없으면 기존 값 유지/제거
+    let imageUrl: string | null = originalImageUrl;
+    if (imageFile) {
+      setUploading(true);
+      const url = await uploadImage(imageFile, user.id);
+      setUploading(false);
+      if (!url) {
+        setError("이미지 업로드에 실패했어요. 잠시 후 다시 시도해주세요.");
+        return;
+      }
+      imageUrl = url;
+    } else if (imagePreview === null) {
+      // 사용자가 기존 이미지를 제거했고 새 파일도 안 골랐을 때
+      imageUrl = null;
+    }
+
     setSubmitting(true);
 
-    // 디버깅용 — 어떤 user 로 시도하는지 확인
     console.log("[write] 저장 시도", {
       authUserId: user.id,
       profileId: profile?.id,
       boardType,
       editId,
+      imageUrl,
     });
 
     if (editId) {
       const { error: e } = await updatePost(editId, {
         title: title.trim(),
         content: content.trim(),
+        imageUrl,
       });
       setSubmitting(false);
       if (e) {
@@ -191,11 +203,10 @@ function WriteInner() {
         boardType,
         title: title.trim(),
         content: content.trim(),
-        imageUrl: imageDataUrl,
+        imageUrl,
       });
       setSubmitting(false);
       if (result.error || !result.id) {
-        // 실제 에러 정보를 그대로 화면에 노출 — Supabase 에러 코드/메시지/힌트
         const parts = [
           result.error ?? "알 수 없는 오류",
           result.code ? `code=${result.code}` : null,
@@ -265,21 +276,21 @@ function WriteInner() {
             type="file"
             accept="image/*"
             onChange={handleImageChange}
-            disabled={submitting}
+            disabled={submitting || uploading}
             className="mt-1.5 block w-full text-xs text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white file:hover:bg-violet-700 dark:text-gray-300"
           />
-          {imageDataUrl && (
+          {imagePreview && (
             <div className="relative mt-3 inline-block">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={imageDataUrl}
+                src={imagePreview}
                 alt="미리보기"
                 className="max-h-72 rounded-lg border border-gray-200 object-contain dark:border-white/10"
               />
               <button
                 type="button"
-                onClick={() => setImageDataUrl(null)}
-                disabled={submitting}
+                onClick={handleImageRemove}
+                disabled={submitting || uploading}
                 className="absolute right-2 top-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-black/90 disabled:opacity-50"
               >
                 이미지 제거
@@ -300,11 +311,19 @@ function WriteInner() {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={submitting}
+            disabled={submitting || uploading}
             className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {submitting ? "저장 중..." : editId ? "수정" : "작성"}
+            {(submitting || uploading) && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            )}
+            {uploading
+              ? "이미지 업로드 중..."
+              : submitting
+              ? "저장 중..."
+              : editId
+              ? "수정"
+              : "작성"}
           </button>
         </div>
       </div>

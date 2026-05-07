@@ -1,5 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Supabase Storage 도메인 — public 이미지 URL 호출용
+  // 현재 코드는 <img> 태그를 사용하지만, 추후 next/image 로 전환 시 필요.
+  images: {
+    remotePatterns: [
+      { hostname: "fzmarprssobkdqmrydad.supabase.co" },
+    ],
+  },
+
   // 기존 더미 게시판 경로 → 새 /board/[boardType] 경로로 통합 리다이렉트.
   // 페이지 파일은 그대로 유지하지만, 라우팅 단계에서 가로채서 새 경로로 보낸다.
   async redirects() {

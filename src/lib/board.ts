@@ -150,7 +150,25 @@ export async function createPost(input: {
   title: string;
   content: string;
   imageUrl?: string | null;
-}): Promise<{ id: string | null; error: string | null }> {
+}): Promise<{
+  id: string | null;
+  error: string | null;
+  code: string | null;
+  details: string | null;
+  hint: string | null;
+}> {
+  // 디버깅용 — 현재 세션 유저 id 와 insert 에 보내는 author_id 비교
+  const { data: authData } = await supabase.auth.getUser();
+  console.log("[createPost] 호출 시점", {
+    sessionUserId: authData?.user?.id ?? null,
+    sessionEmail: authData?.user?.email ?? null,
+    payloadAuthorId: input.authorId,
+    boardType: input.boardType,
+    titleLen: input.title.length,
+    contentLen: input.content.length,
+    hasImage: !!input.imageUrl,
+  });
+
   const { data, error } = await supabase
     .from("posts")
     .insert({
@@ -164,10 +182,36 @@ export async function createPost(input: {
     .single();
 
   if (error) {
-    console.error("[createPost] 실패", error);
-    return { id: null, error: error.message };
+    const e = error as unknown as {
+      message?: string;
+      code?: string;
+      details?: string;
+      hint?: string;
+    };
+    console.error("[createPost] insert 실패 — 전체 에러 객체", error);
+    console.error("[createPost] 분해", {
+      message: e.message,
+      code: e.code,
+      details: e.details,
+      hint: e.hint,
+    });
+    return {
+      id: null,
+      error: e.message ?? "알 수 없는 오류",
+      code: e.code ?? null,
+      details: e.details ?? null,
+      hint: e.hint ?? null,
+    };
   }
-  return { id: data?.id ?? null, error: null };
+
+  console.log("[createPost] insert 성공", data);
+  return {
+    id: data?.id ?? null,
+    error: null,
+    code: null,
+    details: null,
+    hint: null,
+  };
 }
 
 export async function updatePost(

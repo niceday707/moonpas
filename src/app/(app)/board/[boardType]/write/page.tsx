@@ -129,6 +129,15 @@ function WriteInner() {
       return;
     }
     setSubmitting(true);
+
+    // 디버깅용 — 어떤 user 로 시도하는지 확인
+    console.log("[write] 저장 시도", {
+      authUserId: user.id,
+      profileId: profile?.id,
+      boardType,
+      editId,
+    });
+
     if (editId) {
       const { error: e } = await updatePost(editId, {
         title: title.trim(),
@@ -136,12 +145,12 @@ function WriteInner() {
       });
       setSubmitting(false);
       if (e) {
-        setError("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
+        setError(`수정 실패: ${e}`);
         return;
       }
       router.push(`/board/${boardType}/${editId}`);
     } else {
-      const { id, error: e } = await createPost({
+      const result = await createPost({
         authorId: user.id,
         boardType,
         title: title.trim(),
@@ -149,11 +158,17 @@ function WriteInner() {
         imageUrl: imageDataUrl,
       });
       setSubmitting(false);
-      if (e || !id) {
-        setError("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
+      if (result.error || !result.id) {
+        // 실제 에러 정보를 그대로 화면에 노출 — Supabase 에러 코드/메시지/힌트
+        const parts = [
+          result.error ?? "알 수 없는 오류",
+          result.code ? `code=${result.code}` : null,
+          result.hint ? `hint=${result.hint}` : null,
+        ].filter(Boolean);
+        setError(`저장 실패: ${parts.join(" / ")}`);
         return;
       }
-      router.push(`/board/${boardType}/${id}`);
+      router.push(`/board/${boardType}/${result.id}`);
     }
   }
 

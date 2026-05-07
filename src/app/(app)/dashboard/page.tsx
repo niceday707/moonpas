@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -21,8 +21,14 @@ import {
   Play,
 } from "lucide-react";
 import { BannerSlider } from "@/components/dashboard/BannerSlider";
+import { NicknameSetupModal } from "@/components/dashboard/NicknameSetupModal";
 import type { Role } from "@/components/ui/Badge";
 import { useAuth, attemptGoogleLogin } from "@/lib/auth";
+import {
+  pickDisplayName,
+  saveNickname,
+  useSupabaseProfile,
+} from "@/lib/supabase-profile";
 
 // ── 대시보드 문튜브 미리보기 영상 ─────────────────────────────────
 // 영상 ID 는 더미 — 실제 영상으로 교체하세요.
@@ -227,18 +233,36 @@ function GoogleLogo({ className }: { className?: string }) {
 }
 
 // ── 내 프로필 카드 ────────────────────────────────────────────
-function ProfileCard() {
+function ProfileCard({
+  nickname,
+  onSetupClick,
+}: {
+  // null 이면 아직 닉네임 미설정 (= 최초 로그인). 빈 문자열은 "김민준" 같은 폴백 의미로 사용.
+  nickname: string | null;
+  onSetupClick?: () => void;
+}) {
+  const initial = nickname ? nickname.charAt(0) : "?";
   return (
     <Card>
       <SectionHead icon={ArrowUp} title="내 프로필" href="/profile" iconColor="text-cyan-500" />
       <div className="px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[linear-gradient(135deg,#7c3aed,#06b6d4)] text-sm font-bold text-white">
-            김
+            {initial}
           </div>
           <div>
-            <p className="text-sm font-bold text-gray-900 dark:text-white">김민준</p>
-            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+            {nickname ? (
+              <p className="text-sm font-bold text-gray-900 dark:text-white">{nickname}</p>
+            ) : (
+              <button
+                type="button"
+                onClick={onSetupClick}
+                className="rounded-md bg-violet-600 px-2 py-0.5 text-xs font-semibold text-white transition hover:bg-violet-700"
+              >
+                닉네임 설정
+              </button>
+            )}
+            <span className="ml-0 mt-1 inline-block rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
               학생
             </span>
           </div>
@@ -298,6 +322,35 @@ function MoonTubeSection() {
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<BoardTab>("전체");
   const { isLoggedIn } = useAuth();
+
+  // ── Supabase 사용자 + profiles row ─────────────────────────
+  const { user, profile, loading: profileLoading, refetch } = useSupabaseProfile();
+  const [setupOpen, setSetupOpen] = useState(false);
+
+  // 최초 로그인 감지: 사용자는 있는데 profiles row 가 없으면 모달 자동 오픈
+  useEffect(() => {
+    if (!profileLoading && user && !profile) {
+      setSetupOpen(true);
+    } else if (profile) {
+      setSetupOpen(false);
+    }
+  }, [user, profile, profileLoading]);
+
+  async function handleSubmitNickname(nickname: string) {
+    if (!user) {
+      return { ok: false as const, message: "로그인이 필요합니다." };
+    }
+    const { error } = await saveNickname(user.id, nickname);
+    if (error) {
+      return { ok: false as const, message: "저장에 실패했어요. 잠시 후 다시 시도해주세요." };
+    }
+    await refetch();
+    setSetupOpen(false);
+    return { ok: true as const };
+  }
+
+  // 프로필 카드에 표시할 닉네임 — Supabase 우선, 없으면 dev 모드용 기본값
+  const displayNickname: string | null = profile?.nickname ?? (user ? null : "김민준");
 
   const tabPosts: Record<BoardTab, Post[]> = {
     전체: ALL_POSTS,
@@ -516,7 +569,14 @@ export default function DashboardPage() {
         <aside className="flex flex-col gap-4">
 
           {/* 로그인 / 프로필 — 개발 모드에서는 isLoggedIn=true 로 항상 프로필 표시 */}
-          {isLoggedIn ? <ProfileCard /> : <GoogleLoginCard />}
+          {isLoggedIn ? (
+            <ProfileCard
+              nickname={displayNickname}
+              onSetupClick={() => setSetupOpen(true)}
+            />
+          ) : (
+            <GoogleLoginCard />
+          )}
 
           {/* 실시간 검색 순위 */}
           <Card>
@@ -738,6 +798,13 @@ export default function DashboardPage() {
       <div className="mt-8 border-t border-gray-100 pb-4 pt-4 text-center text-[11px] text-gray-400 dark:border-white/[0.05]">
         문파스 MoonPas · 문태고등학교 커뮤니티 · 함께 나누고, 함께 성장하는 공간
       </div>
+
+      {/* 닉네임 최초 설정 모달 — Supabase 사용자 + profiles row 없을 때 자동 노출 */}
+      <NicknameSetupModal
+        open={setupOpen}
+        defaultNickname={pickDisplayName(user)}
+        onSubmit={handleSubmitNickname}
+      />
     </motion.div>
   );
 }

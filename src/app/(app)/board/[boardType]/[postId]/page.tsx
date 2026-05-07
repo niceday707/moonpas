@@ -29,16 +29,19 @@ import { AuthGate } from "@/components/auth/AuthGate";
 import {
   BOARD_LABEL,
   MARKET_CONDITION_LABEL,
+  QA_SUBJECT_STYLE,
   createComment,
   deleteComment,
   deletePost,
   getPost,
+  getQaSubjectLabel,
   incrementLikeCount,
   incrementViewCount,
   listComments,
   parseIssueContent,
   parseLostContent,
   parseMarketContent,
+  parseQaContent,
   setPostStatus,
   togglePostPin,
   votePost,
@@ -48,6 +51,7 @@ import {
   type MarketContent,
   type PostRow,
   type PostStatus,
+  type QaContent,
 } from "@/lib/board";
 import {
   addLikedPost,
@@ -170,6 +174,7 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
   const isMarket = boardType === "market";
   const isIssue = boardType === "issue";
   const isFree = boardType === "free";
+  const isQa = boardType === "qa";
   const lostInfo = isLost ? parseLostContent(post.content) : null;
   const marketInfo: MarketContent | null = isMarket
     ? parseMarketContent(post.content)
@@ -177,6 +182,8 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
   const issueInfo: IssueContent | null = isIssue
     ? parseIssueContent(post.content)
     : null;
+  const qaInfo: QaContent | null = isQa ? parseQaContent(post.content) : null;
+  const answered = isQa && comments.length > 0;
   const totalVotes = post.vote_a + post.vote_b;
   const ratioA = totalVotes === 0 ? 50 : Math.round((post.vote_a / totalVotes) * 100);
   const ratioB = totalVotes === 0 ? 50 : 100 - ratioA;
@@ -314,6 +321,28 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
               <Vote className="h-3 w-3" />
               {totalVotes.toLocaleString()}명 참여
             </span>
+          )}
+          {isQa && qaInfo && (
+            <>
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
+                  QA_SUBJECT_STYLE[qaInfo.subject],
+                )}
+              >
+                {getQaSubjectLabel(qaInfo.subject)}
+              </span>
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
+                  answered
+                    ? "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300"
+                    : "bg-amber-500/15 text-amber-600 ring-amber-500/30 dark:text-amber-300",
+                )}
+              >
+                {answered ? "답변완료 ✅" : "답변대기 ⏳"}
+              </span>
+            </>
           )}
         </div>
         <h1 className="mt-1 text-xl font-extrabold leading-snug text-gray-900 dark:text-white">
@@ -475,6 +504,8 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
             ? marketInfo.description
             : isIssue && issueInfo
             ? issueInfo.description
+            : isQa && qaInfo
+            ? qaInfo.question
             : post.content}
         </div>
 
@@ -587,15 +618,17 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
         )}
       </article>
 
-      {/* 댓글 ─────────────────────── */}
+      {/* 댓글/답변 ─────────────────────── */}
       <section className="mt-5 rounded-xl border border-gray-200 bg-white p-4 dark:border-white/[0.07] dark:bg-[#16162a]">
         <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-          댓글 {comments.length}
+          {isQa ? `답변 ${comments.length}` : `댓글 ${comments.length}`}
         </h2>
 
         {comments.length === 0 ? (
           <p className="mt-3 text-xs text-gray-400">
-            아직 댓글이 없어요. 첫 댓글을 남겨보세요.
+            {isQa
+              ? "아직 답변이 없어요. 아는 분이 첫 답변을 남겨보세요!"
+              : "아직 댓글이 없어요. 첫 댓글을 남겨보세요."}
           </p>
         ) : (
           <ul className="mt-3 divide-y divide-gray-100 dark:divide-white/[0.04]">

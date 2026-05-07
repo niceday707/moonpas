@@ -19,17 +19,21 @@ import { AuthGate } from "@/components/auth/AuthGate";
 import {
   BOARD_LABEL,
   MARKET_CONDITION_LABEL,
+  QA_SUBJECTS,
   createPost,
   getPost,
   parseIssueContent,
   parseLostContent,
   parseMarketContent,
+  parseQaContent,
   stringifyIssueContent,
   stringifyLostContent,
   stringifyMarketContent,
+  stringifyQaContent,
   updatePost,
   type BoardType,
   type MarketCondition,
+  type QaSubject,
 } from "@/lib/board";
 import { cn } from "@/lib/utils";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
@@ -80,6 +84,8 @@ function WriteInner() {
   // 이슈토론 전용
   const [optionA, setOptionA] = useState("찬성");
   const [optionB, setOptionB] = useState("반대");
+  // 학습 Q&A 전용 — 과목 태그
+  const [qaSubject, setQaSubject] = useState<QaSubject>("etc");
   // 이미지 상태 — 새로 고른 파일은 imageFile, 미리보기는 imagePreview, 수정 모드 시작 시 원본은 originalImageUrl
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -120,6 +126,10 @@ function WriteInner() {
         setOptionA(parsed.optionA);
         setOptionB(parsed.optionB);
         setContent(parsed.description);
+      } else if (post.board_type === "qa") {
+        const parsed = parseQaContent(post.content);
+        setQaSubject(parsed.subject);
+        setContent(parsed.question);
       } else {
         setContent(post.content);
       }
@@ -175,27 +185,37 @@ function WriteInner() {
     );
   }
 
-  // 공지사항: admin / teacher 만 작성 가능
+  // 관리자/교사만 작성 가능한 게시판: 공지사항·대입정보·교육과정
   const role = profile.role as string;
-  if (boardType === "notice" && role !== "admin" && role !== "teacher") {
+  const ADMIN_ONLY: BoardType[] = ["notice", "college", "curriculum"];
+  if (
+    ADMIN_ONLY.includes(boardType) &&
+    role !== "admin" &&
+    role !== "teacher"
+  ) {
+    const messages: Partial<Record<BoardType, string>> = {
+      notice: "공지사항은 관리자만 작성할 수 있습니다",
+      college: "대입정보는 관리자/교사만 작성할 수 있습니다",
+      curriculum: "교육과정 가이드는 관리자/교사만 작성할 수 있습니다",
+    };
     return (
       <div className="mx-auto max-w-screen-md px-4 py-10">
         <Link
-          href="/board/notice"
+          href={`/board/${boardType}`}
           className="inline-flex items-center gap-1 text-xs text-gray-500 transition hover:text-gray-800 dark:hover:text-gray-200"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          공지사항으로 돌아가기
+          {BOARD_LABEL[boardType]}로 돌아가기
         </Link>
         <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-8 text-center dark:border-white/[0.07] dark:bg-[#16162a]">
           <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-xl bg-violet-500/15 text-violet-500 dark:text-violet-300">
             <Lock className="h-5 w-5" />
           </div>
           <h2 className="text-base font-bold text-gray-900 dark:text-white">
-            공지사항은 관리자만 작성할 수 있습니다
+            {messages[boardType] ?? "관리자만 작성할 수 있습니다"}
           </h2>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            중요한 안내사항은 학교 측에서 등록합니다. 일반 게시글은 자유게시판을
+            안내자료는 학교/교사 측에서 등록합니다. 일반 게시글은 자유게시판을
             이용해주세요.
           </p>
           <Link
@@ -213,6 +233,7 @@ function WriteInner() {
   const isLost = boardType === "lost";
   const isMarket = boardType === "market";
   const isIssue = boardType === "issue";
+  const isQa = boardType === "qa";
 
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -302,6 +323,11 @@ function WriteInner() {
           description: content,
           optionA,
           optionB,
+        })
+      : isQa
+      ? stringifyQaContent({
+          subject: qaSubject,
+          question: content,
         })
       : content.trim();
 
@@ -411,7 +437,7 @@ function WriteInner() {
       <div className="mt-5 space-y-4 rounded-xl border border-gray-200 bg-white p-4 dark:border-white/[0.07] dark:bg-[#16162a]">
         <div>
           <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
-            {isIssue ? "토론 주제" : "제목"}
+            {isIssue ? "토론 주제" : isQa ? "질문 제목" : "제목"}
           </label>
           <input
             type="text"
@@ -420,6 +446,8 @@ function WriteInner() {
             placeholder={
               isIssue
                 ? "예) 야자 시간 자유롭게 선택할 수 있게 해야 한다"
+                : isQa
+                ? "예) 함수의 극한 lim 풀이 도와주세요"
                 : "제목을 입력해주세요"
             }
             maxLength={100}
@@ -469,6 +497,38 @@ function WriteInner() {
               </div>
             </div>
           </>
+        )}
+
+        {isQa && (
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+              과목 태그 (필수)
+            </label>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {QA_SUBJECTS.map((s) => {
+                const active = qaSubject === s.value;
+                return (
+                  <button
+                    key={s.value}
+                    type="button"
+                    onClick={() => setQaSubject(s.value)}
+                    disabled={submitting}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50",
+                      active
+                        ? "border-violet-500 bg-violet-500/15 text-violet-700 dark:text-violet-200"
+                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+                    )}
+                  >
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1.5 text-[10px] text-gray-400">
+              과목 태그는 목록에서 색상 뱃지로 표시되고, 필터링에 사용됩니다.
+            </p>
+          </div>
         )}
 
         {isIssue && (
@@ -565,6 +625,8 @@ function WriteInner() {
               ? "물품 설명"
               : isIssue
               ? "주제 설명/배경"
+              : isQa
+              ? "질문 내용"
               : "내용"}
           </label>
           <textarea
@@ -577,6 +639,8 @@ function WriteInner() {
                 ? "물품의 상세 정보, 인수 방법, 만남 장소 등을 적어주세요."
                 : isIssue
                 ? "왜 이 주제로 토론하고 싶은지, 배경 설명을 적어주세요."
+                : isQa
+                ? "어디까지 풀었는지, 어디서 막혔는지 자세히 적으면 답변이 빨라요."
                 : "내용을 입력해주세요"
             }
             rows={10}

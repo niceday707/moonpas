@@ -30,6 +30,9 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { AuthGate } from "@/components/auth/AuthGate";
+import { CollegeIntro } from "@/components/board/CollegeIntro";
+import { CurriculumIntro } from "@/components/board/CurriculumIntro";
+import { CouncilIntro } from "@/components/board/CouncilIntro";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
 import { addLikedPost, getLikedPosts } from "@/lib/local-state";
 import { cn } from "@/lib/utils";
@@ -37,16 +40,21 @@ import {
   BOARD_LABEL,
   MARKET_CONDITION_LABEL,
   POSTS_PER_PAGE,
+  QA_SUBJECTS,
+  QA_SUBJECT_STYLE,
   getChallengeStats,
+  getQaSubjectLabel,
   incrementLikeCount,
   listPosts,
   parseIssueContent,
   parseLostContent,
   parseMarketContent,
+  parseQaContent,
   type BoardType,
   type ChallengeStats,
   type PostRow,
   type PostStatus,
+  type QaSubject,
 } from "@/lib/board";
 
 const VALID_BOARDS = Object.keys(BOARD_LABEL) as BoardType[];
@@ -108,17 +116,25 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
   const isIssue = boardType === "issue";
   const isChallenge = boardType === "challenge";
   const isFree = boardType === "free";
+  const isCollege = boardType === "college";
+  const isCurriculum = boardType === "curriculum";
+  const isCouncil = boardType === "council";
+  const isQa = boardType === "qa";
   const supportsStatusFilter = isLost || isMarket;
 
   const { user, profile } = useSupabaseProfile();
   const role = (profile?.role ?? "") as string;
-  const canWrite = isNotice ? role === "admin" || role === "teacher" : true;
+  const isStaff = role === "admin" || role === "teacher";
+  const adminOnlyBoards: BoardType[] = ["notice", "college", "curriculum"];
+  const canWrite = adminOnlyBoards.includes(boardType) ? isStaff : true;
 
   const [page, setPage] = useState(1);
   const [posts, setPosts] = useState<PostRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"" | PostStatus>("");
+  // 학습Q&A 과목 필터
+  const [qaSubjectFilter, setQaSubjectFilter] = useState<"" | QaSubject>("");
 
   // 챌린지 — 연속 인증/주간 랭킹
   const [challengeStats, setChallengeStats] = useState<ChallengeStats | null>(null);
@@ -129,7 +145,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
 
   useEffect(() => {
     setPage(1);
-  }, [statusFilter, boardType]);
+  }, [statusFilter, qaSubjectFilter, boardType]);
 
   useEffect(() => {
     let active = true;
@@ -137,6 +153,10 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     listPosts(boardType, page, {
       pinnedFirst: isNotice,
       status: supportsStatusFilter && statusFilter ? statusFilter : null,
+      contentLike:
+        isQa && qaSubjectFilter
+          ? `%"subject":"${qaSubjectFilter}"%`
+          : null,
     }).then((res) => {
       if (!active) return;
       setPosts(res.posts);
@@ -146,7 +166,15 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     return () => {
       active = false;
     };
-  }, [boardType, page, isNotice, supportsStatusFilter, statusFilter]);
+  }, [
+    boardType,
+    page,
+    isNotice,
+    isQa,
+    supportsStatusFilter,
+    statusFilter,
+    qaSubjectFilter,
+  ]);
 
   // 챌린지 보드 진입 시 통계 fetch
   useEffect(() => {
@@ -186,6 +214,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
   }
 
   const totalPages = Math.max(1, Math.ceil(total / POSTS_PER_PAGE));
+  const hasIntro = isCollege || isCurriculum || isCouncil;
 
   return (
     <motion.div
@@ -194,13 +223,25 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
       transition={{ duration: 0.3 }}
       className="mx-auto max-w-screen-lg px-4 py-6"
     >
-      {/* 헤더 */}
-      <div className="mb-4 flex items-end justify-between">
+      {/* 인트로 (대입정보/교육과정/학생자치회) */}
+      {isCollege && <CollegeIntro />}
+      {isCurriculum && <CurriculumIntro />}
+      {isCouncil && <CouncilIntro />}
+
+      {/* 헤더 — 인트로가 있으면 압축, 없으면 표준 */}
+      <div className={cn("flex items-end justify-between", hasIntro ? "mt-2 mb-3" : "mb-4")}>
         <div>
-          <h1 className="text-xl font-extrabold text-gray-900 dark:text-white">
-            {BOARD_LABEL[boardType]}
-          </h1>
-          <p className="mt-1 text-xs text-gray-400">총 {total}개의 글</p>
+          {!hasIntro && (
+            <>
+              <h1 className="text-xl font-extrabold text-gray-900 dark:text-white">
+                {BOARD_LABEL[boardType]}
+              </h1>
+              <p className="mt-1 text-xs text-gray-400">총 {total}개의 글</p>
+            </>
+          )}
+          {hasIntro && (
+            <p className="text-xs text-gray-400">총 {total}개의 글</p>
+          )}
         </div>
         {canWrite ? (
           <Link
@@ -223,6 +264,43 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
           stats={challengeStats}
           currentUserId={user?.id ?? null}
         />
+      )}
+
+      {/* 학습 Q&A 과목 필터 */}
+      {isQa && (
+        <div className="mb-4 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setQaSubjectFilter("")}
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+              qaSubjectFilter === ""
+                ? "border-violet-500 bg-violet-500/10 text-violet-600 dark:text-violet-300"
+                : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+            )}
+          >
+            전체
+          </button>
+          {QA_SUBJECTS.map((s) => {
+            const active = qaSubjectFilter === s.value;
+            return (
+              <button
+                key={s.value}
+                type="button"
+                onClick={() => setQaSubjectFilter(s.value)}
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs font-semibold transition ring-1 ring-inset",
+                  active
+                    ? QA_SUBJECT_STYLE[s.value] +
+                        " border-transparent"
+                    : "border-gray-200 bg-white text-gray-500 ring-transparent hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+                )}
+              >
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
       )}
 
       {/* 상태 필터 (lost / market) */}
@@ -297,6 +375,8 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
           onLike={handleLikeFromCard}
           likingId={likingId}
         />
+      ) : isQa ? (
+        <QaList posts={posts} />
       ) : (
         <DefaultList
           posts={posts}
@@ -1026,6 +1106,94 @@ function FreeCard({
           <span className="tabular-nums">{post.like_count.toLocaleString()}</span>
         </button>
       </div>
+    </li>
+  );
+}
+
+// ── 학습 Q&A 리스트 ────────────────────────────────────────
+function QaList({ posts }: { posts: PostRow[] }) {
+  return (
+    <ul className="space-y-2.5">
+      {posts.map((post) => (
+        <QaRow key={post.id} post={post} />
+      ))}
+    </ul>
+  );
+}
+
+function QaRow({ post }: { post: PostRow }) {
+  const info = useMemo(() => parseQaContent(post.content), [post.content]);
+  const answered = post.comment_count > 0;
+  const fresh = isNewPost(post.created_at);
+
+  return (
+    <li>
+      <Link
+        href={`/board/qa/${post.id}`}
+        className="block rounded-xl border border-gray-200 bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-[0_8px_22px_rgba(124,58,237,0.15)] dark:border-white/[0.07] dark:bg-[#16162a]"
+      >
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
+              QA_SUBJECT_STYLE[info.subject],
+            )}
+          >
+            [{getQaSubjectLabel(info.subject)}]
+          </span>
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
+              answered
+                ? "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300"
+                : "bg-amber-500/15 text-amber-600 ring-amber-500/30 dark:text-amber-300",
+            )}
+          >
+            {answered ? "답변완료 ✅" : "답변대기 ⏳"}
+          </span>
+          {fresh && (
+            <span className="inline-flex items-center rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
+              NEW
+            </span>
+          )}
+          <span className="ml-auto text-[11px] text-gray-400">
+            {formatDate(post.created_at)}
+          </span>
+        </div>
+
+        <p className="mt-2 line-clamp-1 text-sm font-extrabold text-gray-900 dark:text-white">
+          {post.title}
+        </p>
+        {info.question && (
+          <p className="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
+            {info.question}
+          </p>
+        )}
+
+        <div className="mt-2.5 flex items-center gap-2 text-[11px] text-gray-500">
+          <span className="font-medium text-gray-700 dark:text-gray-300">
+            {post.author?.nickname ?? "(알수없음)"}
+          </span>
+          {post.author && (
+            <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
+          )}
+          <span className="ml-auto flex items-center gap-2 text-gray-400">
+            <span className="flex items-center gap-0.5">
+              <Eye className="h-3 w-3" />
+              {post.view_count}
+            </span>
+            <span
+              className={cn(
+                "flex items-center gap-0.5",
+                answered && "text-emerald-500 dark:text-emerald-300",
+              )}
+            >
+              <MessageSquare className="h-3 w-3" />
+              {post.comment_count}
+            </span>
+          </span>
+        </div>
+      </Link>
     </li>
   );
 }

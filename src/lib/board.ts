@@ -127,11 +127,16 @@ function normalizePost(raw: RawPost): PostRow {
 
 export const POSTS_PER_PAGE = 20;
 
-/** board_type 별 목록 (페이지네이션). 옵션으로 고정글 우선 정렬 및 상태 필터 지원 */
+/** board_type 별 목록 (페이지네이션). 옵션으로 고정글 우선 정렬 및 상태/내용 필터 지원 */
 export async function listPosts(
   boardType: BoardType,
   page: number = 1,
-  options?: { pinnedFirst?: boolean; status?: PostStatus | null },
+  options?: {
+    pinnedFirst?: boolean;
+    status?: PostStatus | null;
+    /** content 컬럼에 ILIKE 매칭할 패턴 (예: '%"subject":"korean"%') */
+    contentLike?: string | null;
+  },
 ): Promise<{ posts: PostRow[]; total: number }> {
   const from = (page - 1) * POSTS_PER_PAGE;
   const to = from + POSTS_PER_PAGE - 1;
@@ -143,6 +148,10 @@ export async function listPosts(
 
   if (options?.status) {
     query = query.eq("status", options.status);
+  }
+
+  if (options?.contentLike) {
+    query = query.ilike("content", options.contentLike);
   }
 
   if (options?.pinnedFirst) {
@@ -591,6 +600,79 @@ export function stringifyIssueContent(input: IssueContent): string {
     description: input.description.trim(),
     optionA: input.optionA.trim() || "찬성",
     optionB: input.optionB.trim() || "반대",
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// 학습 Q&A — content 안에 { subject, question } JSON
+// ─────────────────────────────────────────────────────────
+
+export const QA_SUBJECTS = [
+  { value: "korean", label: "국어" },
+  { value: "english", label: "영어" },
+  { value: "math", label: "수학" },
+  { value: "science", label: "과학" },
+  { value: "social", label: "사회" },
+  { value: "etc", label: "기타" },
+] as const;
+
+export type QaSubject = (typeof QA_SUBJECTS)[number]["value"];
+
+const QA_SUBJECT_VALUES: ReadonlySet<string> = new Set(
+  QA_SUBJECTS.map((s) => s.value),
+);
+
+export function getQaSubjectLabel(subject: QaSubject): string {
+  return QA_SUBJECTS.find((s) => s.value === subject)?.label ?? "기타";
+}
+
+/** 과목별 색상 클래스 — 뱃지/필터에서 공통 사용 */
+export const QA_SUBJECT_STYLE: Record<QaSubject, string> = {
+  korean:
+    "bg-rose-500/15 text-rose-600 ring-rose-500/30 dark:text-rose-300",
+  english:
+    "bg-blue-500/15 text-blue-600 ring-blue-500/30 dark:text-blue-300",
+  math:
+    "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300",
+  science:
+    "bg-violet-500/15 text-violet-600 ring-violet-500/30 dark:text-violet-300",
+  social:
+    "bg-orange-500/15 text-orange-600 ring-orange-500/30 dark:text-orange-300",
+  etc:
+    "bg-gray-500/15 text-gray-600 ring-gray-500/30 dark:text-gray-300",
+};
+
+export type QaContent = {
+  subject: QaSubject;
+  question: string;
+};
+
+export function parseQaContent(content: string): QaContent {
+  try {
+    const obj: unknown = JSON.parse(content);
+    if (
+      obj &&
+      typeof obj === "object" &&
+      "question" in obj &&
+      typeof (obj as { question: unknown }).question === "string"
+    ) {
+      const o = obj as { subject?: unknown; question: string };
+      const subject: QaSubject =
+        typeof o.subject === "string" && QA_SUBJECT_VALUES.has(o.subject)
+          ? (o.subject as QaSubject)
+          : "etc";
+      return { subject, question: o.question };
+    }
+  } catch {
+    // 일반 텍스트
+  }
+  return { subject: "etc", question: content };
+}
+
+export function stringifyQaContent(input: QaContent): string {
+  return JSON.stringify({
+    subject: input.subject,
+    question: input.question.trim(),
   });
 }
 

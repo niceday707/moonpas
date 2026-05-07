@@ -251,3 +251,39 @@ export async function deleteComment(commentId: string): Promise<{ error: string 
   }
   return { error: null };
 }
+
+// ─────────────────────────────────────────────────────────
+// 사용자 통계 — 대시보드 프로필 카드에서 사용
+// ─────────────────────────────────────────────────────────
+
+export type UserStats = {
+  posts: number;
+  comments: number;
+  receivedLikes: number;
+};
+
+export async function getUserStats(userId: string): Promise<UserStats> {
+  const [postsRes, commentsRes, likesRes] = await Promise.all([
+    supabase
+      .from("posts")
+      .select("*", { count: "exact", head: true })
+      .eq("author_id", userId),
+    supabase
+      .from("comments")
+      .select("*", { count: "exact", head: true })
+      .eq("author_id", userId),
+    supabase.from("posts").select("like_count").eq("author_id", userId),
+  ]);
+
+  const likeRows = (likesRes.data ?? []) as Array<{ like_count: number | null }>;
+  const receivedLikes = likeRows.reduce(
+    (sum, row) => sum + (row.like_count ?? 0),
+    0,
+  );
+
+  return {
+    posts: postsRes.count ?? 0,
+    comments: commentsRes.count ?? 0,
+    receivedLikes,
+  };
+}

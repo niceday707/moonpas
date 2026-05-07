@@ -29,6 +29,7 @@ import {
   saveNickname,
   useSupabaseProfile,
 } from "@/lib/supabase-profile";
+import { getUserStats, type UserStats } from "@/lib/board";
 
 // ── 대시보드 문튜브 미리보기 영상 ─────────────────────────────────
 // 영상 ID 는 더미 — 실제 영상으로 교체하세요.
@@ -236,13 +237,20 @@ function GoogleLogo({ className }: { className?: string }) {
 function ProfileCard({
   nickname,
   role,
+  stats,
   onSetupClick,
 }: {
   nickname: string | null;
   role: Role | null;
+  stats: UserStats;
   onSetupClick?: () => void;
 }) {
   const initial = nickname ? nickname.charAt(0) : "?";
+  const items: { v: number; l: string }[] = [
+    { v: stats.posts, l: "쓴 글" },
+    { v: stats.receivedLikes, l: "받은 좋아요" },
+    { v: stats.comments, l: "쓴 댓글" },
+  ];
   return (
     <Card>
       <SectionHead icon={ArrowUp} title="내 프로필" href="/profile" iconColor="text-cyan-500" />
@@ -267,7 +275,7 @@ function ProfileCard({
           </div>
         </div>
         <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-          {[{ v: "0", l: "작성글" }, { v: "0", l: "좋아요" }, { v: "0", l: "팔로워" }].map((s) => (
+          {items.map((s) => (
             <div key={s.l} className="rounded-lg bg-gray-50 py-1.5 dark:bg-white/[0.04]">
               <p className="text-sm font-bold text-gray-900 dark:text-white">{s.v}</p>
               <p className="text-[10px] text-gray-500">{s.l}</p>
@@ -325,6 +333,23 @@ export default function DashboardPage() {
   // ── Supabase 사용자 + profiles row ─────────────────────────
   const { user, profile, loading: profileLoading, refetch } = useSupabaseProfile();
   const [setupOpen, setSetupOpen] = useState(false);
+  const [stats, setStats] = useState<UserStats>({
+    posts: 0,
+    comments: 0,
+    receivedLikes: 0,
+  });
+
+  // 프로필이 로드되면 사용자 통계도 함께 조회
+  useEffect(() => {
+    if (!user || !profile) return;
+    let active = true;
+    getUserStats(user.id).then((s) => {
+      if (active) setStats(s);
+    });
+    return () => {
+      active = false;
+    };
+  }, [user, profile]);
 
   // 최초 로그인 감지: 사용자는 있는데 profiles row 가 없으면 모달 자동 오픈
   useEffect(() => {
@@ -573,6 +598,7 @@ export default function DashboardPage() {
             <ProfileCard
               nickname={displayNickname}
               role={displayRole}
+              stats={stats}
               onSetupClick={() => setSetupOpen(true)}
             />
           ) : (

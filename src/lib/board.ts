@@ -23,7 +23,13 @@ export type BoardType =
   | "study"
   | "news"
   | "alumni"
-  | "senior";
+  | "senior"
+  // 문태 이벤트 — 각 코너마다 전용 UI 컴포넌트로 라우팅
+  | "event_member" // 회원 참여방 (정회원 미션)
+  | "event_find" // 찹쌀 꽈배기 (숨은 이모지 찾기)
+  | "event_praise" // 칭찬합시다
+  | "event_study" // 공부 인증
+  | "event_quiz"; // 오늘의 퀴즈
 
 export const BOARD_LABEL: Record<BoardType, string> = {
   free: "자유게시판",
@@ -42,6 +48,11 @@ export const BOARD_LABEL: Record<BoardType, string> = {
   news: "뉴스",
   alumni: "졸업생",
   senior: "선배의 한마디",
+  event_member: "회원 참여방",
+  event_find: "찹쌀 꽈배기",
+  event_praise: "칭찬합시다",
+  event_study: "공부 인증",
+  event_quiz: "오늘의 퀴즈",
 };
 
 // posts row + 작성자 join 결과

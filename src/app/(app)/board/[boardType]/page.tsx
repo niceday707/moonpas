@@ -132,6 +132,19 @@ export default function BoardListPage() {
     );
   }
 
+  // 문태 이벤트 5개 게시판은 일반 글-목록 UI 가 아닌 전용 페이지로 분기.
+  // 각 페이지는 src/components/event/* 에서 점진적으로 채운다.
+  if (boardType.startsWith("event_")) {
+    return (
+      <AuthGate
+        title={`${BOARD_LABEL[boardType]}은 로그인이 필요합니다`}
+        description="문태고 학생·교사·학부모·졸업생만 이용할 수 있어요."
+      >
+        <EventComingSoon boardType={boardType} />
+      </AuthGate>
+    );
+  }
+
   return (
     <AuthGate
       title={`${BOARD_LABEL[boardType]}은 로그인이 필요합니다`}
@@ -139,6 +152,102 @@ export default function BoardListPage() {
     >
       <BoardListInner boardType={boardType} />
     </AuthGate>
+  );
+}
+
+// ── 문태 이벤트 임시 placeholder ───────────────────────────
+// 단계별 빌드아웃: 후속 커밋에서 5개 페이지를 하나씩 전용 컴포넌트로 교체한다.
+function EventComingSoon({ boardType }: { boardType: BoardType }) {
+  const meta: Record<
+    string,
+    { emoji: string; tagline: string; from: string; to: string }
+  > = {
+    event_member: {
+      emoji: "🎯",
+      tagline: "정회원 미션에 도전하세요",
+      from: "#7c3aed",
+      to: "#a855f7",
+    },
+    event_find: {
+      emoji: "🥨",
+      tagline: "이번 주 꽈배기를 찾아라",
+      from: "#f97316",
+      to: "#fbbf24",
+    },
+    event_praise: {
+      emoji: "💜",
+      tagline: "따뜻한 한마디가 하루를 바꿔요",
+      from: "#ec4899",
+      to: "#8b5cf6",
+    },
+    event_study: {
+      emoji: "📚",
+      tagline: "오늘도 한 걸음 더!",
+      from: "#06b6d4",
+      to: "#10b981",
+    },
+    event_quiz: {
+      emoji: "🧩",
+      tagline: "오늘의 퀴즈에 도전!",
+      from: "#fbbf24",
+      to: "#f97316",
+    },
+  };
+  const m = meta[boardType] ?? {
+    emoji: "🎉",
+    tagline: "곧 만나요",
+    from: "#7c3aed",
+    to: "#06b6d4",
+  };
+
+  return (
+    <div className="mx-auto max-w-screen-lg px-4 py-6">
+      <section
+        className="relative overflow-hidden rounded-2xl p-8 sm:p-10"
+        style={{
+          background: `linear-gradient(135deg, ${m.from} 0%, ${m.to} 100%)`,
+        }}
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-6 top-1/2 -translate-y-1/2 select-none text-[180px] leading-none opacity-25 sm:text-[240px]"
+        >
+          {m.emoji}
+        </div>
+        <div className="relative">
+          <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-white/85">
+            MoonPas · Events
+          </p>
+          <h1 className="mt-1 text-2xl font-extrabold leading-snug text-white sm:text-3xl">
+            {BOARD_LABEL[boardType]} {m.emoji}
+          </h1>
+          <p
+            className="mt-2 max-w-xl text-sm leading-relaxed text-white/90"
+            style={{ textShadow: "0 1px 4px rgba(0,0,0,0.2)" }}
+          >
+            {m.tagline}
+          </p>
+          <p className="mt-4 inline-flex items-center rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold text-white backdrop-blur-sm ring-1 ring-inset ring-white/30">
+            준비 중 · 곧 오픈해요
+          </p>
+        </div>
+      </section>
+
+      <div className="mt-6 rounded-xl border border-gray-200 bg-white p-5 text-center dark:border-white/[0.07] dark:bg-[#16162a]">
+        <p className="text-sm text-gray-700 dark:text-gray-200">
+          이 코너는 단계별로 오픈 예정이에요.
+        </p>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          문의는 자유게시판이나 학생회 게시판에 남겨주세요.
+        </p>
+        <Link
+          href="/board/free"
+          className="mt-4 inline-flex items-center rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-violet-700"
+        >
+          자유게시판으로 이동
+        </Link>
+      </div>
+    </div>
   );
 }
 

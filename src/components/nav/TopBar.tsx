@@ -54,6 +54,16 @@ const MEGA_NAV: NavGroup[] = [
       { boardType: "senior", label: "선배후기" },
     ],
   },
+  {
+    label: "문태 이벤트 🎉",
+    items: [
+      { boardType: "event_member", label: "회원 참여방" },
+      { boardType: "event_find", label: "찹쌀 꽈배기" },
+      { boardType: "event_praise", label: "칭찬합시다" },
+      { boardType: "event_study", label: "공부 인증" },
+      { boardType: "event_quiz", label: "오늘의 퀴즈" },
+    ],
+  },
 ];
 
 function itemHref(item: NavItem): string {
@@ -396,7 +406,7 @@ export function TopBar() {
       {/* ── 데스크톱 항상 펼쳐진 메가메뉴 카드 (lg 이상) ── */}
       <div className="hidden lg:block">
         <div className="mx-auto max-w-screen-xl px-4 pb-3 pt-4 md:px-6">
-          <div className="grid grid-cols-4 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.04)] dark:border-white/[0.08] dark:bg-[#14142a] dark:shadow-none">
+          <div className="grid grid-cols-5 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.04)] dark:border-white/[0.08] dark:bg-[#14142a] dark:shadow-none">
             {MEGA_NAV.map((nav, idx) => (
               <div
                 key={nav.label}

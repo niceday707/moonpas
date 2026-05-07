@@ -68,6 +68,11 @@ const BOARD_BADGE_COLOR: Record<BoardType, string> = {
   news: "text-amber-700 bg-amber-50 dark:bg-amber-900/20",
   alumni: "text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20",
   senior: "text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20",
+  event_member: "text-violet-600 bg-violet-50 dark:bg-violet-900/20",
+  event_find: "text-orange-500 bg-orange-50 dark:bg-orange-900/20",
+  event_praise: "text-pink-500 bg-pink-50 dark:bg-pink-900/20",
+  event_study: "text-teal-500 bg-teal-50 dark:bg-teal-900/20",
+  event_quiz: "text-amber-500 bg-amber-50 dark:bg-amber-900/20",
 };
 
 /** 실시간 검색 — 정적 키워드 (실시간 분석은 추후 구현) */

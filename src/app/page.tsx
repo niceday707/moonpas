@@ -172,27 +172,21 @@ export default function LandingPage() {
           transition={{ duration: 0.8, delay: 1.1 }}
           className="mt-8 flex flex-col items-center gap-2 text-xs text-white/75 md:flex-row md:gap-6"
         >
-          <button
-            type="button"
-            onClick={() =>
-              showToast("Supabase 연동 후 사용 가능합니다.")
-            }
+          <Link
+            href="/login"
             className="underline-offset-4 transition hover:text-white hover:underline"
           >
             Google로 로그인
-          </button>
+          </Link>
           <span aria-hidden className="hidden text-white/30 md:inline">
             ·
           </span>
-          <button
-            type="button"
-            onClick={() =>
-              showToast("Supabase 연동 후 사용 가능합니다.")
-            }
+          <Link
+            href="/login"
             className="underline-offset-4 transition hover:text-white hover:underline"
           >
             학부모 / 졸업생 초대코드
-          </button>
+          </Link>
         </motion.div>
       </main>
 

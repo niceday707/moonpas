@@ -4,7 +4,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Menu } from "lucide-react";
+import { Search, Menu, LogIn } from "lucide-react";
 import { FullscreenMenu } from "@/components/landing/FullscreenMenu";
 
 // 배경 슬라이드: 4장의 사진을 6초 간격으로 페이드 전환, 각자 다른 Ken Burns 모션
@@ -112,6 +112,13 @@ export default function LandingPage() {
           >
             <Search className="h-5 w-5" />
           </button>
+          <Link
+            href="/login"
+            className="flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold tracking-widest text-white/95 backdrop-blur-sm transition hover:bg-white/20"
+          >
+            <LogIn className="h-4 w-4" />
+            로그인
+          </Link>
           <button
             type="button"
             onClick={() => setMenuOpen(true)}

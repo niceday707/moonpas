@@ -256,28 +256,37 @@ function WriteInner() {
           />
         </div>
 
-        {isChallenge && (
-          <div>
-            <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
-              인증샷 (필수)
-            </label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleImageChange}
-              disabled={submitting}
-              className="mt-1.5 block w-full text-xs text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white file:hover:bg-violet-700 dark:text-gray-300"
-            />
-            {imageDataUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
+        {/* 이미지 첨부 — 챌린지는 필수, 그 외에는 선택 */}
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+            {isChallenge ? "인증샷 (필수)" : "이미지 첨부 (선택)"}
+          </label>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleImageChange}
+            disabled={submitting}
+            className="mt-1.5 block w-full text-xs text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white file:hover:bg-violet-700 dark:text-gray-300"
+          />
+          {imageDataUrl && (
+            <div className="relative mt-3 inline-block">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={imageDataUrl}
                 alt="미리보기"
-                className="mt-3 max-h-72 rounded-lg border border-gray-200 object-contain dark:border-white/10"
+                className="max-h-72 rounded-lg border border-gray-200 object-contain dark:border-white/10"
               />
-            )}
-          </div>
-        )}
+              <button
+                type="button"
+                onClick={() => setImageDataUrl(null)}
+                disabled={submitting}
+                className="absolute right-2 top-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-black/90 disabled:opacity-50"
+              >
+                이미지 제거
+              </button>
+            </div>
+          )}
+        </div>
 
         {error && <p className="text-xs text-red-500">{error}</p>}
 

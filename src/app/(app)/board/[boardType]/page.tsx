@@ -117,8 +117,8 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
                   href={`/board/${boardType}/${post.id}`}
                   className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
                 >
-                  {/* 챌린지 게시판 썸네일 */}
-                  {boardType === "challenge" && post.image_url && (
+                  {/* 이미지 썸네일 — 글에 image_url 이 있으면 모든 게시판에서 표시 */}
+                  {post.image_url && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={post.image_url}

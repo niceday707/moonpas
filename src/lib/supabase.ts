@@ -1,7 +1,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+// Vercel 등에서 환경변수에 줄바꿈/공백이 섞여 들어오는 사고를 방지하기 위해 trim 처리
+const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
+const SUPABASE_ANON = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "").trim();
 
 // 빌드/프리렌더 시점에 환경변수가 없어도 모듈 로드가 실패하지 않도록
 // 실제 사용 시점(런타임)에 클라이언트를 생성한다.

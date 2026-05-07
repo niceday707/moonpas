@@ -1,12 +1,11 @@
 "use client";
 
 // 로그인 필요 페이지 래퍼.
-// - 개발 모드(IS_DEV_MODE = true): 비로그인이어도 children + 안내 배너 노출.
-// - 운영 모드(IS_DEV_MODE = false): 비로그인이면 LoginRequired 화면으로 대체.
+// 운영 모드 — 미로그인 시 LoginRequired 화면 노출.
 import type { ReactNode } from "react";
+import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { LoginRequired } from "./LoginRequired";
-import { DevModeBanner } from "./DevModeBanner";
 
 type Props = {
   children: ReactNode;
@@ -17,15 +16,13 @@ type Props = {
 };
 
 export function AuthGate({ children, title, description }: Props) {
-  const { isLoggedIn, isDevMode } = useAuth();
+  const { isLoggedIn, loading } = useAuth();
 
-  // 개발 모드에서는 로그인 체크를 우회하고 상단에 안내 배너만 노출한다.
-  if (isDevMode) {
+  if (loading) {
     return (
-      <>
-        <DevModeBanner />
-        {children}
-      </>
+      <div className="flex min-h-[60vh] items-center justify-center text-violet-500">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
     );
   }
 

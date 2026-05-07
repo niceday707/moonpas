@@ -6,10 +6,12 @@
 import { useCallback, useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import type { Role } from "@/components/ui/Badge";
 
 export type SupabaseProfile = {
   id: string;
   nickname: string;
+  role: Role;
   created_at: string;
 };
 
@@ -68,7 +70,7 @@ export function useSupabaseProfile(): {
     try {
       const { data } = await supabase
         .from("profiles")
-        .select("id, nickname, created_at")
+        .select("id, nickname, role, created_at")
         .eq("id", uid)
         .maybeSingle();
       setProfile((data as SupabaseProfile | null) ?? null);
@@ -92,21 +94,22 @@ export function useSupabaseProfile(): {
   return { user, profile, loading: userLoading || profileLoading, refetch };
 }
 
-/** profiles 테이블에 닉네임 upsert */
+/** profiles 테이블에 닉네임 + 역할 upsert */
 export async function saveNickname(
   userId: string,
   nickname: string,
+  role: Role,
 ): Promise<{ error: string | null }> {
   const { data, error } = await supabase
     .from("profiles")
-    .upsert({ id: userId, nickname }, { onConflict: "id" })
+    .upsert({ id: userId, nickname, role }, { onConflict: "id" })
     .select()
     .single();
   if (error) {
-    // RLS / 제약조건 등 실제 원인을 콘솔에서 바로 확인할 수 있도록 전체 객체를 출력
     console.error("[saveNickname] upsert 실패", {
       userId,
       nickname,
+      role,
       message: error.message,
       code: (error as unknown as { code?: string }).code,
       details: (error as unknown as { details?: string }).details,
@@ -132,7 +135,6 @@ export function pickDisplayName(user: User | null): string {
   for (const c of candidates) {
     if (typeof c === "string" && c.trim()) return c.trim();
   }
-  // 이메일 로컬파트로 폴백
   const email = user.email ?? "";
   return email.split("@")[0] ?? "";
 }

@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { BannerSlider } from "@/components/dashboard/BannerSlider";
 import { NicknameSetupModal } from "@/components/dashboard/NicknameSetupModal";
-import type { Role } from "@/components/ui/Badge";
+import { Badge, type Role } from "@/components/ui/Badge";
 import { useAuth, attemptGoogleLogin } from "@/lib/auth";
 import {
   pickDisplayName,
@@ -235,10 +235,11 @@ function GoogleLogo({ className }: { className?: string }) {
 // ── 내 프로필 카드 ────────────────────────────────────────────
 function ProfileCard({
   nickname,
+  role,
   onSetupClick,
 }: {
-  // null 이면 아직 닉네임 미설정 (= 최초 로그인). 빈 문자열은 "김민준" 같은 폴백 의미로 사용.
   nickname: string | null;
+  role: Role | null;
   onSetupClick?: () => void;
 }) {
   const initial = nickname ? nickname.charAt(0) : "?";
@@ -250,7 +251,7 @@ function ProfileCard({
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[linear-gradient(135deg,#7c3aed,#06b6d4)] text-sm font-bold text-white">
             {initial}
           </div>
-          <div>
+          <div className="flex flex-col items-start gap-1">
             {nickname ? (
               <p className="text-sm font-bold text-gray-900 dark:text-white">{nickname}</p>
             ) : (
@@ -262,13 +263,11 @@ function ProfileCard({
                 닉네임 설정
               </button>
             )}
-            <span className="ml-0 mt-1 inline-block rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-              학생
-            </span>
+            {role && <Badge role={role} className="text-[10px]" />}
           </div>
         </div>
         <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-          {[{ v: "12", l: "작성글" }, { v: "84", l: "좋아요" }, { v: "37", l: "팔로워" }].map((s) => (
+          {[{ v: "0", l: "작성글" }, { v: "0", l: "좋아요" }, { v: "0", l: "팔로워" }].map((s) => (
             <div key={s.l} className="rounded-lg bg-gray-50 py-1.5 dark:bg-white/[0.04]">
               <p className="text-sm font-bold text-gray-900 dark:text-white">{s.v}</p>
               <p className="text-[10px] text-gray-500">{s.l}</p>
@@ -336,11 +335,11 @@ export default function DashboardPage() {
     }
   }, [user, profile, profileLoading]);
 
-  async function handleSubmitNickname(nickname: string) {
+  async function handleSubmitNickname(nickname: string, role: Role) {
     if (!user) {
       return { ok: false as const, message: "로그인이 필요합니다." };
     }
-    const { error } = await saveNickname(user.id, nickname);
+    const { error } = await saveNickname(user.id, nickname, role);
     if (error) {
       return { ok: false as const, message: "저장에 실패했어요. 잠시 후 다시 시도해주세요." };
     }
@@ -349,8 +348,9 @@ export default function DashboardPage() {
     return { ok: true as const };
   }
 
-  // 프로필 카드에 표시할 닉네임 — Supabase 우선, 없으면 dev 모드용 기본값
-  const displayNickname: string | null = profile?.nickname ?? (user ? null : "김민준");
+  // 프로필 카드 표시값 — Supabase 우선
+  const displayNickname: string | null = profile?.nickname ?? null;
+  const displayRole: Role | null = profile?.role ?? null;
 
   const tabPosts: Record<BoardTab, Post[]> = {
     전체: ALL_POSTS,
@@ -572,6 +572,7 @@ export default function DashboardPage() {
           {isLoggedIn ? (
             <ProfileCard
               nickname={displayNickname}
+              role={displayRole}
               onSetupClick={() => setSetupOpen(true)}
             />
           ) : (

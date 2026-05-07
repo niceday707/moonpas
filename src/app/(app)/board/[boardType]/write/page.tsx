@@ -1,0 +1,253 @@
+"use client";
+
+// 글 쓰기 / 수정 — /board/[boardType]/write?id=xxx (id 있으면 수정 모드)
+import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { motion } from "framer-motion";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import { AuthGate } from "@/components/auth/AuthGate";
+import {
+  BOARD_LABEL,
+  createPost,
+  getPost,
+  updatePost,
+  type BoardType,
+} from "@/lib/board";
+import { useSupabaseProfile } from "@/lib/supabase-profile";
+
+const VALID_BOARDS = Object.keys(BOARD_LABEL) as BoardType[];
+
+export default function BoardWritePage() {
+  return (
+    <AuthGate
+      title="글쓰기는 로그인이 필요합니다"
+      description="로그인 후 글을 작성하실 수 있어요."
+    >
+      <Suspense
+        fallback={
+          <div className="flex min-h-[40vh] items-center justify-center text-violet-500">
+            <Loader2 className="h-6 w-6 animate-spin" />
+          </div>
+        }
+      >
+        <WriteInner />
+      </Suspense>
+    </AuthGate>
+  );
+}
+
+function WriteInner() {
+  const params = useParams<{ boardType: string }>();
+  const search = useSearchParams();
+  const router = useRouter();
+  const boardType = params.boardType as BoardType;
+  const editId = search.get("id");
+
+  const { user, profile, loading: profileLoading } = useSupabaseProfile();
+
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [loadingExisting, setLoadingExisting] = useState(!!editId);
+  const [error, setError] = useState<string | null>(null);
+
+  // 수정 모드: 기존 글 로드
+  useEffect(() => {
+    if (!editId) return;
+    let active = true;
+    setLoadingExisting(true);
+    getPost(editId).then((post) => {
+      if (!active || !post) return;
+      setTitle(post.title);
+      setContent(post.content);
+      setImageDataUrl(post.image_url);
+      setLoadingExisting(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [editId]);
+
+  if (!VALID_BOARDS.includes(boardType)) {
+    return (
+      <div className="mx-auto max-w-screen-md px-4 py-10 text-center text-sm text-gray-500">
+        존재하지 않는 게시판입니다.
+      </div>
+    );
+  }
+
+  if (profileLoading || loadingExisting) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center text-violet-500">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="mx-auto max-w-screen-md px-4 py-10 text-center">
+        <p className="text-sm text-gray-500">먼저 닉네임과 역할을 설정해주세요.</p>
+        <Link
+          href="/dashboard"
+          className="mt-4 inline-flex items-center rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white"
+        >
+          대시보드로 이동
+        </Link>
+      </div>
+    );
+  }
+
+  const isChallenge = boardType === "challenge";
+
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setImageDataUrl(typeof reader.result === "string" ? reader.result : null);
+    reader.readAsDataURL(file);
+  }
+
+  async function handleSubmit() {
+    setError(null);
+    if (!title.trim()) {
+      setError("제목을 입력해주세요.");
+      return;
+    }
+    if (!content.trim()) {
+      setError("내용을 입력해주세요.");
+      return;
+    }
+    if (isChallenge && !imageDataUrl) {
+      setError("챌린지 게시판은 인증샷 이미지가 필요해요.");
+      return;
+    }
+    if (!user) {
+      setError("로그인이 필요합니다.");
+      return;
+    }
+    setSubmitting(true);
+    if (editId) {
+      const { error: e } = await updatePost(editId, {
+        title: title.trim(),
+        content: content.trim(),
+      });
+      setSubmitting(false);
+      if (e) {
+        setError("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
+        return;
+      }
+      router.push(`/board/${boardType}/${editId}`);
+    } else {
+      const { id, error: e } = await createPost({
+        authorId: user.id,
+        boardType,
+        title: title.trim(),
+        content: content.trim(),
+        imageUrl: imageDataUrl,
+      });
+      setSubmitting(false);
+      if (e || !id) {
+        setError("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
+        return;
+      }
+      router.push(`/board/${boardType}/${id}`);
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+      className="mx-auto max-w-screen-md px-4 py-6"
+    >
+      <Link
+        href={`/board/${boardType}`}
+        className="inline-flex items-center gap-1 text-xs text-gray-500 transition hover:text-gray-800 dark:hover:text-gray-200"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        {BOARD_LABEL[boardType]}로 돌아가기
+      </Link>
+      <h1 className="mt-2 text-xl font-extrabold text-gray-900 dark:text-white">
+        {editId ? "글 수정" : "새 글 작성"}
+      </h1>
+
+      <div className="mt-5 space-y-4 rounded-xl border border-gray-200 bg-white p-4 dark:border-white/[0.07] dark:bg-[#16162a]">
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+            제목
+          </label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="제목을 입력해주세요"
+            maxLength={100}
+            disabled={submitting}
+            className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+          />
+        </div>
+
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+            내용
+          </label>
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="내용을 입력해주세요"
+            rows={10}
+            disabled={submitting}
+            className="mt-1.5 w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+          />
+        </div>
+
+        {isChallenge && (
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+              인증샷 (필수)
+            </label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+              disabled={submitting}
+              className="mt-1.5 block w-full text-xs text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white file:hover:bg-violet-700 dark:text-gray-300"
+            />
+            {imageDataUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={imageDataUrl}
+                alt="미리보기"
+                className="mt-3 max-h-72 rounded-lg border border-gray-200 object-contain dark:border-white/10"
+              />
+            )}
+          </div>
+        )}
+
+        {error && <p className="text-xs text-red-500">{error}</p>}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Link
+            href={`/board/${boardType}`}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/[0.05]"
+          >
+            취소
+          </Link>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {submitting ? "저장 중..." : editId ? "수정" : "작성"}
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}

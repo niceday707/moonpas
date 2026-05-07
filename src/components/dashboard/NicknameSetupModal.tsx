@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Sparkles } from "lucide-react";
+import type { Role } from "@/components/ui/Badge";
 
 // 한글 완성형 + 영문 + 숫자, 2~10자
 const NICKNAME_REGEX = /^[가-힣a-zA-Z0-9]{2,10}$/;
@@ -11,26 +12,36 @@ export type NicknameSubmitResult =
   | { ok: true }
   | { ok: false; message: string };
 
+const ROLE_OPTIONS: { value: Role; label: string; desc: string }[] = [
+  { value: "student", label: "재학생", desc: "문태고 학생" },
+  { value: "teacher", label: "교사", desc: "문태고 선생님" },
+  { value: "parent", label: "학부모", desc: "재학생 보호자" },
+  { value: "alumni", label: "졸업생", desc: "문태고 졸업생" },
+];
+
 export function NicknameSetupModal({
   open,
   defaultNickname,
+  defaultRole = "student",
   onSubmit,
 }: {
   open: boolean;
   defaultNickname: string;
-  onSubmit: (nickname: string) => Promise<NicknameSubmitResult>;
+  defaultRole?: Role;
+  onSubmit: (nickname: string, role: Role) => Promise<NicknameSubmitResult>;
 }) {
   const [value, setValue] = useState(defaultNickname);
+  const [role, setRole] = useState<Role>(defaultRole);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // 모달이 열릴 때마다 기본 닉네임으로 다시 채워준다
   useEffect(() => {
     if (open) {
       setValue(defaultNickname);
+      setRole(defaultRole);
       setError(null);
     }
-  }, [open, defaultNickname]);
+  }, [open, defaultNickname, defaultRole]);
 
   async function handleSubmit() {
     const trimmed = value.trim();
@@ -44,7 +55,7 @@ export function NicknameSetupModal({
     }
     setSubmitting(true);
     setError(null);
-    const res = await onSubmit(trimmed);
+    const res = await onSubmit(trimmed, role);
     setSubmitting(false);
     if (!res.ok) setError(res.message);
   }
@@ -72,11 +83,14 @@ export function NicknameSetupModal({
                 환영합니다
               </span>
             </div>
-            <h2 className="text-lg font-bold text-white">닉네임을 설정해주세요</h2>
+            <h2 className="text-lg font-bold text-white">프로필을 설정해주세요</h2>
             <p className="mt-1 text-xs leading-relaxed text-white/60">
-              커뮤니티에서 사용할 닉네임이에요. 나중에 프로필에서 변경할 수 있어요.
+              커뮤니티에서 사용할 닉네임과 역할을 골라주세요. 나중에 프로필에서 변경할 수 있어요.
             </p>
 
+            <label className="mt-5 block text-[11px] font-semibold uppercase tracking-widest text-white/50">
+              닉네임
+            </label>
             <input
               type="text"
               value={value}
@@ -88,12 +102,36 @@ export function NicknameSetupModal({
               maxLength={10}
               autoFocus
               disabled={submitting}
-              className="mt-4 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-violet-500 focus:outline-none disabled:opacity-50"
+              className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-violet-500 focus:outline-none disabled:opacity-50"
             />
 
-            {error && (
-              <p className="mt-2 text-xs text-red-400">{error}</p>
-            )}
+            <label className="mt-4 block text-[11px] font-semibold uppercase tracking-widest text-white/50">
+              역할
+            </label>
+            <div className="mt-1.5 grid grid-cols-2 gap-2">
+              {ROLE_OPTIONS.map((opt) => {
+                const active = role === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setRole(opt.value)}
+                    disabled={submitting}
+                    className={
+                      "rounded-xl border px-3 py-2.5 text-left transition disabled:opacity-50 " +
+                      (active
+                        ? "border-violet-500 bg-violet-500/15"
+                        : "border-white/10 bg-white/5 hover:bg-white/10")
+                    }
+                  >
+                    <div className="text-sm font-bold text-white">{opt.label}</div>
+                    <div className="text-[10px] text-white/50">{opt.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
 
             <button
               type="button"

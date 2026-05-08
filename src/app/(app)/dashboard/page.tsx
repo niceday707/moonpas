@@ -1,9 +1,10 @@
 "use client";
 
 // 대시보드 — 실제 Supabase 데이터로 채워진 포탈 홈
-//  · 모바일/태블릿 (lg 미만): 1컬럼 — 급식 → 프로필 → 최신글 → 실시간검색 → HOT → 공지 → 바로가기 → 문튜브
+//  · 최상단 (전체 폭): BannerSlider → 문튜브 가로 스크롤 strip (PC/모바일 공통)
+//  · 모바일/태블릿 (lg 미만): 1컬럼 — 급식 → 프로필 → 최신글 → 실시간검색 → HOT → 공지 → 바로가기
 //  · 데스크톱 (lg 이상): 2컬럼 grid-cols-[1fr_340px]
-//      좌측 메인: 급식 → 최신글 → 문튜브
+//      좌측 메인: 급식 → 최신글
 //      우측 사이드바: 프로필 → 실시간검색 → HOT → 공지
 //
 //  중복 렌더 방지를 위해 `lg:hidden` / `hidden lg:grid` 로 명확히 분리.
@@ -358,14 +359,11 @@ function NoticeList({
 
 type YoutubeItem = { postId: string; videoId: string; title: string };
 
-/** 문튜브 카드 — 모바일/데스크톱 공용. width 는 부모에서 제어. */
+/** 문튜브 카드 — 썸네일(aspect-video) + 아래에 제목 2줄 line-clamp. 가로 스크롤 strip 전용. */
 function MoonTubeCard({ item }: { item: YoutubeItem }) {
   return (
-    <Link
-      href={`/board/youtube/${item.postId}`}
-      className="group relative block overflow-hidden rounded-lg bg-black"
-    >
-      <div className="relative aspect-video w-full">
+    <Link href={`/board/youtube/${item.postId}`} className="group block">
+      <div className="relative aspect-video overflow-hidden rounded-lg bg-black">
         {item.videoId ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -379,22 +377,27 @@ function MoonTubeCard({ item }: { item: YoutubeItem }) {
             <PlayCircle className="h-10 w-10 opacity-90" />
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+        {/* 재생 버튼 오버레이 */}
         <div className="absolute inset-0 grid place-items-center">
           <span className="grid h-9 w-9 place-items-center rounded-full bg-red-600/90 text-white shadow-lg transition-transform duration-300 group-hover:scale-110">
             <Play className="h-4 w-4 fill-current" />
           </span>
         </div>
-        <p className="absolute inset-x-0 bottom-0 line-clamp-2 px-2.5 pb-2 text-[11px] font-semibold leading-snug text-white">
-          {item.title}
-        </p>
       </div>
+      <p className="mt-1.5 line-clamp-2 text-xs font-semibold leading-snug text-gray-800 dark:text-gray-100">
+        {item.title}
+      </p>
     </Link>
   );
 }
 
-/** 데스크톱 좌측 메인 영역용 문튜브 섹션 — 넓은 폭에 맞게 3열 그리드 */
-function MoonTubeMainSection({
+/**
+ * 문튜브 가로 스크롤 strip — PC/모바일 공용, 전체 폭.
+ * - 카드 너비: 모바일 200px, sm 220px, lg 240px (사용자 spec 200~240px 범위)
+ * - scroll-snap-type: x mandatory + scrollbar 숨김
+ * - 더보기 링크는 SectionHead 우측에 노출
+ */
+function MoonTubeStrip({
   videos,
   loading,
 }: {
@@ -410,12 +413,15 @@ function MoonTubeMainSection({
         iconColor="text-red-500"
       />
       {loading ? (
-        <div className="grid grid-cols-2 gap-3 p-3 xl:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
+        <div className="flex gap-3 overflow-x-auto px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="aspect-video w-full animate-pulse rounded-lg bg-gray-200 dark:bg-white/[0.06]"
-            />
+              className="w-[200px] shrink-0 sm:w-[220px] lg:w-[240px]"
+            >
+              <div className="aspect-video animate-pulse rounded-lg bg-gray-200 dark:bg-white/[0.06]" />
+              <div className="mt-1.5 h-3 w-4/5 animate-pulse rounded bg-gray-200 dark:bg-white/[0.06]" />
+            </div>
           ))}
         </div>
       ) : videos.length === 0 ? (
@@ -425,62 +431,18 @@ function MoonTubeMainSection({
           ctaLabel="문튜브로 이동"
         />
       ) : (
-        <div className="grid grid-cols-2 gap-3 p-3 xl:grid-cols-3">
-          {videos.slice(0, 6).map((v) => (
-            <MoonTubeCard key={v.postId} item={v} />
+        <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {videos.map((v) => (
+            <div
+              key={v.postId}
+              className="w-[200px] shrink-0 snap-start sm:w-[220px] lg:w-[240px]"
+            >
+              <MoonTubeCard item={v} />
+            </div>
           ))}
         </div>
       )}
     </Card>
-  );
-}
-
-/** 모바일 전용 — 가로 스크롤 + snap (lg 이상에서는 숨김) */
-function MoonTubeMobileScroll({
-  videos,
-  loading,
-}: {
-  videos: YoutubeItem[];
-  loading: boolean;
-}) {
-  return (
-    <div className="lg:hidden">
-      <Card>
-        <SectionHead
-          icon={PlayCircle}
-          title="문튜브"
-          href="/board/youtube"
-          iconColor="text-red-500"
-        />
-        {loading ? (
-          <div className="flex gap-3 overflow-x-auto px-3 py-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div
-                key={i}
-                className="aspect-video w-[200px] shrink-0 animate-pulse rounded-lg bg-gray-200 dark:bg-white/[0.06]"
-              />
-            ))}
-          </div>
-        ) : videos.length === 0 ? (
-          <EmptyHint
-            message="아직 등록된 영상이 없습니다"
-            href="/board/youtube"
-            ctaLabel="문튜브로 이동"
-          />
-        ) : (
-          <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {videos.map((v) => (
-              <div
-                key={v.postId}
-                className="w-[200px] shrink-0 snap-start"
-              >
-                <MoonTubeCard item={v} />
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-    </div>
   );
 }
 
@@ -929,7 +891,14 @@ export default function DashboardPage() {
       <BannerSlider />
 
       {/* ───────────────────────────────────────────────────── */}
-      {/* 모바일/태블릿 (lg 미만): 1컬럼 — 급식 → 프로필 → 최신글 → 실시간검색 → HOT → 공지 → 바로가기 → 문튜브 */}
+      {/* 문튜브 가로 스크롤 — 전체 폭, PC/모바일 공통. 카테고리 메뉴 바로 아래, 급식/프로필 위 */}
+      {/* ───────────────────────────────────────────────────── */}
+      <div className="mt-4">
+        <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
+      </div>
+
+      {/* ───────────────────────────────────────────────────── */}
+      {/* 모바일/태블릿 (lg 미만): 1컬럼 — 급식 → 프로필 → 최신글 → 실시간검색 → HOT → 공지 → 바로가기 */}
       {/* ───────────────────────────────────────────────────── */}
       <div className="mt-4 flex flex-col gap-4 lg:hidden">
         <MealCard />
@@ -993,9 +962,6 @@ export default function DashboardPage() {
         </Card>
 
         <ShortcutsCard />
-
-        {/* 모바일 문튜브 가로 스크롤 */}
-        <MoonTubeMobileScroll videos={youtubeItems} loading={youtubeLoading} />
       </div>
 
       {/* ───────────────────────────────────────────────────── */}
@@ -1029,8 +995,6 @@ export default function DashboardPage() {
               </Link>
             </div>
           </Card>
-
-          <MoonTubeMainSection videos={youtubeItems} loading={youtubeLoading} />
         </section>
 
         {/* 우측 사이드바 (340px 고정) */}

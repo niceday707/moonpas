@@ -127,58 +127,53 @@ export function MealCard() {
   const hasMenu = !!block && block.menus.length > 0;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/[0.07] dark:bg-[#16162a]">
-      {/* 상단 컬러 그라데이션 헤더 */}
-      <div className="relative bg-gradient-to-br from-orange-100 via-amber-50 to-yellow-50 px-4 py-3 dark:from-orange-500/[0.12] dark:via-amber-500/[0.08] dark:to-yellow-500/[0.05]">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🍱</span>
-            <div>
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white">오늘의 급식</h3>
-              <p className="text-[10px] text-gray-500 dark:text-white/50">문태고등학교</p>
-            </div>
-          </div>
-          {!isSameDay(date, today) && (
-            <button
-              onClick={goToday}
-              className="rounded-full border border-amber-300/60 bg-white/70 px-2.5 py-1 text-[10px] font-semibold text-amber-700 transition hover:bg-amber-50 dark:border-amber-400/30 dark:bg-white/[0.06] dark:text-amber-300 dark:hover:bg-white/[0.1]"
-            >
-              오늘
-            </button>
-          )}
+    <div className="relative flex h-[200px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/[0.07] dark:bg-[#16162a] sm:h-[220px]">
+      {/* 상단 헤더 — 컴팩트 */}
+      <div className="relative flex shrink-0 items-center justify-between bg-gradient-to-br from-orange-100 via-amber-50 to-yellow-50 px-3 py-2 dark:from-orange-500/[0.12] dark:via-amber-500/[0.08] dark:to-yellow-500/[0.05]">
+        <div className="flex items-center gap-1.5">
+          <span className="text-base">🍱</span>
+          <h3 className="text-xs font-bold text-gray-900 dark:text-white">오늘의 급식</h3>
         </div>
+        {!isSameDay(date, today) && (
+          <button
+            onClick={goToday}
+            className="rounded-full border border-amber-300/60 bg-white/70 px-2 py-0.5 text-[9px] font-semibold text-amber-700 transition hover:bg-amber-50 dark:border-amber-400/30 dark:bg-white/[0.06] dark:text-amber-300 dark:hover:bg-white/[0.1]"
+          >
+            오늘
+          </button>
+        )}
       </div>
 
-      {/* 날짜 네비게이션 */}
-      <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2 dark:border-white/[0.05]">
+      {/* 날짜 + 탭 한 줄로 통합 */}
+      <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-2 py-1 dark:border-white/[0.05]">
         <button
           onClick={goPrev}
           aria-label="어제"
-          className="rounded-lg p-1.5 text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.05]"
+          className="rounded-md p-1 text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.05]"
         >
-          <ChevronLeft className="h-4 w-4" />
+          <ChevronLeft className="h-3.5 w-3.5" />
         </button>
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-gray-200">
-          <Calendar className="h-3.5 w-3.5 text-violet-500" />
+        <div className="flex items-center gap-1 text-[11px] font-semibold text-gray-700 dark:text-gray-200">
+          <Calendar className="h-3 w-3 text-violet-500" />
           {formatDateLabel(date)}
         </div>
         <button
           onClick={goNext}
           aria-label="내일"
-          className="rounded-lg p-1.5 text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.05]"
+          className="rounded-md p-1 text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.05]"
         >
-          <ChevronRight className="h-4 w-4" />
+          <ChevronRight className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      {/* 중식/석식 탭 — 주말/데이터 없을 땐 숨김 */}
+      {/* 중식/석식 탭 — 주말일 땐 숨김 */}
       {!weekend && (
-        <div className="flex border-b border-gray-100 dark:border-white/[0.05]">
+        <div className="flex shrink-0 border-b border-gray-100 dark:border-white/[0.05]">
           {(["lunch", "dinner"] as const).map((k) => (
             <button
               key={k}
               onClick={() => setTab(k)}
-              className={`relative flex-1 py-2.5 text-xs font-semibold transition ${
+              className={`relative flex-1 py-1.5 text-[11px] font-semibold transition ${
                 tab === k
                   ? "text-violet-600 dark:text-violet-300"
                   : "text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
@@ -197,50 +192,46 @@ export function MealCard() {
         </div>
       )}
 
-      {/* 본문 */}
-      <div className="relative min-h-[180px]">
+      {/* 본문 — 남는 공간 채우고 메뉴가 길면 내부 스크롤 */}
+      <div className="relative min-h-0 flex-1 overflow-y-auto">
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={`${toYmd(date)}-${tab}-${weekend ? "w" : "d"}`}
-            initial={{ opacity: 0, x: direction * 16 }}
+            initial={{ opacity: 0, x: direction * 12 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: direction * -16 }}
+            exit={{ opacity: 0, x: direction * -12 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            className="px-4 py-4"
+            className="px-3 py-2"
           >
             {weekend ? (
-              <EmptyState emoji="🌤️" title="주말에는 급식이 없어요" subtitle="평일에 다시 만나요" />
+              <EmptyState emoji="🌤️" title="주말에는 급식이 없어요" />
             ) : loading ? (
               <SkeletonMenu />
             ) : error ? (
-              <EmptyState emoji="⚠️" title={error} subtitle="잠시 후 다시 시도해주세요" />
+              <EmptyState emoji="⚠️" title={error} />
             ) : !hasMenu ? (
-              <EmptyState
-                emoji="📭"
-                title="급식 정보가 아직 등록되지 않았습니다"
-                subtitle="조금 뒤에 다시 확인해보세요"
-              />
+              <EmptyState emoji="📭" title="급식 정보가 아직 등록되지 않았어요" />
             ) : (
-              <ul className="space-y-2">
+              <ul className="space-y-1">
                 {block!.menus.map((m, i) => (
                   <motion.li
                     key={`${m.name}-${i}`}
-                    initial={{ opacity: 0, y: 4 }}
+                    initial={{ opacity: 0, y: 3 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.025 }}
-                    className="flex items-center gap-2"
+                    transition={{ delay: i * 0.02 }}
+                    className="flex items-center gap-1.5"
                   >
                     <span className="h-1 w-1 shrink-0 rounded-full bg-violet-400 dark:bg-violet-500" />
-                    <span className="flex-1 text-sm text-gray-800 dark:text-gray-100">
+                    <span className="flex-1 truncate text-[12px] text-gray-800 dark:text-gray-100">
                       {m.name}
                     </span>
                     {m.allergens.length > 0 && (
-                      <span className="flex flex-wrap items-center justify-end gap-1">
-                        {m.allergens.map((n) => (
+                      <span className="flex shrink-0 items-center gap-0.5">
+                        {m.allergens.slice(0, 4).map((n) => (
                           <span
                             key={n}
                             title={ALLERGY_LABEL[n] ?? `알레르기 ${n}`}
-                            className="rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-medium text-gray-500 dark:bg-white/[0.06] dark:text-gray-400"
+                            className="rounded bg-gray-100 px-1 py-0.5 text-[8px] font-medium text-gray-500 dark:bg-white/[0.06] dark:text-gray-400"
                           >
                             {n}
                           </span>
@@ -255,11 +246,11 @@ export function MealCard() {
         </AnimatePresence>
       </div>
 
-      {/* 칼로리 푸터 */}
+      {/* 칼로리 푸터 — 컴팩트 */}
       {!weekend && hasMenu && block!.kcal != null && (
-        <div className="flex items-center justify-end gap-1 border-t border-gray-100 px-4 py-2 dark:border-white/[0.05]">
-          <Flame className="h-3 w-3 text-orange-500" />
-          <span className="text-[11px] font-semibold tabular-nums text-gray-600 dark:text-gray-300">
+        <div className="flex shrink-0 items-center justify-end gap-1 border-t border-gray-100 px-3 py-1 dark:border-white/[0.05]">
+          <Flame className="h-2.5 w-2.5 text-orange-500" />
+          <span className="text-[10px] font-semibold tabular-nums text-gray-600 dark:text-gray-300">
             {block!.kcal!.toFixed(1)} kcal
           </span>
         </div>
@@ -272,31 +263,26 @@ export function MealCard() {
 function EmptyState({
   emoji,
   title,
-  subtitle,
 }: {
   emoji: string;
   title: string;
-  subtitle?: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center py-6 text-center">
-      <span className="mb-2 text-3xl">{emoji}</span>
-      <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">{title}</p>
-      {subtitle && (
-        <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{subtitle}</p>
-      )}
+    <div className="flex flex-col items-center justify-center py-3 text-center">
+      <span className="mb-1 text-xl">{emoji}</span>
+      <p className="text-[11px] font-semibold text-gray-700 dark:text-gray-200">{title}</p>
     </div>
   );
 }
 
 function SkeletonMenu() {
   return (
-    <ul className="space-y-2.5">
+    <ul className="space-y-1.5">
       {Array.from({ length: 5 }).map((_, i) => (
-        <li key={i} className="flex items-center gap-2">
+        <li key={i} className="flex items-center gap-1.5">
           <span className="h-1 w-1 shrink-0 rounded-full bg-gray-200 dark:bg-white/[0.08]" />
           <span
-            className="h-3 animate-pulse rounded bg-gray-200 dark:bg-white/[0.06]"
+            className="h-2.5 animate-pulse rounded bg-gray-200 dark:bg-white/[0.06]"
             style={{ width: `${50 + ((i * 13) % 35)}%` }}
           />
         </li>

@@ -1,24 +1,18 @@
 "use client";
 
-// 대시보드 — 수능 D-Day 카드 (미니멀 / 학교 공식 톤)
-//   · 글래스모피즘 + 학교 로고 워터마크 (우하단, 화이트 실루엣)
-//   · 컴팩트 레이아웃 (~210px) — 30+ 명언, 날짜 해시로 매일 다른 문구
-//   · 100일 이내면 D-숫자만 빨간 강조 + 작은 펄스 칩
-//   · sparkle/별똥별 제거 — 깔끔하게
+// 대시보드 — D-Day 카드 (관리자가 dday_events 에 등록한 이벤트 표시)
+//   · 글래스모피즘 + 학교 로고 워터마크 (우하단)
+//   · 여러 이벤트면 자동 슬라이드 + 탭 인디케이터
+//   · 이벤트 없으면 안내 메시지
+//   · 지난 이벤트는 D+N 으로 표시
+//   · 30+ 명언, 날짜 해시로 매일 다른 문구
 
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { CalendarDays } from "lucide-react";
+import { listActiveDdayEvents, type DdayEvent } from "@/lib/dday-events";
 
-// 학년도별 수능 시행일
-const SUNEUNG_DATES: Array<{ year: number; date: Date; label: string }> = [
-  { year: 2025, date: new Date(2025, 10, 13), label: "2025학년도 대학수학능력시험" },
-  { year: 2026, date: new Date(2026, 10, 19), label: "2026학년도 대학수학능력시험" },
-  { year: 2027, date: new Date(2027, 10, 18), label: "2027학년도 대학수학능력시험" },
-  { year: 2028, date: new Date(2028, 10, 16), label: "2028학년도 대학수학능력시험" },
-  { year: 2029, date: new Date(2029, 10, 15), label: "2029학년도 대학수학능력시험" },
-];
-
-// 30+ 동기부여 명언 — 한국 위인 + 해외 위인 실제 인용
+// 30+ 동기부여 명언
 const QUOTES: Array<{ text: string; author: string }> = [
   { text: "천 리 길도 한 걸음부터.", author: "노자" },
   { text: "노력은 배신하지 않는다.", author: "이소룡" },
@@ -57,11 +51,18 @@ const QUOTES: Array<{ text: string; author: string }> = [
   { text: "오늘 흘린 땀은 내일의 보석이 된다.", author: "에디슨" },
 ];
 
-// ── 유틸 ──────────────────────────────────────────────────
 const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
-function formatLongDate(d: Date): string {
-  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEKDAY[d.getDay()]})`;
+const SLIDE_INTERVAL_MS = 5000;
+
+function parseYmd(yyyymmdd: string): Date | null {
+  const [y, m, d] = yyyymmdd.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
+function formatLongDate(date: Date): string {
+  return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일 (${WEEKDAY[date.getDay()]})`;
 }
 
 function diffInDays(target: Date, base: Date): number {
@@ -71,44 +72,88 @@ function diffInDays(target: Date, base: Date): number {
   return Math.round((t - b) / ms);
 }
 
-function pickNextSuneung(now: Date) {
-  return (
-    SUNEUNG_DATES.find((s) => diffInDays(s.date, now) >= 0) ??
-    SUNEUNG_DATES[SUNEUNG_DATES.length - 1]
-  );
-}
-
 function quoteForDate(d: Date): { text: string; author: string } {
   const seed = d.getFullYear() * 372 + (d.getMonth() + 1) * 31 + d.getDate();
   return QUOTES[seed % QUOTES.length];
 }
 
-function computeInfo(now: Date) {
-  const target = pickNextSuneung(now);
-  const dday = diffInDays(target.date, now);
-  const quote = quoteForDate(now);
-  return { target, dday, quote };
-}
-
 // ── 컴포넌트 ──────────────────────────────────────────────
 export function DdayCard() {
-  const [info, setInfo] = useState(() => computeInfo(new Date()));
+  const [events, setEvents] = useState<DdayEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [now, setNow] = useState<Date>(() => new Date());
+  const [current, setCurrent] = useState(0);
+  const [paused, setPaused] = useState(false);
 
+  // 활성 이벤트 로드
   useEffect(() => {
-    setInfo(computeInfo(new Date()));
-    const id = setInterval(() => setInfo(computeInfo(new Date())), 60 * 60 * 1000);
+    let cancelled = false;
+    listActiveDdayEvents()
+      .then((data) => {
+        if (cancelled) return;
+        setEvents(data);
+        setCurrent(0);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 1시간마다 now 갱신 (D-Day 숫자 업데이트)
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60 * 60 * 1000);
     return () => clearInterval(id);
   }, []);
 
-  const { target, dday, quote } = info;
-  const urgent = dday <= 100 && dday >= 0;
+  // 자동 슬라이드
+  useEffect(() => {
+    if (paused || events.length <= 1) return;
+    const id = setInterval(() => {
+      setCurrent((c) => (c + 1) % events.length);
+    }, SLIDE_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [paused, events.length]);
 
-  const ddayText =
-    dday > 0 ? `D-${dday}` : dday === 0 ? "D-DAY" : `D+${Math.abs(dday)}`;
+  const quote = useMemo(() => quoteForDate(now), [now]);
+
+  // ── 비어있을 때 ──
+  if (!loading && events.length === 0) {
+    return (
+      <div className="relative flex h-[200px] flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.18)] sm:h-[220px]">
+        <div className="relative z-10 flex h-full flex-col items-center justify-center gap-2 px-4 py-3.5 text-center text-white">
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-white/[0.06] text-white/50">
+            <CalendarDays className="h-5 w-5" />
+          </div>
+          <p className="text-sm font-semibold text-white/80">
+            등록된 D-Day 이벤트가 없습니다.
+          </p>
+          <p className="text-[11px] text-white/50">
+            관리자가 이벤트를 추가하면 여기에 표시됩니다.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const event = events[current];
+  const targetDate = event ? parseYmd(event.target_date) : null;
+  const dday = event && targetDate ? diffInDays(targetDate, now) : 0;
+  const urgent = dday <= 100 && dday >= 0;
+  const past = dday < 0;
+  const ddayText = dday > 0 ? `D-${dday}` : dday === 0 ? "D-DAY" : `D+${Math.abs(dday)}`;
 
   return (
-    <div className="relative flex h-[200px] flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.18)] sm:h-[220px]">
-      {/* 학교 로고 워터마크 — 우하단 흰 실루엣 */}
+    <div
+      className="relative flex h-[200px] flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.18)] sm:h-[220px]"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onTouchStart={() => setPaused(true)}
+      onTouchEnd={() => setPaused(false)}
+    >
+      {/* 학교 로고 워터마크 */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/logo.jpg"
@@ -118,7 +163,7 @@ export function DdayCard() {
         style={{ filter: "brightness(0) invert(1)" }}
       />
 
-      {/* 미묘한 라디얼 글로우 — 골드/화이트 톤 */}
+      {/* 라디얼 글로우 */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
@@ -128,15 +173,14 @@ export function DdayCard() {
         }}
       />
 
-      {/* 콘텐츠 */}
       <div
         className="relative z-10 flex h-full flex-col justify-between px-4 py-3.5 text-white sm:px-5 sm:py-4"
         suppressHydrationWarning
       >
-        {/* 상단 — 라벨 + 100일 펄스 칩 */}
+        {/* 상단 — 라벨 + 칩 */}
         <div className="flex items-center justify-between">
           <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/[0.05] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white/75">
-            ✦ 수능 D-DAY
+            ✦ D-DAY
           </span>
           {urgent && (
             <motion.span
@@ -147,45 +191,87 @@ export function DdayCard() {
               D-100 이내
             </motion.span>
           )}
+          {past && (
+            <span className="rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-bold text-white/55 ring-1 ring-white/10">
+              종료된 이벤트
+            </span>
+          )}
         </div>
 
-        {/* 중단 — 큰 D-숫자 + 학년도/날짜 */}
-        <div className="flex items-end justify-between gap-3">
-          <div className="min-w-0">
-            <div
-              className={
-                "font-black leading-none tabular-nums tracking-tight " +
-                (urgent ? "text-rose-300" : "text-white")
-              }
-              style={{ fontSize: "clamp(2.25rem, 6vw, 3rem)" }}
-              suppressHydrationWarning
-            >
-              {ddayText}
+        {/* 중단 — D-숫자 + 제목/날짜 (이벤트 전환 애니메이션) */}
+        <div className="min-h-0 flex-1 py-2">
+          <AnimatePresence mode="wait">
+            {event && targetDate && (
+              <motion.div
+                key={event.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.3 }}
+                className="flex h-full flex-col justify-end"
+              >
+                <div
+                  className={
+                    "font-black leading-none tabular-nums tracking-tight " +
+                    (past
+                      ? "text-white/70"
+                      : urgent
+                        ? "text-rose-300"
+                        : "text-white")
+                  }
+                  style={{ fontSize: "clamp(2.25rem, 6vw, 3rem)" }}
+                  suppressHydrationWarning
+                >
+                  {ddayText}
+                </div>
+                <p className="mt-1.5 truncate text-[12px] font-semibold text-white/85">
+                  {event.title}
+                </p>
+                <p className="text-[10px] text-white/50">
+                  {formatLongDate(targetDate)}
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* 하단 — 탭 인디케이터(여러 개일 때) + 명언 */}
+        <div className="space-y-1.5">
+          {events.length > 1 && (
+            <div className="flex items-center justify-center gap-1">
+              {events.map((e, i) => (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={() => setCurrent(i)}
+                  aria-label={`${e.title} 이벤트 보기`}
+                  className={
+                    "h-1 rounded-full transition-all " +
+                    (i === current
+                      ? "w-5 bg-white/80"
+                      : "w-1.5 bg-white/25 hover:bg-white/45")
+                  }
+                />
+              ))}
             </div>
-            <p className="mt-1.5 truncate text-[12px] font-semibold text-white/85">
-              {target.label}
+          )}
+          <motion.div
+            key={quote.text}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5 }}
+            className="border-t border-white/[0.08] pt-2"
+          >
+            <p className="line-clamp-2 text-[10.5px] italic leading-relaxed text-white/65">
+              <span className="mr-0.5 text-white/40">&ldquo;</span>
+              {quote.text}
+              <span className="ml-0.5 text-white/40">&rdquo;</span>
             </p>
-            <p className="text-[10px] text-white/50">{formatLongDate(target.date)}</p>
-          </div>
+            <p className="mt-0.5 text-right text-[9px] font-semibold tracking-wide text-white/40">
+              — {quote.author}
+            </p>
+          </motion.div>
         </div>
-
-        {/* 하단 — 명언 (작게) */}
-        <motion.div
-          key={quote.text}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5 }}
-          className="border-t border-white/[0.08] pt-2"
-        >
-          <p className="line-clamp-2 text-[10.5px] italic leading-relaxed text-white/65">
-            <span className="mr-0.5 text-white/40">“</span>
-            {quote.text}
-            <span className="ml-0.5 text-white/40">”</span>
-          </p>
-          <p className="mt-0.5 text-right text-[9px] font-semibold tracking-wide text-white/40">
-            — {quote.author}
-          </p>
-        </motion.div>
       </div>
     </div>
   );

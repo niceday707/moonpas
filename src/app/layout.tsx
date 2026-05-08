@@ -14,7 +14,14 @@ export const metadata: Metadata = {
     "문태고등학교 학생 커뮤니티 플랫폼. 자유게시판, 익명게시판, 공지사항, 대입정보, 학교생활",
   keywords: ["문파스", "moonpas", "문태고", "문태고등학교", "학교 커뮤니티"],
   manifest: "/manifest.json",
-  icons: { icon: "/icon-192.png", apple: "/icon-512.png" },
+  icons: {
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    shortcut: [{ url: "/icon-192.png", type: "image/png" }],
+    apple: [{ url: "/icon-512.png", sizes: "512x512", type: "image/png" }],
+  },
   alternates: { canonical: SITE_URL },
   openGraph: {
     type: "website",

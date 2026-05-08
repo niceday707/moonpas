@@ -16,6 +16,7 @@ import {
   MoreVertical,
   Pencil,
   Send,
+  Share2,
   Trash2,
   X as XIcon,
 } from "lucide-react";
@@ -34,6 +35,7 @@ import {
 import { useSupabaseUser } from "@/lib/supabase-profile";
 import { addLikedPost, getLikedPosts } from "@/lib/local-state";
 import { relativeTime } from "@/lib/format";
+import { buildPostShareUrl, sharePost } from "@/lib/share";
 import { cn } from "@/lib/utils";
 import { ANON_TAGS, parseAnonContent, getTagInfo, type AnonTagKey } from "../anon-utils";
 
@@ -211,6 +213,7 @@ export default function AnonPostPage() {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [heartBurst, setHeartBurst] = useState(false);
+  const [shareToast, setShareToast] = useState<string | null>(null);
 
   // 댓글 입력
   const [commentText, setCommentText] = useState("");
@@ -319,6 +322,21 @@ export default function AnonPostPage() {
   }, [post, router]);
 
   const anonMap = buildAnonMap(comments);
+
+  // 공유
+  const handleShare = async () => {
+    if (!post) return;
+    const url = buildPostShareUrl("anonymous", post.id);
+    const result = await sharePost({ title: post.title || "익명 글", url });
+    if (result.kind === "copied") {
+      setShareToast("링크가 복사되었습니다");
+    } else if (result.kind === "error") {
+      setShareToast(result.message);
+    }
+    if (result.kind === "copied" || result.kind === "error") {
+      window.setTimeout(() => setShareToast(null), 2200);
+    }
+  };
 
   // 좋아요
   const handleLike = async () => {
@@ -535,6 +553,17 @@ export default function AnonPostPage() {
               <MessageCircle className="h-3.5 w-3.5" />
               {comments.length}
             </span>
+
+            {/* 공유 */}
+            <button
+              type="button"
+              onClick={handleShare}
+              aria-label="공유"
+              className="ml-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-white/45 transition-colors hover:bg-white/[0.06] hover:text-white/85"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              공유
+            </button>
           </div>
         </motion.article>
 
@@ -573,6 +602,23 @@ export default function AnonPostPage() {
           </div>
         </div>
       </div>
+
+      {/* 공유 토스트 */}
+      <AnimatePresence>
+        {shareToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            transition={{ duration: 0.2 }}
+            className="pointer-events-none fixed inset-x-0 bottom-28 z-40 flex justify-center px-4"
+          >
+            <div className="rounded-full border border-white/15 bg-black/85 px-4 py-2 text-xs font-semibold text-white shadow-xl backdrop-blur-md">
+              {shareToast}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── 하단 고정 댓글 입력바 ── */}
       <div

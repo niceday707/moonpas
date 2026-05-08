@@ -144,7 +144,8 @@ export const ERROR_MESSAGES: Record<ValidationError, string> = {
   reserved: "사용할 수 없는 닉네임이에요.",
   duplicate: "이미 사용 중인 닉네임이에요.",
   same: "지금 쓰고 있는 닉네임과 같아요.",
-  cooldown: "닉네임은 7일에 한 번만 변경할 수 있어요.",
+  // 쿨다운 정책 폐지 — 이 값은 더 이상 반환되지 않지만 타입 호환성을 위해 키만 유지.
+  cooldown: "",
 };
 
 /** 형식·금칙어만 검사 (서버 통신 없이 즉시 판정). 통과하면 null */
@@ -170,21 +171,16 @@ function isNicknameAvailable(name: string): boolean {
 }
 
 // ─────────────────────────────────────────────
-// 7일 쿨다운
+// 닉네임 쿨다운 — 폐지. 언제든 변경 가능.
+// (`nicknameCooldownDaysLeft` 는 외부에서 import 되고 있으므로 0 만 반환.)
 // ─────────────────────────────────────────────
 
-const COOLDOWN_DAYS = 7;
-const COOLDOWN_MS = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
-
-/** 닉네임 변경까지 남은 일수. 0 이면 변경 가능. */
+/** 닉네임 변경까지 남은 일수. 쿨다운 정책 폐지로 항상 0 을 반환한다. */
 export function nicknameCooldownDaysLeft(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   profile: UserProfile = current,
 ): number {
-  if (!profile.lastNicknameChange) return 0;
-  const last = new Date(profile.lastNicknameChange).getTime();
-  const elapsed = Date.now() - last;
-  if (elapsed >= COOLDOWN_MS) return 0;
-  return Math.ceil((COOLDOWN_MS - elapsed) / (24 * 60 * 60 * 1000));
+  return 0;
 }
 
 /** 한 번도 변경한 적 없는 최초 설정 상태인지 */
@@ -203,9 +199,7 @@ type UpdateResult =
   | { ok: false; error: ValidationError };
 
 /**
- * 닉네임 변경 시도.
- * - 최초 설정(lastNicknameChange === null)일 때는 쿨다운 검사를 건너뛴다.
- * - 그 외에는 7일 쿨다운을 적용한다.
+ * 닉네임 변경 시도. 쿨다운 정책은 폐지됐으므로 형식·중복·동일 닉네임 검사만 수행한다.
  */
 export async function attemptUpdateNickname(name: string): Promise<UpdateResult> {
   hydrate();
@@ -215,10 +209,8 @@ export async function attemptUpdateNickname(name: string): Promise<UpdateResult>
   if (formatErr) return { ok: false, error: formatErr };
 
   const initialSetup = isInitialNicknameSetup();
-
-  if (!initialSetup) {
-    if (trimmed === current.nickname) return { ok: false, error: "same" };
-    if (nicknameCooldownDaysLeft() > 0) return { ok: false, error: "cooldown" };
+  if (!initialSetup && trimmed === current.nickname) {
+    return { ok: false, error: "same" };
   }
 
   // 서버 응답 흉내내기
@@ -229,7 +221,6 @@ export async function attemptUpdateNickname(name: string): Promise<UpdateResult>
   current = {
     ...current,
     nickname: trimmed,
-    // 최초 설정에서도 변경 시각을 기록해 이후엔 쿨다운이 적용되도록 한다.
     lastNicknameChange: new Date().toISOString(),
   };
   persist();

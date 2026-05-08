@@ -29,6 +29,7 @@ import { useSupabaseUser } from "@/lib/supabase-profile";
 import { uploadImage } from "@/lib/storage";
 import { addLikedPost, getLikedPosts } from "@/lib/local-state";
 import { relativeTime } from "@/lib/format";
+import { ShareButton } from "@/components/board/ShareButton";
 import { cn } from "@/lib/utils";
 import { ANON_TAGS, parseAnonContent, getTagInfo, type AnonTagKey } from "./anon-utils";
 
@@ -180,6 +181,12 @@ function AnonCard({
           <Eye className="h-3.5 w-3.5" />
           {post.view_count}
         </span>
+        <ShareButton
+          boardType="anonymous"
+          postId={post.id}
+          title={post.title || "익명 글"}
+          variant="dark"
+        />
       </div>
     </motion.article>
   );

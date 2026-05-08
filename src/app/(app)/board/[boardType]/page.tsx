@@ -37,6 +37,7 @@ import {
   Quote,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
+import { ShareButton } from "@/components/board/ShareButton";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { AlumniIntro } from "@/components/board/AlumniIntro";
 import { CollegeIntro } from "@/components/board/CollegeIntro";
@@ -730,6 +731,11 @@ function DefaultList({
                         <MessageSquare className="h-3 w-3" />
                         {post.comment_count}
                       </span>
+                      <ShareButton
+                        boardType={boardType}
+                        postId={post.id}
+                        title={post.title}
+                      />
                     </span>
                   </div>
                 </div>
@@ -824,6 +830,11 @@ function LostCard({ post }: { post: PostRow }) {
               <MessageSquare className="h-3 w-3" />
               {post.comment_count}
             </span>
+            <ShareButton
+              boardType={post.board_type}
+              postId={post.id}
+              title={post.title}
+            />
           </span>
         </div>
       </div>
@@ -1315,6 +1326,11 @@ function FreeCard({
                   <MessageSquare className="h-3 w-3" />
                   {post.comment_count}
                 </span>
+                <ShareButton
+                  boardType="free"
+                  postId={post.id}
+                  title={post.title}
+                />
               </span>
             </div>
           </div>
@@ -1433,6 +1449,11 @@ function QaRow({ post }: { post: PostRow }) {
               <MessageSquare className="h-3 w-3" />
               {post.comment_count}
             </span>
+            <ShareButton
+              boardType={post.board_type}
+              postId={post.id}
+              title={post.title}
+            />
           </span>
         </div>
       </Link>
@@ -1527,6 +1548,11 @@ function YoutubeCard({ post }: { post: PostRow }) {
               <MessageSquare className="h-3 w-3" />
               {post.comment_count}
             </span>
+            <ShareButton
+              boardType={post.board_type}
+              postId={post.id}
+              title={post.title}
+            />
           </span>
         </div>
       </div>
@@ -1849,6 +1875,11 @@ function NewsHero({ post }: { post: PostRow }) {
               <MessageSquare className="h-3 w-3" />
               {post.comment_count}
             </span>
+            <ShareButton
+              boardType={post.board_type}
+              postId={post.id}
+              title={post.title}
+            />
           </span>
         </div>
       </div>
@@ -1915,6 +1946,11 @@ function NewsRow({ post }: { post: PostRow }) {
                 <MessageSquare className="h-3 w-3" />
                 {post.comment_count}
               </span>
+              <ShareButton
+                boardType={post.board_type}
+                postId={post.id}
+                title={post.title}
+              />
             </span>
           </div>
         </div>
@@ -2018,6 +2054,11 @@ function AlumniRow({ post }: { post: PostRow }) {
               <MessageSquare className="h-3 w-3" />
               {post.comment_count}
             </span>
+            <ShareButton
+              boardType={post.board_type}
+              postId={post.id}
+              title={post.title}
+            />
           </span>
         </div>
       </Link>
@@ -2105,6 +2146,11 @@ function SeniorCard({ post }: { post: PostRow }) {
             <MessageSquare className="h-3 w-3" />
             {post.comment_count}
           </span>
+          <ShareButton
+            boardType={post.board_type}
+            postId={post.id}
+            title={post.title}
+          />
         </span>
       </div>
     </Link>

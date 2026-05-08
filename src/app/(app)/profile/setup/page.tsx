@@ -1,8 +1,6 @@
 "use client";
 
-// 닉네임 설정/변경 화면.
-// - 최초 설정(lastNicknameChange === null): 자유롭게 설정 가능.
-// - 변경: 7일 쿨다운이 적용되며, 남은 일수 동안은 입력이 잠긴다.
+// 닉네임 설정/변경 화면. 쿨다운 정책은 폐지 — 언제든 자유롭게 변경 가능.
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -15,7 +13,6 @@ import {
   ERROR_MESSAGES,
   attemptUpdateNickname,
   isInitialNicknameSetup,
-  nicknameCooldownDaysLeft,
   useProfile,
   validateNicknameFormat,
   type ValidationError,
@@ -39,8 +36,6 @@ function ProfileSetupForm() {
   const router = useRouter();
 
   const initialSetup = isInitialNicknameSetup(profile);
-  const cooldown = nicknameCooldownDaysLeft(profile);
-  const isLocked = !initialSetup && cooldown > 0;
 
   const [name, setName] = useState(profile.nickname);
   const [serverError, setServerError] = useState<ValidationError | null>(null);
@@ -58,7 +53,7 @@ function ProfileSetupForm() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (submitting || isLocked || !isValid) return;
+    if (submitting || !isValid) return;
     setServerError(null);
     setSubmitting(true);
     const result = await attemptUpdateNickname(name);
@@ -97,8 +92,8 @@ function ProfileSetupForm() {
             </h1>
             <p className="mt-0.5 text-xs text-foreground/55">
               {initialSetup
-                ? "문파스에서 사용할 닉네임이에요. 7일에 한 번씩 변경할 수 있어요."
-                : "변경 후엔 7일 동안 다시 바꿀 수 없어요."}
+                ? "문파스에서 사용할 닉네임이에요. 언제든 변경할 수 있어요."
+                : "언제든 자유롭게 변경할 수 있어요."}
             </p>
           </div>
         </div>
@@ -150,7 +145,7 @@ function ProfileSetupForm() {
               }}
               placeholder="2~10자, 한글·영문·숫자"
               maxLength={20}
-              disabled={isLocked || submitting}
+              disabled={submitting}
               className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-foreground/35 disabled:opacity-60"
             />
             {name && !showError && isValid && (
@@ -177,18 +172,10 @@ function ProfileSetupForm() {
                 : "2~10자, 한글·영문·숫자 조합으로 입력해주세요"}
           </p>
 
-          {/* 쿨다운 안내 */}
-          {isLocked && (
-            <div className="mt-1 rounded-xl border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-              지금은 닉네임을 변경할 수 없어요. {cooldown}일 뒤에 다시 시도할 수
-              있어요.
-            </div>
-          )}
-
           {/* 제출 */}
           <button
             type="submit"
-            disabled={isLocked || !isValid || submitting}
+            disabled={!isValid || submitting}
             className={cn(
               "mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold text-white transition-opacity",
               "bg-[linear-gradient(135deg,#7c3aed_0%,#06b6d4_100%)] shadow-[0_6px_20px_rgba(124,58,237,0.4)]",

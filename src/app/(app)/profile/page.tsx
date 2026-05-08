@@ -196,7 +196,7 @@ function ProfileHeader({
             {role && <Badge role={role} />}
           </div>
           <p className="mt-1 text-xs text-foreground/55">
-            닉네임은 7일에 한 번 변경할 수 있어요
+            언제든 닉네임을 변경할 수 있어요
           </p>
         </div>
 

@@ -5,18 +5,13 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { AlertCircle, Loader2, Ticket, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-
-const ALLOWED_DOMAIN = "moontae.hs.jne.kr";
+import { ALLOWED_DOMAIN, SS_INVITE_CODE, SS_INVITE_ROLE } from "@/lib/auth-const";
 
 // 초대 코드 실패 시도 제한
 const MAX_ATTEMPTS = 10;
 const LOCKOUT_MS = 10 * 60 * 1000; // 10분
 const ATTEMPT_KEY = "invite_attempts";
 const LOCKOUT_KEY = "invite_lockout_until";
-
-// sessionStorage 키 — OAuth 리다이렉트 사이에도 유지
-const SS_INVITE_CODE = "inviteCode";
-const SS_INVITE_ROLE = "inviteRole";
 
 type InviteRole = "parent" | "alumni" | "student" | "teacher";
 
@@ -112,7 +107,7 @@ export default function LoginPage() {
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/login`,
+        redirectTo: `${window.location.origin}/auth/callback`,
         queryParams: { prompt: "select_account" },
       },
     });
@@ -389,7 +384,7 @@ function InviteCodeModal({
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/login`,
+          redirectTo: `${window.location.origin}/auth/callback`,
           queryParams: { prompt: "select_account" },
         },
       });

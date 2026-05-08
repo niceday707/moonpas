@@ -1,8 +1,8 @@
 "use client";
 
 // 대시보드 — 실제 Supabase 데이터로 채워진 포탈 홈
-//  · 모바일: 배너 → 문튜브 가로스크롤 → HOT 게시물 → 최신글 피드 (세로 1열)
-//  · 데스크톱: 3컬럼 (왼쪽 HOT/공지/문튜브, 중앙 최신글, 오른쪽 프로필/검색/바로가기)
+//  · 모바일: 급식 → 프로필 → 최신 글 → 실시간 검색 → HOT → 공지 → 바로가기 → 문튜브
+//  · 데스크톱: 2컬럼 (왼쪽 메인: 급식 → 최신 글 / 우측 사이드바: 프로필 → 실시간 검색 → HOT → 공지 → 바로가기 → 문튜브)
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
@@ -390,7 +390,7 @@ function MoonTubeCard({ item }: { item: YoutubeItem }) {
 
 function MoonTubeSkeleton({ count = 3 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-1">
+    <div className="grid grid-cols-1 gap-2 p-3">
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
@@ -426,7 +426,7 @@ function MoonTubeAsideSection({
           ctaLabel="문튜브로 이동"
         />
       ) : (
-        <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-1">
+        <div className="grid grid-cols-1 gap-2 p-3">
           {videos.slice(0, 3).map((v) => (
             <MoonTubeCard key={v.postId} item={v} />
           ))}
@@ -930,7 +930,7 @@ export default function DashboardPage() {
       <BannerSlider />
 
       {/* ───────────────────────────────────────────────────── */}
-      {/* 모바일 (md 미만): 급식 → 프로필 → HOT → 최신 글 → 실시간검색 → 공지 → 바로가기 → 문튜브 */}
+      {/* 모바일 (md 미만): 급식 → 프로필 → 최신 글 → 실시간검색 → HOT → 공지 → 바로가기 → 문튜브 */}
       {/* ───────────────────────────────────────────────────── */}
       <div className="mt-4 flex flex-col gap-4 md:hidden">
         <MealCard />
@@ -946,20 +946,6 @@ export default function DashboardPage() {
         ) : (
           <GoogleLoginCard />
         )}
-
-        <Card>
-          <SectionHead
-            icon={Flame}
-            title="HOT 게시물"
-            href="/board/free"
-            iconColor="text-orange-500"
-          />
-          <HotPostList
-            posts={hotPosts}
-            loading={hotLoading}
-            variant="compact"
-          />
-        </Card>
 
         <Card>
           <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-white/[0.05]">
@@ -989,6 +975,20 @@ export default function DashboardPage() {
 
         <Card>
           <SectionHead
+            icon={Flame}
+            title="HOT 게시물"
+            href="/board/free"
+            iconColor="text-orange-500"
+          />
+          <HotPostList
+            posts={hotPosts}
+            loading={hotLoading}
+            variant="compact"
+          />
+        </Card>
+
+        <Card>
+          <SectionHead
             icon={Bell}
             title="최신 공지"
             href="/board/notice"
@@ -1004,51 +1004,12 @@ export default function DashboardPage() {
       </div>
 
       {/* ───────────────────────────────────────────────────── */}
-      {/* PC/태블릿 (md 이상): 좌(HOT/공지/문튜브) | 중앙(HOT 태블릿+최신글) | 우(프로필 → 급식 → 실시간검색 → 공지 → 바로가기) */}
+      {/* PC/태블릿 (md 이상): 좌측 메인(급식 → 최신 글) | 우측 사이드바(프로필 → 실시간검색 → HOT → 공지 → 바로가기 → 문튜브) */}
       {/* ───────────────────────────────────────────────────── */}
-      <div className="mt-4 hidden gap-4 md:grid md:grid-cols-[1fr_220px] lg:grid-cols-[220px_1fr_220px]">
-        {/* 왼쪽 사이드 (lg 이상에서만) */}
-        <aside className="hidden lg:flex lg:flex-col lg:gap-4">
-          <Card>
-            <SectionHead
-              icon={Flame}
-              title="HOT 게시물"
-              href="/board/free"
-              iconColor="text-orange-500"
-            />
-            <HotPostList posts={hotPosts} loading={hotLoading} variant="full" />
-          </Card>
-
-          <Card>
-            <SectionHead
-              icon={Bell}
-              title="최신 공지"
-              href="/board/notice"
-              iconColor="text-red-500"
-            />
-            <NoticeList posts={noticePosts} loading={noticeLoading} max={5} />
-          </Card>
-
-          <MoonTubeAsideSection videos={youtubeItems} loading={youtubeLoading} />
-        </aside>
-
-        {/* 중앙: HOT(태블릿) + 최신 글 */}
+      <div className="mt-4 hidden gap-4 md:grid md:grid-cols-[1fr_240px] lg:grid-cols-[1fr_280px]">
+        {/* 좌측 메인: 급식(상단, 큰 사이즈) → 최신 글 */}
         <section className="min-w-0 space-y-4">
-          <div className="hidden md:block lg:hidden">
-            <Card>
-              <SectionHead
-                icon={Flame}
-                title="HOT 게시물"
-                href="/board/free"
-                iconColor="text-orange-500"
-              />
-              <HotPostList
-                posts={hotPosts}
-                loading={hotLoading}
-                variant="full"
-              />
-            </Card>
-          </div>
+          <MealCard />
 
           <Card>
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-white/[0.05]">
@@ -1075,7 +1036,7 @@ export default function DashboardPage() {
           </Card>
         </section>
 
-        {/* 오른쪽 사이드: 프로필 → 급식 → 실시간검색 → (태블릿)공지 → 바로가기 */}
+        {/* 우측 사이드바: 프로필 → 실시간검색 → HOT → 공지 → 바로가기 → 문튜브 */}
         <aside className="flex flex-col gap-4">
           {isLoggedIn ? (
             <ProfileCard
@@ -1089,23 +1050,31 @@ export default function DashboardPage() {
             <GoogleLoginCard />
           )}
 
-          <MealCard />
-
           <TrendingSearchCard />
 
-          <div className="hidden md:block lg:hidden">
-            <Card>
-              <SectionHead
-                icon={Bell}
-                title="최신 공지"
-                href="/board/notice"
-                iconColor="text-red-500"
-              />
-              <NoticeList posts={noticePosts} loading={noticeLoading} max={4} />
-            </Card>
-          </div>
+          <Card>
+            <SectionHead
+              icon={Flame}
+              title="HOT 게시물"
+              href="/board/free"
+              iconColor="text-orange-500"
+            />
+            <HotPostList posts={hotPosts} loading={hotLoading} variant="compact" />
+          </Card>
+
+          <Card>
+            <SectionHead
+              icon={Bell}
+              title="최신 공지"
+              href="/board/notice"
+              iconColor="text-red-500"
+            />
+            <NoticeList posts={noticePosts} loading={noticeLoading} max={5} />
+          </Card>
 
           <ShortcutsCard />
+
+          <MoonTubeAsideSection videos={youtubeItems} loading={youtubeLoading} />
         </aside>
       </div>
 

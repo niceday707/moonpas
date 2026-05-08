@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 import { BannerSlider } from "@/components/dashboard/BannerSlider";
 import { NicknameSetupModal } from "@/components/dashboard/NicknameSetupModal";
+import { DdayCard } from "@/components/DdayCard";
+import { MealCard } from "@/components/MealCard";
 import { Badge, type Role } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useAuth, attemptGoogleLogin } from "@/lib/auth";
@@ -813,6 +815,12 @@ export default function DashboardPage() {
     >
       {/* 배너 슬라이더 */}
       <BannerSlider />
+
+      {/* 오늘의 정보 — 수능 D-Day + 급식 (모바일 1열, 태블릿+ 2열) */}
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <DdayCard />
+        <MealCard />
+      </div>
 
       {/* 모바일 전용 — 문튜브 가로 스크롤 (lg 이상에서는 좌측 사이드바에서 표시) */}
       <div className="mt-4">

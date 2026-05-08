@@ -9,6 +9,7 @@ import {
   GraduationCap,
   Hash,
   Home,
+  Moon,
   Package,
   UserRound,
   PlayCircle,
@@ -24,6 +25,7 @@ type Item = {
 
 const ITEMS: Item[] = [
   { href: "/dashboard", label: "홈", icon: Home },
+  { href: "/board/anonymous", label: "문태 에타 🌙", icon: Moon },
   { href: "/board/free", label: "자유게시판", icon: Hash },
   { href: "/board/curriculum", label: "교육과정", icon: BookOpen },
   { href: "/board/college", label: "대입정보", icon: GraduationCap },

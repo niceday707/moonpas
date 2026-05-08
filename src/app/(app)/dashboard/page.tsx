@@ -73,6 +73,7 @@ const BOARD_BADGE_COLOR: Record<BoardType, string> = {
   event_praise: "text-pink-500 bg-pink-50 dark:bg-pink-900/20",
   event_study: "text-teal-500 bg-teal-50 dark:bg-teal-900/20",
   event_quiz: "text-amber-500 bg-amber-50 dark:bg-amber-900/20",
+  anonymous: "text-purple-500 bg-purple-50 dark:bg-purple-900/20",
 };
 
 /** 실시간 검색 — 정적 키워드 (실시간 분석은 추후 구현) */

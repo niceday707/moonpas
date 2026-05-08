@@ -21,6 +21,7 @@ const MEGA_NAV: NavGroup[] = [
   {
     label: "커뮤니티",
     items: [
+      { boardType: "anonymous", label: "문태 에타 🌙" },
       { boardType: "free", label: "자유게시판" },
       { boardType: "notice", label: "공지사항" },
       { boardType: "lost", label: "분실물센터" },

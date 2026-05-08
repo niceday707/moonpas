@@ -29,7 +29,8 @@ export type BoardType =
   | "event_find" // 찹쌀 꽈배기 (숨은 이모지 찾기)
   | "event_praise" // 칭찬합시다
   | "event_study" // 공부 인증
-  | "event_quiz"; // 오늘의 퀴즈
+  | "event_quiz" // 오늘의 퀴즈
+  | "anonymous"; // 문태 에타 (완전 익명 게시판)
 
 export const BOARD_LABEL: Record<BoardType, string> = {
   free: "자유게시판",
@@ -53,6 +54,7 @@ export const BOARD_LABEL: Record<BoardType, string> = {
   event_praise: "칭찬합시다",
   event_study: "공부 인증",
   event_quiz: "오늘의 퀴즈",
+  anonymous: "문태 에타",
 };
 
 // posts row + 작성자 join 결과
@@ -87,6 +89,7 @@ export type PostRow = {
 export type CommentRow = {
   id: string;
   post_id: string;
+  parent_id: string | null;
   author_id: string;
   content: string;
   created_at: string;
@@ -162,6 +165,8 @@ export async function listPosts(
     status?: PostStatus | null;
     /** content 컬럼에 ILIKE 매칭할 패턴 (예: '%"subject":"korean"%') */
     contentLike?: string | null;
+    /** 정렬 기준 — 기본 created_at DESC */
+    sortBy?: "created_at" | "like_count";
   },
 ): Promise<{ posts: PostRow[]; total: number }> {
   const from = (page - 1) * POSTS_PER_PAGE;
@@ -184,8 +189,9 @@ export async function listPosts(
     query = query.order("is_pinned", { ascending: false });
   }
 
+  const sortCol = options?.sortBy ?? "created_at";
   const { data, error, count } = await query
-    .order("created_at", { ascending: false })
+    .order(sortCol, { ascending: false })
     .range(from, to);
 
   if (error) {
@@ -414,7 +420,7 @@ export async function incrementViewCount(postId: string): Promise<void> {
 // ─────────────────────────────────────────────────────────
 
 const COMMENT_SELECT = `
-  id, post_id, author_id, content, created_at,
+  id, post_id, parent_id, author_id, content, created_at,
   author:profiles!author_id ( id, nickname, role, avatar_url )
 `;
 
@@ -436,11 +442,13 @@ export async function createComment(input: {
   authorId: string;
   postId: string;
   content: string;
+  parentId?: string | null;
 }): Promise<{ error: string | null }> {
   const { error } = await supabase.from("comments").insert({
     author_id: input.authorId,
     post_id: input.postId,
     content: input.content,
+    parent_id: input.parentId ?? null,
   });
   if (error) {
     console.error("[createComment] 실패", error);

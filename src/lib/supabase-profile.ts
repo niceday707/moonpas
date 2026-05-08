@@ -123,6 +123,98 @@ export async function saveNickname(
   return { error: error?.message ?? null };
 }
 
+/** 닉네임 변경 결과 — 호출 측에서 사용자에게 보여줄 메시지를 분기하기 위함 */
+export type UpdateNicknameResult =
+  | { ok: true }
+  | { ok: false; reason: "duplicate" | "unauthorized" | "network" | "unknown"; message: string };
+
+/**
+ * profiles.nickname 변경.
+ * - 쿨다운 없음 — 언제든 호출 가능
+ * - 중복 검사: ILIKE 로 대소문자 무시, 자기 자신은 제외(.neq id)
+ * - UPDATE 가 0행 영향이면 RLS 차단 또는 row 부재로 보고 unauthorized 처리
+ */
+export async function updateNicknameInDb(
+  userId: string,
+  nickname: string,
+): Promise<UpdateNicknameResult> {
+  const trimmed = nickname.trim();
+  if (!trimmed) {
+    return { ok: false, reason: "unknown", message: "닉네임을 입력해주세요." };
+  }
+
+  // 1) 중복 검사 — 대소문자/공백 차이로 자기 자신과 충돌하지 않도록 .neq("id", userId)
+  try {
+    const { data: dup, error: dupErr } = await supabase
+      .from("profiles")
+      .select("id")
+      .ilike("nickname", trimmed)
+      .neq("id", userId)
+      .limit(1);
+    if (dupErr) {
+      console.error("[updateNicknameInDb] 중복 검사 실패", dupErr);
+      // 중복 검사 실패해도 UPDATE 자체는 시도 — DB 의 unique 제약이 있다면 거기서 잡힘
+    } else if (dup && dup.length > 0) {
+      return {
+        ok: false,
+        reason: "duplicate",
+        message: "이미 사용 중인 닉네임이에요.",
+      };
+    }
+  } catch (e) {
+    console.error("[updateNicknameInDb] 중복 검사 예외", e);
+  }
+
+  // 2) 실제 UPDATE — 본인 row 만 (RLS 가 차단하면 0행 영향)
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ nickname: trimmed })
+    .eq("id", userId)
+    .select("id, nickname")
+    .maybeSingle();
+
+  if (error) {
+    console.error("[updateNicknameInDb] UPDATE 실패", {
+      userId,
+      nickname: trimmed,
+      message: error.message,
+      code: (error as unknown as { code?: string }).code,
+      details: (error as unknown as { details?: string }).details,
+      hint: (error as unknown as { hint?: string }).hint,
+    });
+    // Postgres unique violation
+    const code = (error as unknown as { code?: string }).code;
+    if (code === "23505") {
+      return {
+        ok: false,
+        reason: "duplicate",
+        message: "이미 사용 중인 닉네임이에요.",
+      };
+    }
+    return {
+      ok: false,
+      reason: "network",
+      message: `닉네임 변경에 실패했어요.\n${error.message}`,
+    };
+  }
+
+  if (!data) {
+    // RLS 가 막았거나 row 가 없는 경우 — 0행 영향
+    console.warn("[updateNicknameInDb] 0행 영향 (RLS 차단 또는 row 부재)", {
+      userId,
+    });
+    return {
+      ok: false,
+      reason: "unauthorized",
+      message:
+        "닉네임을 변경할 권한이 없어요. 다시 로그인 후 시도해주세요.",
+    };
+  }
+
+  console.log("[updateNicknameInDb] 성공", data);
+  return { ok: true };
+}
+
 /** profiles.avatar_url 업데이트. null 이면 기본 아바타로 되돌림 */
 export async function saveAvatarUrl(
   userId: string,

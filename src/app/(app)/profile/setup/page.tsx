@@ -1,24 +1,75 @@
 "use client";
 
-// 닉네임 설정/변경 화면. 쿨다운 정책은 폐지 — 언제든 자유롭게 변경 가능.
-import { useMemo, useState } from "react";
+// 닉네임 설정/변경 화면.
+// - Supabase profiles.nickname 을 직접 UPDATE 한다 (이전엔 localStorage 목업만 호출하던 버그 수정).
+// - 쿨다운 정책 폐지 — 언제든 자유롭게 변경 가능.
+// - 중복 검사는 supabase-profile.ts 의 updateNicknameInDb 가 자기 자신을 .neq 로 제외해 처리.
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { motion } from "framer-motion";
-import { ArrowLeft, Check, Sparkles, X as XIcon } from "lucide-react";
-import { AuthGate } from "@/components/auth/AuthGate";
-import { Avatar } from "@/components/feed/Avatar";
-import { Badge } from "@/components/ui/Badge";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  ERROR_MESSAGES,
-  attemptUpdateNickname,
-  isInitialNicknameSetup,
-  useProfile,
-  validateNicknameFormat,
-  type ValidationError,
-} from "@/lib/profile";
-import { ME } from "@/lib/mock-data";
+  ArrowLeft,
+  Check,
+  Loader2,
+  Sparkles,
+  X as XIcon,
+} from "lucide-react";
+import { AuthGate } from "@/components/auth/AuthGate";
+import { Badge } from "@/components/ui/Badge";
+import { UserAvatar } from "@/components/ui/UserAvatar";
+import {
+  updateNicknameInDb,
+  useSupabaseProfile,
+} from "@/lib/supabase-profile";
 import { cn } from "@/lib/utils";
+
+// ── 닉네임 형식 검사 (NicknameSetupModal 과 동일 규칙) ──────
+const NICKNAME_REGEX = /^[가-힣a-zA-Z0-9]{2,10}$/;
+const PROFANITY_LIST = [
+  "씨발",
+  "시발",
+  "병신",
+  "개새",
+  "fuck",
+  "shit",
+  "asshole",
+];
+const RESERVED_NICKNAMES = [
+  "관리자",
+  "운영자",
+  "매니저",
+  "admin",
+  "moderator",
+  "moonpas",
+  "문파스",
+];
+
+type FormatError = "empty" | "length" | "charset" | "profanity" | "reserved" | "same";
+
+const FORMAT_ERROR_MESSAGES: Record<FormatError, string> = {
+  empty: "닉네임을 입력해주세요.",
+  length: "닉네임은 2~10자여야 해요.",
+  charset: "한글, 영문, 숫자만 사용할 수 있어요.",
+  profanity: "사용할 수 없는 단어가 포함되어 있어요.",
+  reserved: "사용할 수 없는 닉네임이에요.",
+  same: "지금 쓰고 있는 닉네임과 같아요.",
+};
+
+function validateFormat(name: string): FormatError | null {
+  const trimmed = name.trim();
+  if (!trimmed) return "empty";
+  if (trimmed.length < 2 || trimmed.length > 10) return "length";
+  if (!NICKNAME_REGEX.test(trimmed)) return "charset";
+  const lower = trimmed.toLowerCase();
+  if (PROFANITY_LIST.some((w) => lower.includes(w.toLowerCase()))) {
+    return "profanity";
+  }
+  if (RESERVED_NICKNAMES.some((w) => lower === w.toLowerCase())) {
+    return "reserved";
+  }
+  return null;
+}
 
 export default function ProfileSetupPage() {
   return (
@@ -32,38 +83,81 @@ export default function ProfileSetupPage() {
 }
 
 function ProfileSetupForm() {
-  const profile = useProfile();
   const router = useRouter();
+  const { user, profile, loading, refetch } = useSupabaseProfile();
 
-  const initialSetup = isInitialNicknameSetup(profile);
+  // 최초 설정인지 — profiles row 자체가 없으면 true (이 페이지에 들어올 일은 거의 없지만 안전 처리)
+  const initialSetup = !profile?.nickname;
 
-  const [name, setName] = useState(profile.nickname);
-  const [serverError, setServerError] = useState<ValidationError | null>(null);
+  const [name, setName] = useState("");
+  const [serverError, setServerError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
-  // 입력값 실시간 형식 검사 (서버 통신 없이 즉시 표시)
-  const liveValidation = useMemo<ValidationError | null>(() => {
-    if (!name) return null; // 비어있을 땐 안내 문구만 표시
-    return validateNicknameFormat(name);
-  }, [name]);
+  // profile 이 로드되면 현재 닉네임을 기본값으로
+  useEffect(() => {
+    if (profile?.nickname && !name) {
+      setName(profile.nickname);
+    }
+  }, [profile, name]);
+
+  // 실시간 형식 검사
+  const liveValidation = useMemo<FormatError | null>(() => {
+    if (!name) return null;
+    const err = validateFormat(name);
+    if (err) return err;
+    // 변경 모드에서 현재 닉네임과 동일하면 same
+    if (
+      !initialSetup &&
+      profile?.nickname &&
+      name.trim() === profile.nickname.trim()
+    ) {
+      return "same";
+    }
+    return null;
+  }, [name, initialSetup, profile?.nickname]);
 
   const isValid = !!name.trim() && !liveValidation;
-  const showError = serverError ?? liveValidation;
-  const errorMessage = showError ? ERROR_MESSAGES[showError] : null;
+  const errorMessage = serverError ?? (liveValidation ? FORMAT_ERROR_MESSAGES[liveValidation] : null);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 2400);
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting || !isValid) return;
+    if (!user) {
+      setServerError("로그인이 필요해요.");
+      return;
+    }
+
     setServerError(null);
     setSubmitting(true);
-    const result = await attemptUpdateNickname(name);
-    setSubmitting(false);
-    if (result.ok) {
-      router.push("/profile");
-    } else {
-      setServerError(result.error);
+    try {
+      const result = await updateNicknameInDb(user.id, name.trim());
+      if (result.ok) {
+        showToast("닉네임이 변경되었습니다!");
+        await refetch();
+        // 토스트가 잠깐 보인 뒤 프로필 페이지로 이동
+        window.setTimeout(() => router.push("/profile"), 700);
+      } else {
+        setServerError(result.message);
+        console.error("[profile/setup] 닉네임 변경 실패", result);
+      }
+    } catch (err) {
+      console.error("[profile/setup] 예외", err);
+      setServerError(
+        "닉네임 변경 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.",
+      );
+    } finally {
+      setSubmitting(false);
     }
   };
+
+  // 미리보기에 사용할 표시 닉네임
+  const previewNickname = name.trim() || profile?.nickname || "닉네임";
 
   return (
     <main className="mx-auto w-full max-w-md px-4 py-6 md:py-10">
@@ -100,16 +194,18 @@ function ProfileSetupForm() {
 
         {/* 미리보기 */}
         <div className="mb-5 flex items-center gap-3 rounded-2xl border border-foreground/10 bg-foreground/[0.02] px-4 py-3">
-          <Avatar
-            author={{ ...ME, name: name.trim() || profile.nickname }}
+          <UserAvatar
+            nickname={previewNickname}
+            role={profile?.role ?? null}
+            avatarUrl={profile?.avatar_url ?? null}
             size="lg"
           />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="truncate text-base font-bold">
-                {name.trim() || profile.nickname}
+                {previewNickname}
               </span>
-              <Badge role={profile.role} />
+              {profile?.role && <Badge role={profile.role} />}
             </div>
             <p className="text-[11px] text-foreground/45">
               게시판에는 이렇게 표시돼요
@@ -128,7 +224,7 @@ function ProfileSetupForm() {
           <div
             className={cn(
               "flex items-center gap-2 rounded-2xl bg-foreground/5 px-4 py-2.5 ring-1 ring-inset transition-colors",
-              showError
+              errorMessage
                 ? "ring-rose-500/40 focus-within:ring-rose-500/60"
                 : isValid
                   ? "ring-emerald-500/30 focus-within:ring-emerald-500/50"
@@ -145,19 +241,19 @@ function ProfileSetupForm() {
               }}
               placeholder="2~10자, 한글·영문·숫자"
               maxLength={20}
-              disabled={submitting}
+              disabled={submitting || loading}
               className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-foreground/35 disabled:opacity-60"
             />
-            {name && !showError && isValid && (
+            {name && !errorMessage && isValid && (
               <Check className="h-4 w-4 text-emerald-500" />
             )}
-            {showError && <XIcon className="h-4 w-4 text-rose-500" />}
+            {errorMessage && <XIcon className="h-4 w-4 text-rose-500" />}
           </div>
 
           {/* 안내/에러 메시지 */}
           <p
             className={cn(
-              "min-h-[18px] text-[11px]",
+              "min-h-[18px] whitespace-pre-line text-[11px]",
               errorMessage
                 ? "text-rose-500"
                 : isValid
@@ -175,21 +271,39 @@ function ProfileSetupForm() {
           {/* 제출 */}
           <button
             type="submit"
-            disabled={!isValid || submitting}
+            disabled={!isValid || submitting || loading}
             className={cn(
               "mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold text-white transition-opacity",
               "bg-[linear-gradient(135deg,#7c3aed_0%,#06b6d4_100%)] shadow-[0_6px_20px_rgba(124,58,237,0.4)]",
               "disabled:cursor-not-allowed disabled:opacity-40",
             )}
           >
+            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {submitting
-              ? "확인 중…"
+              ? "저장 중…"
               : initialSetup
                 ? "닉네임 사용하기"
                 : "닉네임 변경하기"}
           </button>
         </form>
       </motion.div>
+
+      {/* 토스트 */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            transition={{ duration: 0.2 }}
+            className="pointer-events-none fixed inset-x-0 bottom-10 z-50 flex justify-center px-4"
+          >
+            <div className="rounded-full border border-white/15 bg-black/85 px-4 py-2 text-xs font-semibold text-white shadow-xl backdrop-blur-md">
+              {toast}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }

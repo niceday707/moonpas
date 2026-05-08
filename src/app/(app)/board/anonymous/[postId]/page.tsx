@@ -15,13 +15,11 @@ import {
   MessageCircle,
   MoreVertical,
   Pencil,
-  Send,
   Share2,
   Trash2,
   X as XIcon,
 } from "lucide-react";
 import {
-  createComment,
   deleteComment,
   deletePost,
   getPost,
@@ -32,6 +30,10 @@ import {
   type CommentRow,
   type PostRow,
 } from "@/lib/board";
+import {
+  CommentComposer,
+  type ReplyTarget,
+} from "@/components/comments/CommentComposer";
 import { useSupabaseUser } from "@/lib/supabase-profile";
 import { addLikedPost, getLikedPosts } from "@/lib/local-state";
 import { relativeTime } from "@/lib/format";
@@ -215,10 +217,8 @@ export default function AnonPostPage() {
   const [heartBurst, setHeartBurst] = useState(false);
   const [shareToast, setShareToast] = useState<string | null>(null);
 
-  // 댓글 입력
-  const [commentText, setCommentText] = useState("");
-  const [replyTo, setReplyTo] = useState<{ id: string; label: string } | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  // 댓글 입력 — 답글 타겟만 페이지 레벨에서 관리, 본문 입력은 CommentComposer 내부 상태
+  const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
 
   // 편집 상태
   const [editMode, setEditMode] = useState(false);
@@ -227,7 +227,15 @@ export default function AnonPostPage() {
   const [editTag, setEditTag] = useState<AnonTagKey | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
-  const commentInputRef = useRef<HTMLTextAreaElement>(null);
+  const commentsEndRef = useRef<HTMLDivElement>(null);
+  const scrollToLatestComment = useCallback(() => {
+    window.setTimeout(() => {
+      commentsEndRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      });
+    }, 60);
+  }, []);
 
   // 로드
   useEffect(() => {
@@ -349,25 +357,6 @@ export default function AnonPostPage() {
     if (nextCount !== null) setLikeCount(nextCount);
   };
 
-  // 댓글 등록
-  const handleComment = async () => {
-    if (!user || !post || !commentText.trim()) return;
-    setSubmitting(true);
-    const { error } = await createComment({
-      authorId: user.id,
-      postId: post.id,
-      content: commentText.trim(),
-      parentId: replyTo?.id ?? null,
-    });
-    if (!error) {
-      setCommentText("");
-      setReplyTo(null);
-      const fresh = await listComments(post.id);
-      setComments(fresh);
-    }
-    setSubmitting(false);
-  };
-
   // 댓글 삭제
   const handleDeleteComment = async (commentId: string) => {
     if (!confirm("댓글을 삭제할까요?")) return;
@@ -376,11 +365,9 @@ export default function AnonPostPage() {
     setComments(fresh);
   };
 
-  // 답글 클릭
+  // 답글 클릭 — 페이지 레벨 replyTo 만 갱신, 포커스/스크롤은 CommentComposer 가 처리
   const handleReply = useCallback((id: string, label: string) => {
     setReplyTo({ id, label });
-    commentInputRef.current?.focus();
-    commentInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
   // 댓글을 부모/자식으로 분리
@@ -450,10 +437,10 @@ export default function AnonPostPage() {
         </div>
       </div>
 
-      {/* 본문 영역 — 하단 고정 입력바(약 72px) + safe-area 만큼 추가 패딩 */}
+      {/* 본문 영역 — 하단 고정 입력바(약 60px) + 답글 배너 + safe-area 여유 */}
       <div
         className="relative mx-auto max-w-2xl px-4 pt-6"
-        style={{ paddingBottom: "calc(11rem + env(safe-area-inset-bottom))" }}
+        style={{ paddingBottom: "calc(8rem + env(safe-area-inset-bottom))" }}
       >
         {/* 글 카드 */}
         <motion.article
@@ -600,10 +587,16 @@ export default function AnonPostPage() {
               ))
             )}
           </div>
+          {/* 자동 스크롤용 sentinel — 새 댓글 등록 시 이 지점으로 스크롤 */}
+          <div
+            ref={commentsEndRef}
+            aria-hidden
+            style={{ scrollMarginBottom: "9rem" }}
+          />
         </div>
       </div>
 
-      {/* 공유 토스트 */}
+      {/* 공유 토스트 — 입력바 위에 짧게 노출 */}
       <AnimatePresence>
         {shareToast && (
           <motion.div
@@ -611,7 +604,7 @@ export default function AnonPostPage() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 12 }}
             transition={{ duration: 0.2 }}
-            className="pointer-events-none fixed inset-x-0 bottom-28 z-40 flex justify-center px-4"
+            className="pointer-events-none fixed inset-x-0 bottom-28 z-50 flex justify-center px-4"
           >
             <div className="rounded-full border border-white/15 bg-black/85 px-4 py-2 text-xs font-semibold text-white shadow-xl backdrop-blur-md">
               {shareToast}
@@ -620,87 +613,26 @@ export default function AnonPostPage() {
         )}
       </AnimatePresence>
 
-      {/* ── 하단 고정 댓글 입력바 ── */}
-      <div
-        className="fixed bottom-0 left-0 right-0 z-30 border-t border-white/[0.07] backdrop-blur-2xl pb-[env(safe-area-inset-bottom)]"
-        style={{ background: "rgba(15,12,41,0.92)" }}
-      >
-        {/* 답글 대상 표시 */}
-        <AnimatePresence>
-          {replyTo && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              className="overflow-hidden"
-            >
-              <div className="flex items-center gap-2 border-b border-white/[0.05] px-4 py-2">
-                <CornerDownRight className="h-3.5 w-3.5 text-violet-400 shrink-0" />
-                <span className="text-xs text-white/50">
-                  <span className="text-violet-300 font-semibold">{replyTo.label}</span>에 답글 달기
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setReplyTo(null)}
-                  className="ml-auto text-white/30 hover:text-white/60"
-                >
-                  ✕
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <div className="flex items-end gap-2 px-4 py-3">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-sm">
+      {/* 인스타그램 스타일 하단 고정 댓글 입력바 (visualViewport 키보드 추적) */}
+      <CommentComposer
+        postId={post.id}
+        userId={user?.id ?? null}
+        replyTo={replyTo}
+        onCancelReply={() => setReplyTo(null)}
+        avatar={
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/[0.08] text-sm">
             🌙
           </div>
-          <textarea
-            ref={commentInputRef}
-            placeholder={user ? "익명으로 댓글 달기..." : "로그인 후 댓글을 달 수 있어요"}
-            value={commentText}
-            onChange={(e) => setCommentText(e.target.value)}
-            disabled={!user}
-            onFocus={(e) => {
-              // 모바일 가상 키보드가 올라올 때 입력창이 가려지지 않도록 약간의 딜레이 후 스크롤
-              const el = e.currentTarget;
-              setTimeout(() => {
-                el.scrollIntoView({ behavior: "smooth", block: "center" });
-              }, 250);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleComment();
-              }
-            }}
-            rows={1}
-            className={cn(
-              "flex-1 resize-none rounded-2xl border px-3 py-2 text-sm outline-none",
-              "bg-white/[0.07] border-white/[0.09] text-white/85 placeholder-white/30",
-              "focus:border-violet-400/40 focus:bg-white/[0.09]",
-              "transition-all leading-relaxed max-h-32",
-              "disabled:cursor-not-allowed disabled:opacity-40",
-            )}
-            style={{ scrollbarWidth: "none" }}
-          />
-          <button
-            type="button"
-            onClick={handleComment}
-            disabled={!user || !commentText.trim() || submitting}
-            className={cn(
-              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all",
-              commentText.trim() && user
-                ? "bg-gradient-to-br from-violet-500 to-purple-600 text-white shadow-[0_0_16px_rgba(124,58,237,0.4)]"
-                : "bg-white/[0.07] text-white/30",
-              "disabled:cursor-not-allowed",
-            )}
-          >
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </button>
-        </div>
-      </div>
+        }
+        theme="dark"
+        placeholder="익명으로 댓글 달기..."
+        onFocus={scrollToLatestComment}
+        onSubmitted={async () => {
+          const fresh = await listComments(post.id);
+          setComments(fresh);
+          scrollToLatestComment();
+        }}
+      />
     </div>
   );
 }

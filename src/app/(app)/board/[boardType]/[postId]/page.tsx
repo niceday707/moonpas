@@ -26,12 +26,15 @@ import {
   PlayCircle,
   Quote,
   School,
-  Send,
   Share2,
   Trash2,
   Users,
   Vote,
 } from "lucide-react";
+import {
+  CommentComposer,
+  type ReplyTarget,
+} from "@/components/comments/CommentComposer";
 import { Badge } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { AuthGate } from "@/components/auth/AuthGate";
@@ -41,7 +44,6 @@ import {
   QA_SUBJECT_STYLE,
   RESOURCE_CATEGORY_STYLE,
   STUDY_SUBJECT_STYLE,
-  createComment,
   deleteComment,
   deletePost,
   getPost,
@@ -139,7 +141,19 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
   const [liking, setLiking] = useState(false);
   const [liked, setLiked] = useState(false);
   const [shareToast, setShareToast] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
   const viewCounted = useRef(false);
+  const commentsEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToLatestComment = useCallback(() => {
+    // 다음 프레임에 스크롤 — 새 댓글이 DOM 에 반영된 뒤
+    window.setTimeout(() => {
+      commentsEndRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      });
+    }, 60);
+  }, []);
 
   const refreshComments = useCallback(async () => {
     const list = await listComments(postId);
@@ -328,7 +342,9 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
-      className="mx-auto max-w-screen-md px-4 py-6"
+      className="mx-auto max-w-screen-md px-4 pt-6"
+      // 하단 고정 댓글 입력바(약 60px) + 답글 배너 여유 + safe-area
+      style={{ paddingBottom: "calc(8rem + env(safe-area-inset-bottom))" }}
     >
       <Link
         href={`/board/${boardType}`}
@@ -867,35 +883,64 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
 
       {/* 댓글/답변 ─────────────────────── */}
       <CommentsSection
-        post={post}
         comments={comments}
         currentUserId={user?.id ?? null}
         boardType={boardType}
         isQa={isQa}
         onChanged={refreshComments}
+        replyTargetId={replyTo?.id ?? null}
+        onReply={(target) => setReplyTo(target)}
+        endRef={commentsEndRef}
       />
 
-      {/* 공유 결과 토스트 */}
+      {/* 공유 결과 토스트 — 입력바 위에 띄움 */}
       <AnimatePresenceToast message={shareToast} />
+
+      {/* 인스타그램 스타일 하단 고정 댓글 입력바 */}
+      <CommentComposer
+        postId={post.id}
+        userId={user?.id ?? null}
+        replyTo={replyTo}
+        onCancelReply={() => setReplyTo(null)}
+        avatar={
+          <UserAvatar
+            nickname={profile?.nickname}
+            role={profile?.role ?? null}
+            avatarUrl={profile?.avatar_url ?? null}
+            size="sm"
+          />
+        }
+        theme="light"
+        placeholder={isQa ? "답변을 입력하세요..." : "댓글을 입력하세요..."}
+        onFocus={scrollToLatestComment}
+        onSubmitted={async () => {
+          await refreshComments();
+          scrollToLatestComment();
+        }}
+      />
     </motion.div>
   );
 }
 
-// 댓글 + 대댓글 트리. 답글 1단계까지만 허용. */
+// 댓글 + 대댓글 트리. 답글 1단계까지만 허용. 입력은 페이지 하단 고정 컴포저에서 처리.
 function CommentsSection({
-  post,
   comments,
   currentUserId,
   boardType,
   isQa,
   onChanged,
+  replyTargetId,
+  onReply,
+  endRef,
 }: {
-  post: PostRow;
   comments: CommentRow[];
   currentUserId: string | null;
   boardType: BoardType;
   isQa: boolean;
   onChanged: () => Promise<void>;
+  replyTargetId: string | null;
+  onReply: (target: ReplyTarget) => void;
+  endRef: React.RefObject<HTMLDivElement>;
 }) {
   // parent_id 기준으로 분리
   const topLevel = comments.filter((c) => !c.parent_id);
@@ -906,8 +951,6 @@ function CommentsSection({
     arr.push(c);
     repliesByParent.set(c.parent_id, arr);
   }
-
-  const [replyOpenId, setReplyOpenId] = useState<string | null>(null);
 
   return (
     <section className="mt-5 rounded-xl border border-gray-200 bg-white p-4 dark:border-white/[0.07] dark:bg-[#16162a]">
@@ -925,7 +968,11 @@ function CommentsSection({
         <ul className="mt-3 divide-y divide-gray-100 dark:divide-white/[0.04]">
           {topLevel.map((c) => {
             const replies = repliesByParent.get(c.id) ?? [];
-            const isReplyOpen = replyOpenId === c.id;
+            const isActiveTarget = replyTargetId === c.id;
+            const replyLabel = displayAuthorNameFor({
+              boardType,
+              author: c.author,
+            });
             return (
               <li key={c.id} className="py-3">
                 <CommentItem
@@ -935,14 +982,13 @@ function CommentsSection({
                   onDeleted={onChanged}
                   replyButton={{
                     count: replies.length,
-                    open: isReplyOpen,
-                    onClick: () =>
-                      setReplyOpenId((prev) => (prev === c.id ? null : c.id)),
+                    active: isActiveTarget,
+                    onClick: () => onReply({ id: c.id, label: replyLabel }),
                   }}
                 />
 
                 {/* 대댓글 — 들여쓰기 + 좌측 보라 세로줄 */}
-                {(replies.length > 0 || isReplyOpen) && (
+                {replies.length > 0 && (
                   <div className="mt-2 ml-4 border-l-2 border-violet-500/40 pl-3 md:ml-6 md:pl-4">
                     {replies.map((r) => (
                       <CommentItem
@@ -954,18 +1000,6 @@ function CommentsSection({
                         isReply
                       />
                     ))}
-
-                    {isReplyOpen && (
-                      <ReplyComposer
-                        postId={post.id}
-                        parentId={c.id}
-                        onDone={async () => {
-                          setReplyOpenId(null);
-                          await onChanged();
-                        }}
-                        onCancel={() => setReplyOpenId(null)}
-                      />
-                    )}
                   </div>
                 )}
               </li>
@@ -974,7 +1008,8 @@ function CommentsSection({
         </ul>
       )}
 
-      <CommentInput postId={post.id} onCreated={onChanged} />
+      {/* 자동 스크롤용 sentinel — 새 댓글 등록 시 이 지점으로 스크롤 */}
+      <div ref={endRef} aria-hidden style={{ scrollMarginBottom: "9rem" }} />
     </section>
   );
 }
@@ -992,7 +1027,7 @@ function CommentItem({
   currentUserId: string | null;
   onDeleted: () => Promise<void>;
   isReply?: boolean;
-  replyButton?: { count: number; open: boolean; onClick: () => void };
+  replyButton?: { count: number; active: boolean; onClick: () => void };
 }) {
   const owner =
     !!currentUserId && (comment.is_mine || currentUserId === comment.author_id);
@@ -1037,10 +1072,10 @@ function CommentItem({
           <button
             type="button"
             onClick={replyButton.onClick}
-            aria-pressed={replyButton.open}
+            aria-pressed={replyButton.active}
             className={cn(
               "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors",
-              replyButton.open
+              replyButton.active
                 ? "bg-violet-500/15 text-violet-600 dark:text-violet-300"
                 : "text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-100",
             )}
@@ -1054,89 +1089,14 @@ function CommentItem({
   );
 }
 
-function ReplyComposer({
-  postId,
-  parentId,
-  onDone,
-  onCancel,
-}: {
-  postId: string;
-  parentId: string;
-  onDone: () => Promise<void> | void;
-  onCancel: () => void;
-}) {
-  const { user } = useSupabaseProfile();
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  if (!user) {
-    return (
-      <p className="mt-2 rounded-lg bg-gray-50 px-3 py-2 text-[11px] text-gray-500 dark:bg-white/[0.03] dark:text-gray-400">
-        로그인 후 답글을 작성할 수 있어요.
-      </p>
-    );
-  }
-
-  async function submit() {
-    const t = text.trim();
-    if (!t || busy) return;
-    if (!user) return;
-    setBusy(true);
-    const { error } = await createComment({
-      authorId: user.id,
-      postId,
-      content: t,
-      parentId,
-    });
-    setBusy(false);
-    if (error) {
-      window.alert("답글 작성에 실패했어요.");
-      return;
-    }
-    setText("");
-    await onDone();
-  }
-
-  return (
-    <div className="mt-2 flex items-end gap-2">
-      <textarea
-        autoFocus
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="답글을 입력하세요"
-        rows={2}
-        disabled={busy}
-        className="min-h-[40px] flex-1 resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
-      />
-      <button
-        type="button"
-        onClick={onCancel}
-        disabled={busy}
-        className="h-9 rounded-lg border border-gray-200 px-2.5 text-[11px] font-semibold text-gray-600 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/[0.05]"
-      >
-        취소
-      </button>
-      <button
-        type="button"
-        onClick={submit}
-        disabled={busy || !text.trim()}
-        className="flex h-9 items-center gap-1 rounded-lg bg-violet-600 px-3 text-[11px] font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-        등록
-      </button>
-    </div>
-  );
-}
-
-// 공유 토스트 — 화면 하단에 잠깐 노출
+// 공유 토스트 — 입력바 위에 잠깐 노출
 function AnimatePresenceToast({ message }: { message: string | null }) {
   return (
     <motion.div
       initial={false}
       animate={{ opacity: message ? 1 : 0, y: message ? 0 : 12 }}
       transition={{ duration: 0.2 }}
-      className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4"
+      className="pointer-events-none fixed inset-x-0 bottom-28 z-50 flex justify-center px-4"
     >
       {message && (
         <div className="pointer-events-auto rounded-full border border-white/15 bg-black/85 px-4 py-2 text-xs font-semibold text-white shadow-xl backdrop-blur-md">
@@ -1144,84 +1104,6 @@ function AnimatePresenceToast({ message }: { message: string | null }) {
         </div>
       )}
     </motion.div>
-  );
-}
-
-function CommentInput({
-  postId,
-  onCreated,
-}: {
-  postId: string;
-  onCreated: () => Promise<void>;
-}) {
-  const { user } = useSupabaseProfile();
-  const [text, setText] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  if (!user) {
-    return (
-      <p className="mt-4 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-white/[0.03] dark:text-gray-400">
-        로그인 후 댓글을 작성할 수 있습니다.
-      </p>
-    );
-  }
-
-  async function handleSubmit() {
-    const t = text.trim();
-    if (!t) return;
-    setSubmitting(true);
-    if (!user) {
-      setSubmitting(false);
-      return;
-    }
-    const { error } = await createComment({
-      authorId: user.id,
-      postId,
-      content: t,
-    });
-    setSubmitting(false);
-    if (error) {
-      window.alert("댓글 작성에 실패했어요.");
-      return;
-    }
-    setText("");
-    await onCreated();
-  }
-
-  return (
-    <div
-      className="mt-4 flex items-end gap-2"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-    >
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onFocus={(e) => {
-          // 모바일 키보드 노출 시 입력창이 가려지지 않도록 스크롤
-          const el = e.currentTarget;
-          setTimeout(() => {
-            el.scrollIntoView({ behavior: "smooth", block: "center" });
-          }, 250);
-        }}
-        placeholder="댓글을 입력하세요"
-        rows={2}
-        disabled={submitting}
-        className="min-h-[44px] flex-1 resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
-      />
-      <button
-        type="button"
-        onClick={handleSubmit}
-        disabled={submitting || !text.trim()}
-        className="flex h-11 items-center gap-1 rounded-lg bg-violet-600 px-3 text-xs font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {submitting ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <Send className="h-3.5 w-3.5" />
-        )}
-        등록
-      </button>
-    </div>
   );
 }
 

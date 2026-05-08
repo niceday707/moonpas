@@ -89,19 +89,25 @@ const BOARD_BADGE_COLOR: Record<BoardType, string> = {
   anonymous: "text-purple-500 bg-purple-50 dark:bg-purple-900/20",
 };
 
-/** 실시간 검색 — 정적 키워드 (실시간 분석은 추후 구현) */
-const TRENDING = [
-  { rank: 1, keyword: "중간고사", trend: "up" as const },
-  { rank: 2, keyword: "체육대회", trend: "same" as const },
-  { rank: 3, keyword: "급식 메뉴", trend: "up" as const },
-  { rank: 4, keyword: "2028 대입", trend: "new" as const },
-  { rank: 5, keyword: "수행평가", trend: "down" as const },
-  { rank: 6, keyword: "야자 신청", trend: "up" as const },
-  { rank: 7, keyword: "수학 30번", trend: "new" as const },
-  { rank: 8, keyword: "물리학 공부법", trend: "down" as const },
-  { rank: 9, keyword: "학부모 총회", trend: "same" as const },
-  { rank: 10, keyword: "문튜브", trend: "up" as const },
+/** 실시간 검색 — 첫 페인트용 시드 데이터.
+ *  /api/trending 응답이 도착하기 전 깜빡임을 막고, 호출 실패 시 폴백으로도 사용. */
+type TrendKind = "up" | "down" | "same" | "new";
+type TrendingItem = { rank: number; keyword: string; trend: TrendKind };
+
+const TRENDING_SEED: TrendingItem[] = [
+  { rank: 1, keyword: "중간고사", trend: "up" },
+  { rank: 2, keyword: "체육대회", trend: "same" },
+  { rank: 3, keyword: "급식 메뉴", trend: "up" },
+  { rank: 4, keyword: "2028 대입", trend: "new" },
+  { rank: 5, keyword: "수행평가", trend: "down" },
+  { rank: 6, keyword: "야자 신청", trend: "up" },
+  { rank: 7, keyword: "수학 30번", trend: "new" },
+  { rank: 8, keyword: "물리학 공부법", trend: "down" },
+  { rank: 9, keyword: "학부모 총회", trend: "same" },
+  { rank: 10, keyword: "문튜브", trend: "up" },
 ];
+
+const TRENDING_REFRESH_MS = 5 * 60 * 1000;
 
 const EXTERNAL_LINKS = [
   {
@@ -541,6 +547,31 @@ function TrendIcon({ trend }: { trend: "up" | "down" | "same" | "new" }) {
 // ── 모바일·PC 공용으로 재사용되는 작은 카드들 ──────────────
 
 function TrendingSearchCard() {
+  // /api/trending 으로부터 라이브 데이터를 받아 5분마다 갱신.
+  // 첫 페인트는 SEED 로 보여주고, fetch 결과가 오면 부드럽게 교체 (스켈레톤 깜빡임 방지).
+  const [items, setItems] = useState<TrendingItem[]>(TRENDING_SEED);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/trending", { cache: "no-store" });
+        if (!res.ok) return;
+        const json = (await res.json()) as { items?: TrendingItem[] };
+        if (!active || !Array.isArray(json.items) || json.items.length === 0) return;
+        setItems(json.items);
+      } catch {
+        // 네트워크 에러 — SEED 그대로 유지
+      }
+    };
+    void load();
+    const id = setInterval(load, TRENDING_REFRESH_MS);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, []);
+
   return (
     <Card>
       <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-white/[0.05]">
@@ -551,10 +582,10 @@ function TrendingSearchCard() {
         <span className="text-[10px] text-gray-400">실시간 인기</span>
       </div>
       <ul className="divide-y divide-gray-50 dark:divide-white/[0.03]">
-        {TRENDING.map((t) => (
+        {items.map((t) => (
           <li key={t.rank}>
             <Link
-              href="/board/free"
+              href={`/board/free?search=${encodeURIComponent(t.keyword)}`}
               className="flex items-center gap-2.5 px-4 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
             >
               <span

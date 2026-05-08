@@ -3,7 +3,7 @@
 // 상단 메가메뉴 — 고파스 스타일 항상 펼쳐진 4열 메뉴 카드 (데스크톱)
 // 태블릿/모바일 → 우측 슬라이드 전체화면 드로어 메뉴
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { GraduationCap, ChevronDown, PenSquare, Menu, X, Search, Bell } from "lucide-react";
@@ -11,6 +11,7 @@ import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useNotifications } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 import { getBoardCounts, getTodayPostCount, type BoardType } from "@/lib/board";
+import { logSearch, normalizeKeyword } from "@/lib/search-log";
 
 // ── 메뉴 정의 ───────────────────────────────────────────────────────────
 // boardType 을 단일 source of truth 로 두고 href = /board/{boardType}, 카운트는 Supabase 에서 조회.
@@ -84,6 +85,7 @@ const TODAY_KR = new Date().toLocaleDateString("ko-KR", {
 // ── 컴포넌트 ────────────────────────────────────────────────────────────
 export function TopBar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -127,9 +129,11 @@ export function TopBar() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (typeof window !== "undefined") {
-      window.alert("검색 기능은 준비 중입니다");
-    }
+    const keyword = normalizeKeyword(searchQuery);
+    if (keyword.length < 2) return;
+    // 로그는 fire-and-forget — 라우팅을 막지 않도록 await 하지 않음
+    void logSearch(searchQuery);
+    router.push(`/board/free?search=${encodeURIComponent(keyword)}`);
   };
 
   return (

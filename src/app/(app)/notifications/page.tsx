@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
+  AtSign,
   Bell,
   MessageCircle,
   MessageSquare,
@@ -27,6 +28,12 @@ const TYPE_META: Record<
   NotificationType,
   { icon: typeof Bell; color: string; bg: string; label: string }
 > = {
+  mention: {
+    icon: AtSign,
+    color: "text-violet-500",
+    bg: "bg-violet-50 dark:bg-violet-900/25",
+    label: "멘션",
+  },
   comment: {
     icon: MessageCircle,
     color: "text-blue-500",
@@ -53,29 +60,16 @@ const TYPE_META: Record<
   },
 };
 
-function notificationText(n: AppNotification): string {
-  switch (n.type) {
-    case "comment":
-      return `${n.actorName}이(가) 내 글에 댓글을 달았어요`;
-    case "reply":
-      return `${n.actorName}이(가) 내 댓글에 대댓글을 달았어요`;
-    case "like":
-      return `${n.actorName}이(가) 내 글을 좋아해요`;
-    case "notice":
-      return "새 공지사항이 등록됐어요";
-  }
-}
-
 // ── 단일 알림 아이템 ─────────────────────────────────────────────────
 
 function NotificationItem({ notification }: { notification: AppNotification }) {
   const router = useRouter();
   const { markAsRead } = useNotifications();
-  const meta = TYPE_META[notification.type];
+  const meta = TYPE_META[notification.type] ?? TYPE_META.mention;
   const Icon = meta.icon;
 
-  const handleClick = () => {
-    markAsRead(notification.id);
+  const handleClick = async () => {
+    await markAsRead(notification.id);
     router.push(getNotificationHref(notification));
   };
 
@@ -93,7 +87,7 @@ function NotificationItem({ notification }: { notification: AppNotification }) {
         className={cn(
           "flex w-full items-start gap-3 px-4 py-4 text-left transition-colors",
           "hover:bg-gray-50 dark:hover:bg-white/[0.03]",
-          !notification.read && "bg-violet-50/50 dark:bg-violet-900/10",
+          !notification.isRead && "bg-violet-50/50 dark:bg-violet-900/10",
         )}
       >
         {/* 타입 아이콘 */}
@@ -111,28 +105,20 @@ function NotificationItem({ notification }: { notification: AppNotification }) {
           <p
             className={cn(
               "text-sm leading-snug",
-              notification.read
+              notification.isRead
                 ? "text-gray-500 dark:text-gray-400"
                 : "font-semibold text-gray-900 dark:text-white",
             )}
           >
-            {notificationText(notification)}
+            {notification.message}
           </p>
-          <p className="mt-0.5 line-clamp-1 text-xs text-gray-500 dark:text-gray-400">
-            {notification.postTitle}
-          </p>
-          {notification.body && (
-            <p className="mt-1 line-clamp-1 text-xs text-gray-400 dark:text-gray-500">
-              &ldquo;{notification.body}&rdquo;
-            </p>
-          )}
           <p className="mt-1.5 text-[11px] text-gray-400 dark:text-gray-500">
             {relativeTime(notification.createdAt)}
           </p>
         </div>
 
         {/* 읽지 않은 파란 점 */}
-        {!notification.read && (
+        {!notification.isRead && (
           <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-violet-500" />
         )}
       </button>

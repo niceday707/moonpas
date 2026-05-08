@@ -1,57 +1,158 @@
 "use client";
 
-// 알림 시스템 — 타입 정의, 더미 데이터, React Context
-// Supabase 연동 시 INITIAL_NOTIFICATIONS를 실시간 구독으로 교체하면 됨
+// 알림 시스템 — Supabase notifications 테이블에서 fetch.
+// - mount 시 본인 알림 목록 로드
+// - markAsRead / markAllAsRead 는 is_read UPDATE
+// - 멘션 클릭 시 /board/{board_type}/{post_id} 로 이동 (board_type 은 join 으로 함께 가져옴)
+//
+// 실시간 구독은 추후 (Realtime) 도입 예정.
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import { supabase } from "@/lib/supabase";
+import { useSupabaseUser } from "@/lib/supabase-profile";
 
 // ── 타입 ─────────────────────────────────────────────────────────────
-export type NotificationType = "comment" | "reply" | "like" | "notice";
+export type NotificationType =
+  | "mention"
+  | "comment"
+  | "reply"
+  | "like"
+  | "notice";
 
 export interface AppNotification {
   id: string;
   type: NotificationType;
-  actorName: string;       // 행위자 이름
-  postId: string;          // 관련 게시글 ID
-  postTitle: string;       // 게시글 제목 (미리보기용)
-  body: string;            // 알림 본문 요약
-  createdAt: string;       // ISO 8601 timestamp
-  read: boolean;
+  message: string;
+  postId: string | null;
+  commentId: string | null;
+  /** 클릭 시 라우팅용 — post_id 가 가리키는 글의 board_type */
+  boardType: string | null;
+  isRead: boolean;
+  createdAt: string;
 }
 
-// ── 알림 데이터 ───────────────────────────────────────────────────────
-// 실제 알림 시스템(댓글/좋아요 트리거 등)은 아직 구현되지 않았으므로 빈 배열로 시작.
-// 추후 Supabase 트리거 + Realtime 으로 교체 예정.
-export const INITIAL_NOTIFICATIONS: AppNotification[] = [];
+// notifications 테이블 row + posts(board_type) 임베딩
+type RawNotification = {
+  id: string;
+  type: string;
+  message: string;
+  post_id: string | null;
+  comment_id: string | null;
+  is_read: boolean;
+  created_at: string;
+  post: { board_type: string } | null;
+};
+
+function normalize(raw: RawNotification): AppNotification {
+  return {
+    id: raw.id,
+    type: (raw.type as NotificationType) ?? "mention",
+    message: raw.message,
+    postId: raw.post_id,
+    commentId: raw.comment_id,
+    boardType: raw.post?.board_type ?? null,
+    isRead: raw.is_read,
+    createdAt: raw.created_at,
+  };
+}
 
 // ── Context ──────────────────────────────────────────────────────────
 interface NotificationContextValue {
   notifications: AppNotification[];
   unreadCount: number;
-  markAsRead: (id: string) => void;
-  markAllAsRead: () => void;
+  loading: boolean;
+  refetch: () => Promise<void>;
+  markAsRead: (id: string) => Promise<void>;
+  markAllAsRead: () => Promise<void>;
 }
 
-const NotificationContext = createContext<NotificationContextValue | null>(null);
+const NotificationContext = createContext<NotificationContextValue | null>(
+  null,
+);
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
-  const [notifications, setNotifications] = useState<AppNotification[]>(
-    INITIAL_NOTIFICATIONS,
+  const { user } = useSupabaseUser();
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchAll = useCallback(async () => {
+    if (!user) {
+      setNotifications([]);
+      return;
+    }
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("notifications")
+      .select(
+        "id, type, message, post_id, comment_id, is_read, created_at, post:posts(board_type)",
+      )
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) {
+      console.error("[notifications] fetch 실패", error);
+      setNotifications([]);
+    } else {
+      setNotifications(
+        ((data ?? []) as unknown as RawNotification[]).map(normalize),
+      );
+    }
+    setLoading(false);
+  }, [user]);
+
+  useEffect(() => {
+    fetchAll();
+  }, [fetchAll]);
+
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
+
+  const markAsRead = useCallback(
+    async (id: string) => {
+      // 낙관적 업데이트
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
+      );
+      const { error } = await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("id", id);
+      if (error) {
+        console.error("[notifications] markAsRead 실패", error);
+      }
+    },
+    [],
   );
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
-
-  const markAsRead = (id: string) =>
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
-    );
-
-  const markAllAsRead = () =>
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  const markAllAsRead = useCallback(async () => {
+    if (!user) return;
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("user_id", user.id)
+      .eq("is_read", false);
+    if (error) {
+      console.error("[notifications] markAllAsRead 실패", error);
+    }
+  }, [user]);
 
   return (
     <NotificationContext.Provider
-      value={{ notifications, unreadCount, markAsRead, markAllAsRead }}
+      value={{
+        notifications,
+        unreadCount,
+        loading,
+        refetch: fetchAll,
+        markAsRead,
+        markAllAsRead,
+      }}
     >
       {children}
     </NotificationContext.Provider>
@@ -68,7 +169,11 @@ export function useNotifications() {
 }
 
 // ── 유틸 ─────────────────────────────────────────────────────────────
+/** 알림 클릭 시 이동할 경로 — post_id + board_type 이 있으면 그 글 상세로, 없으면 대시보드 */
 export function getNotificationHref(n: AppNotification): string {
   if (n.type === "notice") return "/notices";
-  return `/feed/${n.postId}`;
+  if (n.postId && n.boardType) {
+    return `/board/${n.boardType}/${n.postId}`;
+  }
+  return "/dashboard";
 }

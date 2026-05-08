@@ -545,18 +545,22 @@ export async function createComment(input: {
   postId: string;
   content: string;
   parentId?: string | null;
-}): Promise<{ error: string | null }> {
-  const { error } = await supabase.from("comments").insert({
-    author_id: input.authorId,
-    post_id: input.postId,
-    content: input.content,
-    parent_id: input.parentId ?? null,
-  });
+}): Promise<{ error: string | null; commentId: string | null }> {
+  const { data, error } = await supabase
+    .from("comments")
+    .insert({
+      author_id: input.authorId,
+      post_id: input.postId,
+      content: input.content,
+      parent_id: input.parentId ?? null,
+    })
+    .select("id")
+    .single();
   if (error) {
     console.error("[createComment] 실패", error);
-    return { error: error.message };
+    return { error: error.message, commentId: null };
   }
-  return { error: null };
+  return { error: null, commentId: (data?.id as string | undefined) ?? null };
 }
 
 export async function deleteComment(commentId: string): Promise<{ error: string | null }> {

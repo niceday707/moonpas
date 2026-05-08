@@ -35,6 +35,7 @@ import {
   CommentComposer,
   type ReplyTarget,
 } from "@/components/comments/CommentComposer";
+import { HighlightedContent } from "@/components/comments/HighlightedContent";
 import { Badge } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { AuthGate } from "@/components/auth/AuthGate";
@@ -896,7 +897,7 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
       {/* 공유 결과 토스트 — 입력바 위에 띄움 */}
       <AnimatePresenceToast message={shareToast} />
 
-      {/* 인스타그램 스타일 하단 고정 댓글 입력바 */}
+      {/* 인스타그램 스타일 하단 고정 댓글 입력바 — 멘션 자동완성 활성 */}
       <CommentComposer
         postId={post.id}
         userId={user?.id ?? null}
@@ -912,6 +913,8 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
         }
         theme="light"
         placeholder={isQa ? "답변을 입력하세요..." : "댓글을 입력하세요..."}
+        enableMentions
+        actorNickname={profile?.nickname ?? null}
         onFocus={scrollToLatestComment}
         onSubmitted={async () => {
           await refreshComments();
@@ -1063,9 +1066,10 @@ function CommentItem({
           </button>
         )}
       </div>
-      <p className="mt-1.5 whitespace-pre-wrap text-sm text-gray-800 dark:text-gray-200">
-        {comment.content}
-      </p>
+      <HighlightedContent
+        text={comment.content}
+        className="mt-1.5 text-sm text-gray-800 dark:text-gray-200"
+      />
 
       {replyButton && (
         <div className="mt-1.5 flex items-center gap-2">

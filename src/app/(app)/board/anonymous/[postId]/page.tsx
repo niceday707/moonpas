@@ -613,7 +613,7 @@ export default function AnonPostPage() {
         )}
       </AnimatePresence>
 
-      {/* 인스타그램 스타일 하단 고정 댓글 입력바 (visualViewport 키보드 추적) */}
+      {/* 인스타그램 스타일 하단 고정 댓글 입력바 — 익명 게시판은 멘션 비활성 */}
       <CommentComposer
         postId={post.id}
         userId={user?.id ?? null}
@@ -626,6 +626,7 @@ export default function AnonPostPage() {
         }
         theme="dark"
         placeholder="익명으로 댓글 달기..."
+        enableMentions={false}
         onFocus={scrollToLatestComment}
         onSubmitted={async () => {
           const fresh = await listComments(post.id);

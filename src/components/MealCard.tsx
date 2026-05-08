@@ -80,16 +80,26 @@ export function MealCard() {
     setError(null);
     fetch(`/api/meal?date=${toYmd(date)}`)
       .then(async (r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return (await r.json()) as ApiResponse;
+        // 500 이어도 body 의 error 메시지를 읽어 사용자에게 노출
+        const text = await r.text();
+        try {
+          const json = JSON.parse(text) as ApiResponse & { error?: string };
+          if (cancelled) return;
+          if (json.error) {
+            setError(json.error);
+            setData(null);
+            return;
+          }
+          setData(json);
+        } catch {
+          if (cancelled) return;
+          setError(`응답 파싱 실패 (HTTP ${r.status})`);
+          setData(null);
+        }
       })
-      .then((json) => {
+      .catch((err) => {
         if (cancelled) return;
-        setData(json);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setError("급식 정보를 불러오지 못했어요");
+        setError(err instanceof Error ? err.message : "급식 정보를 불러오지 못했어요");
         setData(null);
       })
       .finally(() => {

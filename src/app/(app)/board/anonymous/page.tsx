@@ -284,10 +284,17 @@ export default function AnonBoardPage() {
     let imageUrl: string | null = null;
     if (imageFile) imageUrl = await uploadImage(imageFile, user.id);
     const content = JSON.stringify({ tag: selectedTag, body: bodyInput.trim() });
-    const { error } = await createPost({
+
+    // 제목이 비어있으면 본문 첫 줄에서 자동 추출 — posts.title NOT NULL/CHECK 제약 회피
+    const trimmedTitle = titleInput.trim();
+    const fallbackTitle =
+      bodyInput.trim().split(/\r?\n/)[0]?.slice(0, 100).trim() || "(제목 없음)";
+    const finalTitle = trimmedTitle || fallbackTitle;
+
+    const { error, code, details, hint } = await createPost({
       authorId: user.id,
       boardType: "anonymous",
-      title: titleInput.trim(),
+      title: finalTitle,
       content,
       imageUrl,
     });
@@ -301,6 +308,16 @@ export default function AnonBoardPage() {
       await loadPosts(1, true);
       setPage(1);
       feedTopRef.current?.scrollIntoView({ behavior: "smooth" });
+    } else {
+      // 사용자에게 원인 노출 — 콘솔 로그도 board.ts 에서 이미 남기지만 alert 로 즉시 알림
+      const lines = [
+        "게시에 실패했습니다.",
+        `사유: ${error}`,
+        code ? `code: ${code}` : null,
+        details ? `details: ${details}` : null,
+        hint ? `hint: ${hint}` : null,
+      ].filter(Boolean);
+      alert(lines.join("\n"));
     }
     setPosting(false);
   };

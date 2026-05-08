@@ -26,6 +26,16 @@ export default function LandingPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // OAuth 핸드오프 — Supabase Site URL fallback 으로 인해 토큰이 / 루트에 떨어지는 케이스 구제
+  // 예: moonpas.kr/#access_token=...  →  /auth/callback#access_token=... 으로 그대로 hash 전달
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash;
+    if (hash && hash.includes("access_token")) {
+      window.location.replace("/auth/callback" + hash);
+    }
+  }, []);
+
   useEffect(() => {
     const id = setInterval(() => {
       setActive((i) => (i + 1) % SLIDES.length);

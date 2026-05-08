@@ -1,8 +1,13 @@
 "use client";
 
 // 대시보드 — 실제 Supabase 데이터로 채워진 포탈 홈
-//  · 모바일: 급식 → 프로필 → 최신 글 → 실시간 검색 → HOT → 공지 → 바로가기 → 문튜브
-//  · 데스크톱: 2컬럼 (왼쪽 메인: 급식 → 최신 글 / 우측 사이드바: 프로필 → 실시간 검색 → HOT → 공지 → 바로가기 → 문튜브)
+//  · 모바일/태블릿 (lg 미만): 1컬럼 — 급식 → 프로필 → 최신글 → 실시간검색 → HOT → 공지 → 바로가기 → 문튜브
+//  · 데스크톱 (lg 이상): 2컬럼 grid-cols-[1fr_340px]
+//      좌측 메인: 급식 → 최신글 → 문튜브
+//      우측 사이드바: 프로필 → 실시간검색 → HOT → 공지
+//
+//  중복 렌더 방지를 위해 `lg:hidden` / `hidden lg:grid` 로 명확히 분리.
+//  태블릿은 좁은 사이드바가 깨지므로 데스크톱 2컬럼은 lg(1024px) 부터만 활성화.
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
@@ -388,21 +393,8 @@ function MoonTubeCard({ item }: { item: YoutubeItem }) {
   );
 }
 
-function MoonTubeSkeleton({ count = 3 }: { count?: number }) {
-  return (
-    <div className="grid grid-cols-1 gap-2 p-3">
-      {Array.from({ length: count }).map((_, i) => (
-        <div
-          key={i}
-          className="aspect-video w-full animate-pulse rounded-lg bg-gray-200 dark:bg-white/[0.06]"
-        />
-      ))}
-    </div>
-  );
-}
-
-/** 데스크톱 좌측 사이드 — 세로 1열 카드 3장 */
-function MoonTubeAsideSection({
+/** 데스크톱 좌측 메인 영역용 문튜브 섹션 — 넓은 폭에 맞게 3열 그리드 */
+function MoonTubeMainSection({
   videos,
   loading,
 }: {
@@ -418,7 +410,14 @@ function MoonTubeAsideSection({
         iconColor="text-red-500"
       />
       {loading ? (
-        <MoonTubeSkeleton count={3} />
+        <div className="grid grid-cols-2 gap-3 p-3 xl:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div
+              key={i}
+              className="aspect-video w-full animate-pulse rounded-lg bg-gray-200 dark:bg-white/[0.06]"
+            />
+          ))}
+        </div>
       ) : videos.length === 0 ? (
         <EmptyHint
           message="아직 등록된 영상이 없습니다"
@@ -426,8 +425,8 @@ function MoonTubeAsideSection({
           ctaLabel="문튜브로 이동"
         />
       ) : (
-        <div className="grid grid-cols-1 gap-2 p-3">
-          {videos.slice(0, 3).map((v) => (
+        <div className="grid grid-cols-2 gap-3 p-3 xl:grid-cols-3">
+          {videos.slice(0, 6).map((v) => (
             <MoonTubeCard key={v.postId} item={v} />
           ))}
         </div>
@@ -926,13 +925,13 @@ export default function DashboardPage() {
       transition={{ duration: 0.3 }}
       className="mx-auto max-w-screen-xl px-4 py-4 md:px-6"
     >
-      {/* 배너 슬라이더 */}
+      {/* 배너 슬라이더 — 전체 폭 */}
       <BannerSlider />
 
       {/* ───────────────────────────────────────────────────── */}
-      {/* 모바일 (md 미만): 급식 → 프로필 → 최신 글 → 실시간검색 → HOT → 공지 → 바로가기 → 문튜브 */}
+      {/* 모바일/태블릿 (lg 미만): 1컬럼 — 급식 → 프로필 → 최신글 → 실시간검색 → HOT → 공지 → 바로가기 → 문튜브 */}
       {/* ───────────────────────────────────────────────────── */}
-      <div className="mt-4 flex flex-col gap-4 md:hidden">
+      <div className="mt-4 flex flex-col gap-4 lg:hidden">
         <MealCard />
 
         {isLoggedIn ? (
@@ -980,11 +979,7 @@ export default function DashboardPage() {
             href="/board/free"
             iconColor="text-orange-500"
           />
-          <HotPostList
-            posts={hotPosts}
-            loading={hotLoading}
-            variant="compact"
-          />
+          <HotPostList posts={hotPosts} loading={hotLoading} variant="compact" />
         </Card>
 
         <Card>
@@ -1004,10 +999,10 @@ export default function DashboardPage() {
       </div>
 
       {/* ───────────────────────────────────────────────────── */}
-      {/* PC/태블릿 (md 이상): 좌측 메인(급식 → 최신 글) | 우측 사이드바(프로필 → 실시간검색 → HOT → 공지 → 바로가기 → 문튜브) */}
+      {/* 데스크톱 (lg 이상): 2컬럼 — 좌측 메인(급식·최신글·문튜브) | 우측 사이드바(프로필·실시간검색·HOT·공지) */}
       {/* ───────────────────────────────────────────────────── */}
-      <div className="mt-4 hidden gap-4 md:grid md:grid-cols-[1fr_240px] lg:grid-cols-[1fr_280px]">
-        {/* 좌측 메인: 급식(상단, 큰 사이즈) → 최신 글 */}
+      <div className="mt-4 hidden gap-5 lg:grid lg:grid-cols-[1fr_340px]">
+        {/* 좌측 메인 (~65-70%) */}
         <section className="min-w-0 space-y-4">
           <MealCard />
 
@@ -1034,9 +1029,11 @@ export default function DashboardPage() {
               </Link>
             </div>
           </Card>
+
+          <MoonTubeMainSection videos={youtubeItems} loading={youtubeLoading} />
         </section>
 
-        {/* 우측 사이드바: 프로필 → 실시간검색 → HOT → 공지 → 바로가기 → 문튜브 */}
+        {/* 우측 사이드바 (340px 고정) */}
         <aside className="flex flex-col gap-4">
           {isLoggedIn ? (
             <ProfileCard
@@ -1071,10 +1068,6 @@ export default function DashboardPage() {
             />
             <NoticeList posts={noticePosts} loading={noticeLoading} max={5} />
           </Card>
-
-          <ShortcutsCard />
-
-          <MoonTubeAsideSection videos={youtubeItems} loading={youtubeLoading} />
         </aside>
       </div>
 

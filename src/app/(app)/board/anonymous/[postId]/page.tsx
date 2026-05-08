@@ -4,7 +4,7 @@
 // 작성자 완전 익명. 댓글은 글 내에서 익명1/2... 할당, 글쓴이 댓글은 "익명(글쓴이)".
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
@@ -13,16 +13,21 @@ import {
   Heart,
   Loader2,
   MessageCircle,
+  MoreVertical,
+  Pencil,
   Send,
   Trash2,
+  X as XIcon,
 } from "lucide-react";
 import {
   createComment,
   deleteComment,
+  deletePost,
   getPost,
   incrementLikeCount,
   incrementViewCount,
   listComments,
+  updatePost,
   type CommentRow,
   type PostRow,
 } from "@/lib/board";
@@ -30,7 +35,7 @@ import { useSupabaseUser } from "@/lib/supabase-profile";
 import { addLikedPost, getLikedPosts } from "@/lib/local-state";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { parseAnonContent, getTagInfo } from "../anon-utils";
+import { ANON_TAGS, parseAnonContent, getTagInfo, type AnonTagKey } from "../anon-utils";
 
 // ── 익명 번호 할당 헬퍼 ──────────────────────────────────────
 // 댓글을 시간순으로 보면서 author_id 가 처음 나타날 때 순서대로 번호 부여.
@@ -195,6 +200,8 @@ function CommentCard({
 // ── 메인 컴포넌트 ──────────────────────────────────────────
 export default function AnonPostPage() {
   const { postId } = useParams<{ postId: string }>();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const { user } = useSupabaseUser();
 
   const [post, setPost] = useState<PostRow | null>(null);
@@ -208,6 +215,13 @@ export default function AnonPostPage() {
   const [commentText, setCommentText] = useState("");
   const [replyTo, setReplyTo] = useState<{ id: string; label: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // 편집 상태
+  const [editMode, setEditMode] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const [editTag, setEditTag] = useState<AnonTagKey | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -229,6 +243,78 @@ export default function AnonPostPage() {
     })();
     return () => { active = false; };
   }, [postId]);
+
+  // ?edit=1 자동 편집 모드 진입 (본인 글일 때만)
+  useEffect(() => {
+    if (!post || !user) return;
+    if (searchParams.get("edit") === "1" && post.author_id === user.id) {
+      const parsed = parseAnonContent(post.content);
+      setEditTitle(post.title ?? "");
+      setEditBody(parsed.body);
+      setEditTag(parsed.tag);
+      setEditMode(true);
+    }
+  }, [post, user, searchParams]);
+
+  const isOwner = !!user && !!post && user.id === post.author_id;
+
+  // 편집 시작
+  const startEdit = useCallback(() => {
+    if (!post) return;
+    const parsed = parseAnonContent(post.content);
+    setEditTitle(post.title ?? "");
+    setEditBody(parsed.body);
+    setEditTag(parsed.tag);
+    setEditMode(true);
+  }, [post]);
+
+  // 편집 취소
+  const cancelEdit = useCallback(() => {
+    setEditMode(false);
+    // ?edit=1 쿼리 정리
+    if (searchParams.get("edit") === "1" && postId) {
+      router.replace(`/board/anonymous/${postId}`);
+    }
+  }, [searchParams, postId, router]);
+
+  // 편집 저장
+  const saveEdit = useCallback(async () => {
+    if (!post || !editBody.trim()) return;
+    setSavingEdit(true);
+    const newTitle =
+      editTitle.trim() ||
+      editBody.trim().split(/\r?\n/)[0]?.slice(0, 100).trim() ||
+      "(제목 없음)";
+    const newContent = JSON.stringify({ tag: editTag, body: editBody.trim() });
+    const { error } = await updatePost(post.id, {
+      title: newTitle,
+      content: newContent,
+    });
+    setSavingEdit(false);
+    if (error) {
+      alert(`수정 실패: ${error}`);
+      return;
+    }
+    // 갱신 후 다시 로드
+    const fresh = await getPost(post.id);
+    if (fresh) setPost(fresh);
+    setEditMode(false);
+    if (searchParams.get("edit") === "1" && postId) {
+      router.replace(`/board/anonymous/${postId}`);
+    }
+  }, [post, editTitle, editBody, editTag, searchParams, postId, router]);
+
+  // 글 삭제
+  const handleDeletePost = useCallback(async () => {
+    if (!post) return;
+    if (!confirm("이 글을 삭제할까요? 댓글도 함께 사라져요.")) return;
+    const { error } = await deletePost(post.id);
+    if (error) {
+      alert(`삭제 실패: ${error}`);
+      return;
+    }
+    router.push("/board/anonymous");
+  }, [post, router]);
 
   const anonMap = post ? buildAnonMap(comments, post.author_id) : new Map<string, number>();
 
@@ -353,7 +439,7 @@ export default function AnonPostPage() {
           transition={{ duration: 0.35 }}
           className="mb-6 rounded-2xl border border-white/[0.09] bg-white/[0.06] backdrop-blur-xl p-5"
         >
-          {/* 태그 + 시간 */}
+          {/* 태그 + 시간 + (본인) ⋮ 메뉴 */}
           <div className="flex items-center gap-2 mb-3">
             {tagInfo ? (
               <span className={cn("rounded-full border px-2.5 py-0.5 text-[11px] font-semibold", tagInfo.color)}>
@@ -361,6 +447,9 @@ export default function AnonPostPage() {
               </span>
             ) : null}
             <span className="text-[11px] text-white/30 ml-auto">{relativeTime(post.created_at)}</span>
+            {isOwner && !editMode && (
+              <PostKebabMenu onEdit={startEdit} onDelete={handleDeletePost} />
+            )}
           </div>
 
           {/* 작성자 */}
@@ -369,22 +458,43 @@ export default function AnonPostPage() {
               🌙
             </div>
             <span className="text-sm font-semibold text-white/60">익명</span>
+            {isOwner && (
+              <span className="rounded-full bg-violet-500/15 border border-violet-400/30 px-1.5 py-px text-[10px] font-semibold text-violet-300">
+                내 글
+              </span>
+            )}
           </div>
 
-          {/* 제목 */}
-          {post.title && (
-            <h1 className="mb-3 text-xl font-extrabold leading-snug text-white">{post.title}</h1>
-          )}
+          {editMode ? (
+            <PostEditor
+              title={editTitle}
+              body={editBody}
+              tag={editTag}
+              saving={savingEdit}
+              onTitleChange={setEditTitle}
+              onBodyChange={setEditBody}
+              onTagChange={setEditTag}
+              onSave={saveEdit}
+              onCancel={cancelEdit}
+            />
+          ) : (
+            <>
+              {/* 제목 */}
+              {post.title && (
+                <h1 className="mb-3 text-xl font-extrabold leading-snug text-white">{post.title}</h1>
+              )}
 
-          {/* 본문 */}
-          <p className="text-sm leading-relaxed text-white/80 whitespace-pre-line">{body}</p>
+              {/* 본문 */}
+              <p className="text-sm leading-relaxed text-white/80 whitespace-pre-line">{body}</p>
 
-          {/* 이미지 */}
-          {post.image_url && (
-            <div className="mt-4 overflow-hidden rounded-xl">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={post.image_url} alt="" className="w-full object-cover" />
-            </div>
+              {/* 이미지 */}
+              {post.image_url && (
+                <div className="mt-4 overflow-hidden rounded-xl">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={post.image_url} alt="" className="w-full object-cover" />
+                </div>
+              )}
+            </>
           )}
 
           {/* 액션 바 */}
@@ -536,6 +646,163 @@ export default function AnonPostPage() {
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 글 ⋮ 메뉴 (본인 한정) ──────────────────────────────────
+function PostKebabMenu({
+  onEdit,
+  onDelete,
+}: {
+  onEdit: () => void;
+  onDelete: () => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("click", handler);
+    return () => window.removeEventListener("click", handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        aria-label="글 메뉴"
+        className="flex h-7 w-7 items-center justify-center rounded-full text-white/45 hover:bg-white/[0.08] hover:text-white/85 transition-colors"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.12 }}
+            className="absolute right-0 top-full mt-1 z-30 min-w-[120px] overflow-hidden rounded-xl border border-white/10 bg-[#13132a]/95 shadow-xl backdrop-blur-xl"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                onEdit();
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-white/85 hover:bg-white/[0.06]"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              수정
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await onDelete();
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/10"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              삭제
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── 인라인 편집 폼 ─────────────────────────────────────────
+function PostEditor({
+  title,
+  body,
+  tag,
+  saving,
+  onTitleChange,
+  onBodyChange,
+  onTagChange,
+  onSave,
+  onCancel,
+}: {
+  title: string;
+  body: string;
+  tag: AnonTagKey | null;
+  saving: boolean;
+  onTitleChange: (v: string) => void;
+  onBodyChange: (v: string) => void;
+  onTagChange: (t: AnonTagKey | null) => void;
+  onSave: () => Promise<void> | void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <input
+        type="text"
+        value={title}
+        onChange={(e) => onTitleChange(e.target.value)}
+        placeholder="제목 (선택 — 비우면 본문 첫 줄)"
+        maxLength={100}
+        className={cn(
+          "w-full rounded-xl border px-3 py-2 text-sm font-bold outline-none",
+          "bg-white/[0.05] border-white/[0.1] text-white placeholder-white/30",
+          "focus:border-violet-400/40 focus:bg-white/[0.07]",
+        )}
+      />
+      <textarea
+        value={body}
+        onChange={(e) => onBodyChange(e.target.value)}
+        placeholder="내용을 입력하세요"
+        rows={6}
+        className={cn(
+          "w-full resize-none rounded-xl border px-3 py-2.5 text-sm leading-relaxed outline-none",
+          "bg-white/[0.05] border-white/[0.1] text-white/90 placeholder-white/30",
+          "focus:border-violet-400/40 focus:bg-white/[0.07]",
+        )}
+      />
+      <div className="flex flex-wrap gap-1.5">
+        {ANON_TAGS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => onTagChange(tag === t.key ? null : t.key)}
+            className={cn(
+              "rounded-full border px-2 py-1 text-[11px] font-semibold transition",
+              tag === t.key ? t.color : "border-white/10 text-white/40 hover:text-white/70",
+            )}
+          >
+            {t.emoji} {t.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex justify-end gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={saving}
+          className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3.5 py-1.5 text-xs font-semibold text-white/60 transition hover:bg-white/[0.06] hover:text-white/90 disabled:opacity-50"
+        >
+          <XIcon className="h-3.5 w-3.5" />
+          취소
+        </button>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving || !body.trim()}
+          className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 px-4 py-1.5 text-xs font-bold text-white shadow-[0_0_16px_rgba(124,58,237,0.4)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          저장
+        </button>
       </div>
     </div>
   );

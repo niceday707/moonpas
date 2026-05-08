@@ -3,6 +3,7 @@
 // 문태 에타 — 감성 밤하늘 익명 게시판 (/board/anonymous)
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronUp,
@@ -12,10 +13,14 @@ import {
   Loader2,
   Lock,
   MessageCircle,
+  MoreVertical,
+  Pencil,
+  Trash2,
   X,
 } from "lucide-react";
 import {
   createPost,
+  deletePost,
   incrementLikeCount,
   listPosts,
   type PostRow,
@@ -66,86 +71,189 @@ function AnonCard({
   post,
   liked,
   onLike,
+  isOwner,
+  onDelete,
 }: {
   post: PostRow;
   liked: boolean;
   onLike: (e: React.MouseEvent) => void;
+  isOwner: boolean;
+  onDelete: (id: string) => Promise<void>;
 }) {
+  const router = useRouter();
   const { tag, body } = parseAnonContent(post.content);
   const tagInfo = getTagInfo(tag);
 
+  // 카드 영역 클릭 → 상세로 이동 (router.push 로 명시적 라우팅 — Link 중첩으로 인한 클릭 누락 방지)
+  const goDetail = () => {
+    router.push(`/board/anonymous/${post.id}`);
+  };
+
   return (
-    <Link href={`/board/anonymous/${post.id}`} className="block">
-      <motion.article
-        layout
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -6 }}
-        transition={{ duration: 0.22 }}
-        className={cn(
-          "rounded-2xl border border-white/[0.08] p-4 cursor-pointer",
-          "bg-white/[0.06] backdrop-blur-xl",
-          "transition-all duration-200",
-          "hover:-translate-y-0.5 hover:border-violet-400/40",
-          "hover:shadow-[0_8px_32px_rgba(167,139,250,0.12)]",
+    <motion.article
+      layout
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -6 }}
+      transition={{ duration: 0.22 }}
+      onClick={goDetail}
+      role="link"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          goDetail();
+        }
+      }}
+      className={cn(
+        "relative rounded-2xl border border-white/[0.08] p-4 cursor-pointer select-none",
+        "bg-white/[0.06] backdrop-blur-xl",
+        "transition-all duration-200",
+        "hover:-translate-y-0.5 hover:border-violet-400/40",
+        "hover:shadow-[0_8px_32px_rgba(167,139,250,0.12)]",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50",
+      )}
+    >
+      {/* 상단: 태그 + 시간 + (본인일 때) ⋮ 메뉴 */}
+      <div className="flex items-center gap-2 mb-2.5">
+        {tagInfo ? (
+          <span className={cn("text-[11px] font-semibold px-2 py-0.5 rounded-full border", tagInfo.color)}>
+            {tagInfo.emoji} {tagInfo.label}
+          </span>
+        ) : (
+          <span className="text-[11px] text-white/30">🌙 익명</span>
         )}
-      >
-        {/* 상단: 태그 + 시간 */}
-        <div className="flex items-center gap-2 mb-2.5">
-          {tagInfo ? (
-            <span className={cn("text-[11px] font-semibold px-2 py-0.5 rounded-full border", tagInfo.color)}>
-              {tagInfo.emoji} {tagInfo.label}
-            </span>
-          ) : (
-            <span className="text-[11px] text-white/30">🌙 익명</span>
+        <span className="text-[11px] text-white/35 ml-auto">{relativeTime(post.created_at)}</span>
+        {isOwner && (
+          <CardKebabMenu
+            onEdit={(e) => {
+              e.stopPropagation();
+              router.push(`/board/anonymous/${post.id}?edit=1`);
+            }}
+            onDelete={async (e) => {
+              e.stopPropagation();
+              if (!confirm("이 글을 삭제할까요?")) return;
+              await onDelete(post.id);
+            }}
+          />
+        )}
+      </div>
+
+      {/* 제목 */}
+      {post.title && (
+        <h2 className="text-sm font-bold text-white mb-1.5 leading-snug">{post.title}</h2>
+      )}
+
+      {/* 본문 미리보기 */}
+      <p className="text-sm text-white/70 leading-relaxed line-clamp-3">{body}</p>
+
+      {/* 썸네일 */}
+      {post.image_url && (
+        <div className="mt-3 rounded-xl overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={post.image_url}
+            alt=""
+            className="w-full h-32 object-cover"
+          />
+        </div>
+      )}
+
+      {/* 하단: 공감/댓글/조회 */}
+      <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/[0.07]">
+        <button
+          type="button"
+          onClick={onLike}
+          className={cn(
+            "flex items-center gap-1.5 text-xs transition-colors",
+            liked ? "text-pink-400" : "text-white/35 hover:text-pink-400",
           )}
-          <span className="text-[11px] text-white/35 ml-auto">{relativeTime(post.created_at)}</span>
-        </div>
+        >
+          <Heart className={cn("h-3.5 w-3.5 transition-all", liked && "fill-current scale-110")} />
+          {post.like_count}
+        </button>
+        <span className="flex items-center gap-1.5 text-xs text-white/35">
+          <MessageCircle className="h-3.5 w-3.5" />
+          {post.comment_count}
+        </span>
+        <span className="flex items-center gap-1.5 text-xs text-white/35 ml-auto">
+          <Eye className="h-3.5 w-3.5" />
+          {post.view_count}
+        </span>
+      </div>
+    </motion.article>
+  );
+}
 
-        {/* 제목 */}
-        {post.title && (
-          <h2 className="text-sm font-bold text-white mb-1.5 leading-snug">{post.title}</h2>
-        )}
+// ── 카드 ⋮ 메뉴 (본인 글 한정) ──────────────────────────────
+function CardKebabMenu({
+  onEdit,
+  onDelete,
+}: {
+  onEdit: (e: React.MouseEvent) => void;
+  onDelete: (e: React.MouseEvent) => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
-        {/* 본문 미리보기 */}
-        <p className="text-sm text-white/70 leading-relaxed line-clamp-3">{body}</p>
+  // 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("click", handler);
+    return () => window.removeEventListener("click", handler);
+  }, [open]);
 
-        {/* 썸네일 */}
-        {post.image_url && (
-          <div className="mt-3 rounded-xl overflow-hidden">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={post.image_url}
-              alt=""
-              className="w-full h-32 object-cover"
-            />
-          </div>
-        )}
-
-        {/* 하단: 공감/댓글/조회 */}
-        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/[0.07]">
-          <button
-            type="button"
-            onClick={onLike}
-            className={cn(
-              "flex items-center gap-1.5 text-xs transition-colors",
-              liked ? "text-pink-400" : "text-white/35 hover:text-pink-400",
-            )}
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        aria-label="메뉴"
+        className="flex h-7 w-7 items-center justify-center rounded-full text-white/40 hover:bg-white/[0.08] hover:text-white/80 transition-colors"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.12 }}
+            className="absolute right-0 top-full mt-1 z-30 min-w-[120px] overflow-hidden rounded-xl border border-white/10 bg-[#13132a]/95 shadow-xl backdrop-blur-xl"
           >
-            <Heart className={cn("h-3.5 w-3.5 transition-all", liked && "fill-current scale-110")} />
-            {post.like_count}
-          </button>
-          <span className="flex items-center gap-1.5 text-xs text-white/35">
-            <MessageCircle className="h-3.5 w-3.5" />
-            {post.comment_count}
-          </span>
-          <span className="flex items-center gap-1.5 text-xs text-white/35 ml-auto">
-            <Eye className="h-3.5 w-3.5" />
-            {post.view_count}
-          </span>
-        </div>
-      </motion.article>
-    </Link>
+            <button
+              type="button"
+              onClick={(e) => {
+                onEdit(e);
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-white/80 hover:bg-white/[0.06]"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              수정
+            </button>
+            <button
+              type="button"
+              onClick={async (e) => {
+                await onDelete(e);
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/10"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              삭제
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
@@ -255,6 +363,16 @@ export default function AnonBoardPage() {
     setPage(1);
     feedTopRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  // 글 삭제 — 본인만 가능 (RLS 가 한번 더 막아줌)
+  const handleDeletePost = useCallback(async (postId: string) => {
+    const { error } = await deletePost(postId);
+    if (error) {
+      alert(`삭제 실패: ${error}`);
+      return;
+    }
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+  }, []);
 
   // 좋아요
   const handleLike = async (e: React.MouseEvent, postId: string) => {
@@ -585,6 +703,8 @@ export default function AnonBoardPage() {
                       post={post}
                       liked={likedIds.has(post.id)}
                       onLike={(e) => handleLike(e, post.id)}
+                      isOwner={!!user && user.id === post.author_id}
+                      onDelete={handleDeletePost}
                     />
                   ))}
                 </AnimatePresence>

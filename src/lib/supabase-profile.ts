@@ -138,9 +138,11 @@ export async function saveAvatarUrl(
   return { error: error?.message ?? null };
 }
 
-/** 구글 OAuth 메타데이터에서 사용자가 보여줄 만한 이름을 뽑는다 */
+/** 구글 OAuth 메타데이터에서 사용자가 보여줄 만한 이름을 뽑는다.
+ *  단, "2621주윤" 같은 학번+이름 형태는 닉네임 폴백으로 부적절하므로 빈 문자열을 돌려준다. */
 export function pickDisplayName(user: User | null): string {
   if (!user) return "";
+  const STUDENT_ID_NAME_PATTERN = /^\d{3,6}[가-힣]{2,4}$/;
   const meta = user.user_metadata as Record<string, unknown> | undefined;
   const candidates = [
     meta?.full_name,
@@ -149,8 +151,14 @@ export function pickDisplayName(user: User | null): string {
     meta?.preferred_username,
   ];
   for (const c of candidates) {
-    if (typeof c === "string" && c.trim()) return c.trim();
+    if (typeof c !== "string") continue;
+    const trimmed = c.trim();
+    if (!trimmed) continue;
+    if (STUDENT_ID_NAME_PATTERN.test(trimmed)) continue; // 학번+이름은 폴백 거부
+    return trimmed;
   }
   const email = user.email ?? "";
-  return email.split("@")[0] ?? "";
+  const local = email.split("@")[0] ?? "";
+  if (STUDENT_ID_NAME_PATTERN.test(local)) return "";
+  return local;
 }

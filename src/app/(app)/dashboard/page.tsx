@@ -27,7 +27,8 @@ import {
 } from "lucide-react";
 import { BannerSlider } from "@/components/dashboard/BannerSlider";
 import { NicknameSetupModal } from "@/components/dashboard/NicknameSetupModal";
-import { DdayCard } from "@/components/DdayCard";
+// DdayCard 는 일시 비활성화 — 추후 관리자 기능과 연동 후 다시 노출 예정.
+// 컴포넌트 파일(@/components/DdayCard) 자체는 그대로 유지한다.
 import { MealCard } from "@/components/MealCard";
 import { Badge, type Role } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
@@ -576,6 +577,104 @@ function TrendIcon({ trend }: { trend: "up" | "down" | "same" | "new" }) {
   return <Minus className="h-3 w-3 text-gray-400" />;
 }
 
+// ── 모바일·PC 공용으로 재사용되는 작은 카드들 ──────────────
+
+function TrendingSearchCard() {
+  return (
+    <Card>
+      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-white/[0.05]">
+        <div className="flex items-center gap-1.5 text-sm font-bold text-orange-500">
+          <Flame className="h-4 w-4" />
+          실시간 검색
+        </div>
+        <span className="text-[10px] text-gray-400">실시간 인기</span>
+      </div>
+      <ul className="divide-y divide-gray-50 dark:divide-white/[0.03]">
+        {TRENDING.map((t) => (
+          <li key={t.rank}>
+            <Link
+              href="/board/free"
+              className="flex items-center gap-2.5 px-4 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
+            >
+              <span
+                className={`w-4 shrink-0 text-center text-xs font-bold tabular-nums ${
+                  t.rank <= 3 ? "text-red-500" : "text-gray-400"
+                }`}
+              >
+                {t.rank}
+              </span>
+              <span className="flex-1 text-xs text-gray-800 dark:text-gray-100">
+                {t.keyword}
+              </span>
+              <TrendIcon trend={t.trend} />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+const SHORTCUT_ITEMS = [
+  {
+    href: "/board/college",
+    label: "2028 대입",
+    icon: GraduationCap,
+    color: "text-violet-600 bg-violet-50 dark:bg-violet-900/20",
+  },
+  {
+    href: "/board/curriculum",
+    label: "과목 가이드",
+    icon: BookOpen,
+    color: "text-green-600 bg-green-50 dark:bg-green-900/20",
+  },
+  {
+    href: "/board/youtube",
+    label: "문튜브",
+    icon: PlayCircle,
+    color: "text-red-500 bg-red-50 dark:bg-red-900/20",
+  },
+  {
+    href: "/board/notice",
+    label: "공지사항",
+    icon: Bell,
+    color: "text-amber-500 bg-amber-50 dark:bg-amber-900/20",
+  },
+] as const;
+
+function ShortcutsCard() {
+  return (
+    <Card>
+      <SectionHead
+        icon={ChevronRight}
+        title="바로가기"
+        iconColor="text-gray-500"
+      />
+      <div className="grid grid-cols-2 gap-1.5 p-3">
+        {SHORTCUT_ITEMS.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex flex-col items-center gap-1.5 rounded-xl py-3 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.03]"
+            >
+              <span
+                className={`grid h-8 w-8 place-items-center rounded-lg ${item.color}`}
+              >
+                <Icon className="h-4 w-4" />
+              </span>
+              <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300">
+                {item.label}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 function GoogleLoginCard() {
   return (
     <Card>
@@ -812,7 +911,11 @@ export default function DashboardPage() {
     return { ok: true as const };
   }
 
-  const displayNickname: string | null = profile?.nickname ?? null;
+  // 학번+이름 형태("2621주윤")가 닉네임으로 들어 있어도 프로필 카드에는 노출하지 않음
+  const rawNick = profile?.nickname?.trim() ?? null;
+  const safeNick =
+    rawNick && !/^\d{3,6}[가-힣]{2,4}$/.test(rawNick) ? rawNick : null;
+  const displayNickname: string | null = safeNick;
   const displayRole: Role | null = profile?.role ?? null;
   const displayAvatar: string | null = profile?.avatar_url ?? null;
 
@@ -826,20 +929,85 @@ export default function DashboardPage() {
       {/* 배너 슬라이더 */}
       <BannerSlider />
 
-      {/* 오늘의 정보 — 수능 D-Day + 급식 (모바일 1열, 태블릿+ 2열) */}
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <DdayCard />
+      {/* ───────────────────────────────────────────────────── */}
+      {/* 모바일 (md 미만): 급식 → 프로필 → HOT → 최신 글 → 실시간검색 → 공지 → 바로가기 → 문튜브 */}
+      {/* ───────────────────────────────────────────────────── */}
+      <div className="mt-4 flex flex-col gap-4 md:hidden">
         <MealCard />
-      </div>
 
-      {/* 모바일 전용 — 문튜브 가로 스크롤 (lg 이상에서는 좌측 사이드바에서 표시) */}
-      <div className="mt-4">
+        {isLoggedIn ? (
+          <ProfileCard
+            nickname={displayNickname}
+            role={displayRole}
+            avatarUrl={displayAvatar}
+            stats={stats}
+            onSetupClick={() => setSetupOpen(true)}
+          />
+        ) : (
+          <GoogleLoginCard />
+        )}
+
+        <Card>
+          <SectionHead
+            icon={Flame}
+            title="HOT 게시물"
+            href="/board/free"
+            iconColor="text-orange-500"
+          />
+          <HotPostList
+            posts={hotPosts}
+            loading={hotLoading}
+            variant="compact"
+          />
+        </Card>
+
+        <Card>
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-white/[0.05]">
+            <div className="flex items-center gap-1.5 text-sm font-bold text-violet-600 dark:text-violet-400">
+              <MessageSquare className="h-4 w-4" />
+              최신 글
+            </div>
+            <Link
+              href="/board/free"
+              className="text-xs text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-200"
+            >
+              전체보기 →
+            </Link>
+          </div>
+          <LatestFeedList posts={latestPosts} loading={latestLoading} />
+          <div className="flex items-center justify-end border-t border-gray-100 px-4 py-3 dark:border-white/[0.05]">
+            <Link
+              href="/board/free/write"
+              className="rounded-lg bg-violet-600 px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-violet-700"
+            >
+              글쓰기
+            </Link>
+          </div>
+        </Card>
+
+        <TrendingSearchCard />
+
+        <Card>
+          <SectionHead
+            icon={Bell}
+            title="최신 공지"
+            href="/board/notice"
+            iconColor="text-red-500"
+          />
+          <NoticeList posts={noticePosts} loading={noticeLoading} max={5} />
+        </Card>
+
+        <ShortcutsCard />
+
+        {/* 모바일 문튜브 가로 스크롤 */}
         <MoonTubeMobileScroll videos={youtubeItems} loading={youtubeLoading} />
       </div>
 
-      {/* ── 포탈 레이아웃: 모바일 1컬럼 → 태블릿 2컬럼 → 데스크톱 3컬럼 ── */}
-      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-[1fr_220px] lg:grid-cols-[220px_1fr_200px]">
-        {/* ── 왼쪽: HOT + 공지 + 문튜브 (lg 이상에서만 표시) ── */}
+      {/* ───────────────────────────────────────────────────── */}
+      {/* PC/태블릿 (md 이상): 좌(HOT/공지/문튜브) | 중앙(HOT 태블릿+최신글) | 우(프로필 → 급식 → 실시간검색 → 공지 → 바로가기) */}
+      {/* ───────────────────────────────────────────────────── */}
+      <div className="mt-4 hidden gap-4 md:grid md:grid-cols-[1fr_220px] lg:grid-cols-[220px_1fr_220px]">
+        {/* 왼쪽 사이드 (lg 이상에서만) */}
         <aside className="hidden lg:flex lg:flex-col lg:gap-4">
           <Card>
             <SectionHead
@@ -864,9 +1032,8 @@ export default function DashboardPage() {
           <MoonTubeAsideSection videos={youtubeItems} loading={youtubeLoading} />
         </aside>
 
-        {/* ── 중앙: HOT (태블릿 전용) + 최신글 피드 ── */}
+        {/* 중앙: HOT(태블릿) + 최신 글 */}
         <section className="min-w-0 space-y-4">
-          {/* 태블릿 전용 HOT 게시물 */}
           <div className="hidden md:block lg:hidden">
             <Card>
               <SectionHead
@@ -883,24 +1050,6 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-          {/* 모바일 전용 HOT 게시물 — 가로스크롤 다음 위치 */}
-          <div className="md:hidden">
-            <Card>
-              <SectionHead
-                icon={Flame}
-                title="HOT 게시물"
-                href="/board/free"
-                iconColor="text-orange-500"
-              />
-              <HotPostList
-                posts={hotPosts}
-                loading={hotLoading}
-                variant="compact"
-              />
-            </Card>
-          </div>
-
-          {/* 최신 글 피드 — 전체 게시판 통합 */}
           <Card>
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-white/[0.05]">
               <div className="flex items-center gap-1.5 text-sm font-bold text-violet-600 dark:text-violet-400">
@@ -914,10 +1063,7 @@ export default function DashboardPage() {
                 전체보기 →
               </Link>
             </div>
-
             <LatestFeedList posts={latestPosts} loading={latestLoading} />
-
-            {/* 하단 글쓰기 버튼 */}
             <div className="flex items-center justify-end border-t border-gray-100 px-4 py-3 dark:border-white/[0.05]">
               <Link
                 href="/board/free/write"
@@ -929,7 +1075,7 @@ export default function DashboardPage() {
           </Card>
         </section>
 
-        {/* ── 오른쪽: 프로필 + 검색순위 + 바로가기 ── */}
+        {/* 오른쪽 사이드: 프로필 → 급식 → 실시간검색 → (태블릿)공지 → 바로가기 */}
         <aside className="flex flex-col gap-4">
           {isLoggedIn ? (
             <ProfileCard
@@ -943,40 +1089,10 @@ export default function DashboardPage() {
             <GoogleLoginCard />
           )}
 
-          {/* 실시간 검색 순위 */}
-          <Card>
-            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-white/[0.05]">
-              <div className="flex items-center gap-1.5 text-sm font-bold text-orange-500">
-                <Flame className="h-4 w-4" />
-                실시간 검색
-              </div>
-              <span className="text-[10px] text-gray-400">실시간 인기</span>
-            </div>
-            <ul className="divide-y divide-gray-50 dark:divide-white/[0.03]">
-              {TRENDING.map((t) => (
-                <li key={t.rank}>
-                  <Link
-                    href="/board/free"
-                    className="flex items-center gap-2.5 px-4 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
-                  >
-                    <span
-                      className={`w-4 shrink-0 text-center text-xs font-bold tabular-nums ${
-                        t.rank <= 3 ? "text-red-500" : "text-gray-400"
-                      }`}
-                    >
-                      {t.rank}
-                    </span>
-                    <span className="flex-1 text-xs text-gray-800 dark:text-gray-100">
-                      {t.keyword}
-                    </span>
-                    <TrendIcon trend={t.trend} />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </Card>
+          <MealCard />
 
-          {/* 태블릿 전용 최신 공지 */}
+          <TrendingSearchCard />
+
           <div className="hidden md:block lg:hidden">
             <Card>
               <SectionHead
@@ -989,77 +1105,8 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-          {/* 바로가기 */}
-          <Card>
-            <SectionHead
-              icon={ChevronRight}
-              title="바로가기"
-              iconColor="text-gray-500"
-            />
-            <div className="grid grid-cols-2 gap-1.5 p-3">
-              {[
-                {
-                  href: "/board/college",
-                  label: "2028 대입",
-                  icon: GraduationCap,
-                  color:
-                    "text-violet-600 bg-violet-50 dark:bg-violet-900/20",
-                },
-                {
-                  href: "/board/curriculum",
-                  label: "과목 가이드",
-                  icon: BookOpen,
-                  color:
-                    "text-green-600 bg-green-50 dark:bg-green-900/20",
-                },
-                {
-                  href: "/board/youtube",
-                  label: "문튜브",
-                  icon: PlayCircle,
-                  color: "text-red-500 bg-red-50 dark:bg-red-900/20",
-                },
-                {
-                  href: "/board/notice",
-                  label: "공지사항",
-                  icon: Bell,
-                  color:
-                    "text-amber-500 bg-amber-50 dark:bg-amber-900/20",
-                },
-              ].map((item) => {
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="flex flex-col items-center gap-1.5 rounded-xl py-3 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.03]"
-                  >
-                    <span
-                      className={`grid h-8 w-8 place-items-center rounded-lg ${item.color}`}
-                    >
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300">
-                      {item.label}
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
-          </Card>
+          <ShortcutsCard />
         </aside>
-      </div>
-
-      {/* 모바일 전용 — 최신 공지 (lg 이상은 좌측 사이드바, md는 오른쪽) */}
-      <div className="mt-4 md:hidden">
-        <Card>
-          <SectionHead
-            icon={Bell}
-            title="최신 공지"
-            href="/board/notice"
-            iconColor="text-red-500"
-          />
-          <NoticeList posts={noticePosts} loading={noticeLoading} max={5} />
-        </Card>
       </div>
 
       {/* ── 외부 링크 배너 ── */}

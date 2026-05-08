@@ -1,6 +1,6 @@
 // NEIS Open API 급식 정보 프록시
 // - 환경변수 NEIS_API_KEY 필요 (Vercel Settings → Environment Variables 에 등록)
-// - 교육청 Q10 (전라남도교육청), 학교 Q100000215 (문태고)
+// - 교육청 Q10 (전라남도교육청), 학교 8490088 (문태고)
 // - GET /api/meal?date=YYYYMMDD          → { date, lunch, dinner, error?, meta? }
 // - GET /api/meal?date=YYYYMMDD&debug=1  → 캐시 우회 + meta 항상 포함
 // - 키 누락/NEIS 에러 시 status 500 + 명시적 error 메시지
@@ -11,7 +11,7 @@ import { NextResponse } from "next/server";
 export const revalidate = 3600;
 
 const ATPT_OFCDC_SC_CODE = "Q10";
-const SD_SCHUL_CODE = "Q100000215";
+const SD_SCHUL_CODE = "8490088";
 const NEIS_URL = "https://open.neis.go.kr/hub/mealServiceDietInfo";
 
 // 식사구분 코드 (NEIS): 1=조식 2=중식 3=석식

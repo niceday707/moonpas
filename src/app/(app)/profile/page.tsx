@@ -34,6 +34,7 @@ import {
   saveAvatarUrl,
   useSupabaseProfile,
 } from "@/lib/supabase-profile";
+import { looksLikeStudentIdName } from "@/lib/author-display";
 import { uploadAvatar, validateAvatarFile } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 
@@ -83,8 +84,13 @@ function ProfileShell() {
     };
   }, [user]);
 
-  // 닉네임: profiles.nickname 우선 → Google 이름 폴백
-  const displayNickname = profile?.nickname ?? pickDisplayName(user) ?? "사용자";
+  // 닉네임: profiles.nickname 우선 → Google 이름 폴백 (학번+이름 형태는 노출 금지)
+  const rawNickname = profile?.nickname?.trim();
+  const fallback = pickDisplayName(user);
+  const displayNickname =
+    (rawNickname && !looksLikeStudentIdName(rawNickname) && rawNickname) ||
+    fallback ||
+    "사용자";
   const role = profile?.role ?? null;
   const avatarUrl = profile?.avatar_url ?? null;
 

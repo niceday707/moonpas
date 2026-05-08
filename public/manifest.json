@@ -1,10 +1,13 @@
 {
-  "name": "문파스 - 문태고등학교 커뮤니티",
+  "name": "문파스 MoonPas - 문태고등학교 커뮤니티",
   "short_name": "문파스",
-  "description": "문태고등학교 커뮤니티",
+  "description": "문태고등학교 학생 커뮤니티 플랫폼. 자유게시판, 익명게시판, 공지사항, 대입정보, 학교생활",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "orientation": "portrait",
+  "lang": "ko",
+  "background_color": "#0f0f1a",
   "theme_color": "#7c3aed",
   "icons": [
     {

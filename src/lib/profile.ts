@@ -144,7 +144,7 @@ export const ERROR_MESSAGES: Record<ValidationError, string> = {
   reserved: "사용할 수 없는 닉네임이에요.",
   duplicate: "이미 사용 중인 닉네임이에요.",
   same: "지금 쓰고 있는 닉네임과 같아요.",
-  cooldown: "닉네임은 30일에 한 번만 변경할 수 있어요.",
+  cooldown: "닉네임은 7일에 한 번만 변경할 수 있어요.",
 };
 
 /** 형식·금칙어만 검사 (서버 통신 없이 즉시 판정). 통과하면 null */
@@ -170,10 +170,10 @@ function isNicknameAvailable(name: string): boolean {
 }
 
 // ─────────────────────────────────────────────
-// 30일 쿨다운
+// 7일 쿨다운
 // ─────────────────────────────────────────────
 
-const COOLDOWN_DAYS = 30;
+const COOLDOWN_DAYS = 7;
 const COOLDOWN_MS = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
 
 /** 닉네임 변경까지 남은 일수. 0 이면 변경 가능. */
@@ -205,7 +205,7 @@ type UpdateResult =
 /**
  * 닉네임 변경 시도.
  * - 최초 설정(lastNicknameChange === null)일 때는 쿨다운 검사를 건너뛴다.
- * - 그 외에는 30일 쿨다운을 적용한다.
+ * - 그 외에는 7일 쿨다운을 적용한다.
  */
 export async function attemptUpdateNickname(name: string): Promise<UpdateResult> {
   hydrate();

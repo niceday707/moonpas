@@ -703,7 +703,7 @@ export default function AnonBoardPage() {
                       post={post}
                       liked={likedIds.has(post.id)}
                       onLike={(e) => handleLike(e, post.id)}
-                      isOwner={!!user && user.id === post.author_id}
+                      isOwner={!!user && post.is_mine}
                       onDelete={handleDeletePost}
                     />
                   ))}

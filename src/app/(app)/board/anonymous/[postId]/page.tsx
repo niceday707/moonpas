@@ -38,23 +38,28 @@ import { cn } from "@/lib/utils";
 import { ANON_TAGS, parseAnonContent, getTagInfo, type AnonTagKey } from "../anon-utils";
 
 // ── 익명 번호 할당 헬퍼 ──────────────────────────────────────
-// 댓글을 시간순으로 보면서 author_id 가 처음 나타날 때 순서대로 번호 부여.
-// post.author_id 는 번호 체계 밖 — "익명(글쓴이)"로 별도 표시.
-function buildAnonMap(comments: CommentRow[], postAuthorId: string): Map<string, number> {
+// 댓글을 시간순으로 보면서 anon_seed 가 처음 나타날 때 순서대로 번호 부여.
+// is_post_author 인 댓글은 번호 체계 밖 — "익명(글쓴이)"로 별도 표시.
+// (server 단에서 author_id 는 마스킹돼서 오므로, anon_seed 로만 동일 작성자 그룹화)
+function buildAnonMap(comments: CommentRow[]): Map<string, number> {
   const map = new Map<string, number>();
   let counter = 1;
   for (const c of comments) {
-    if (c.author_id === postAuthorId) continue; // 글쓴이 제외
-    if (!map.has(c.author_id)) {
-      map.set(c.author_id, counter++);
+    if (c.is_post_author) continue;
+    const seed = c.anon_seed;
+    if (!seed) continue;
+    if (!map.has(seed)) {
+      map.set(seed, counter++);
     }
   }
   return map;
 }
 
-function getAnonLabel(authorId: string, postAuthorId: string, anonMap: Map<string, number>): string {
-  if (authorId === postAuthorId) return "익명(글쓴이)";
-  const n = anonMap.get(authorId);
+function getAnonLabel(comment: CommentRow, anonMap: Map<string, number>): string {
+  if (comment.is_post_author) return "익명(글쓴이)";
+  const seed = comment.anon_seed;
+  if (!seed) return "익명";
+  const n = anonMap.get(seed);
   return n !== undefined ? `익명${n}` : "익명";
 }
 
@@ -122,24 +127,20 @@ function HeartBurst({ trigger }: { trigger: boolean }) {
 // ── 댓글 카드 ─────────────────────────────────────────────
 function CommentCard({
   comment,
-  postAuthorId,
   anonMap,
-  currentUserId,
   isReply,
   onReply,
   onDelete,
 }: {
   comment: CommentRow;
-  postAuthorId: string;
   anonMap: Map<string, number>;
-  currentUserId: string | null;
   isReply?: boolean;
   onReply?: (id: string, label: string) => void;
   onDelete: (id: string) => void;
 }) {
-  const label = getAnonLabel(comment.author_id, postAuthorId, anonMap);
-  const isPostAuthor = comment.author_id === postAuthorId;
-  const isOwn = currentUserId === comment.author_id;
+  const label = getAnonLabel(comment, anonMap);
+  const isPostAuthor = comment.is_post_author;
+  const isOwn = comment.is_mine;
 
   return (
     <motion.div
@@ -247,7 +248,7 @@ export default function AnonPostPage() {
   // ?edit=1 자동 편집 모드 진입 (본인 글일 때만)
   useEffect(() => {
     if (!post || !user) return;
-    if (searchParams.get("edit") === "1" && post.author_id === user.id) {
+    if (searchParams.get("edit") === "1" && post.is_mine) {
       const parsed = parseAnonContent(post.content);
       setEditTitle(post.title ?? "");
       setEditBody(parsed.body);
@@ -256,7 +257,8 @@ export default function AnonPostPage() {
     }
   }, [post, user, searchParams]);
 
-  const isOwner = !!user && !!post && user.id === post.author_id;
+  // 익명 게시판은 author_id 가 마스킹됨 — is_mine 으로만 본인 판별
+  const isOwner = !!user && !!post && post.is_mine;
 
   // 편집 시작
   const startEdit = useCallback(() => {
@@ -316,7 +318,7 @@ export default function AnonPostPage() {
     router.push("/board/anonymous");
   }, [post, router]);
 
-  const anonMap = post ? buildAnonMap(comments, post.author_id) : new Map<string, number>();
+  const anonMap = buildAnonMap(comments);
 
   // 좋아요
   const handleLike = async () => {
@@ -430,8 +432,11 @@ export default function AnonPostPage() {
         </div>
       </div>
 
-      {/* 본문 영역 */}
-      <div className="relative mx-auto max-w-2xl px-4 pt-6 pb-40">
+      {/* 본문 영역 — 하단 고정 입력바(약 72px) + safe-area 만큼 추가 패딩 */}
+      <div
+        className="relative mx-auto max-w-2xl px-4 pt-6"
+        style={{ paddingBottom: "calc(11rem + env(safe-area-inset-bottom))" }}
+      >
         {/* 글 카드 */}
         <motion.article
           initial={{ opacity: 0, y: 14 }}
@@ -548,9 +553,7 @@ export default function AnonPostPage() {
                 <div key={c.id}>
                   <CommentCard
                     comment={c}
-                    postAuthorId={post.author_id}
                     anonMap={anonMap}
-                    currentUserId={user?.id ?? null}
                     onReply={handleReply}
                     onDelete={handleDeleteComment}
                   />
@@ -559,9 +562,7 @@ export default function AnonPostPage() {
                     <CommentCard
                       key={reply.id}
                       comment={reply}
-                      postAuthorId={post.author_id}
                       anonMap={anonMap}
-                      currentUserId={user?.id ?? null}
                       isReply
                       onDelete={handleDeleteComment}
                     />
@@ -615,6 +616,13 @@ export default function AnonPostPage() {
             value={commentText}
             onChange={(e) => setCommentText(e.target.value)}
             disabled={!user}
+            onFocus={(e) => {
+              // 모바일 가상 키보드가 올라올 때 입력창이 가려지지 않도록 약간의 딜레이 후 스크롤
+              const el = e.currentTarget;
+              setTimeout(() => {
+                el.scrollIntoView({ behavior: "smooth", block: "center" });
+              }, 250);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();

@@ -62,6 +62,7 @@ export type PostStatus = "active" | "resolved";
 
 export type PostRow = {
   id: string;
+  /** anonymous 게시판은 빈 문자열로 마스킹 — 학번/이름/UUID 모두 노출 금지 */
   author_id: string;
   board_type: BoardType;
   title: string;
@@ -77,6 +78,7 @@ export type PostRow = {
   vote_b: number;
   created_at: string;
   updated_at: string;
+  /** anonymous 게시판은 항상 null — nickname/role 등이 데이터 단계에서 제거됨 */
   author: {
     id: string;
     nickname: string;
@@ -84,21 +86,31 @@ export type PostRow = {
     avatar_url: string | null;
   } | null;
   comment_count: number;
+  /** 본인 글 여부 — anonymous 게시판에서 author_id 가 마스킹돼도 isOwner 판별에 사용 */
+  is_mine: boolean;
 };
 
 export type CommentRow = {
   id: string;
   post_id: string;
   parent_id: string | null;
+  /** anonymous 게시판은 빈 문자열로 마스킹 (대신 anon_seed/is_mine/is_post_author 사용) */
   author_id: string;
   content: string;
   created_at: string;
+  /** anonymous 게시판은 항상 null */
   author: {
     id: string;
     nickname: string;
     role: Role;
     avatar_url: string | null;
   } | null;
+  /** 본인 댓글 여부 */
+  is_mine: boolean;
+  /** 글쓴이의 댓글 여부 — 익명게시판 "글쓴이" 배지/라벨용 */
+  is_post_author: boolean;
+  /** 익명게시판 익명N 번호 부여용 결정적 시드 (post_id + author_id 해시) — 다른 글에선 매칭 불가 */
+  anon_seed: string | null;
 };
 
 // PostgREST 임베딩은 FK 컬럼명으로 가리키는 게 가장 안전 (FK constraint 이름이 환경마다 달라질 수 있어서).
@@ -126,11 +138,14 @@ type RawPost = Omit<
   comments_aggregate: { count: number }[] | null;
 };
 
-function normalizePost(raw: RawPost): PostRow {
+function normalizePost(raw: RawPost, currentUserId: string | null): PostRow {
   const count = raw.comments_aggregate?.[0]?.count ?? 0;
+  const isAnon = raw.board_type === "anonymous";
+  const isMine = !!currentUserId && raw.author_id === currentUserId;
   return {
     id: raw.id,
-    author_id: raw.author_id,
+    // 익명 게시판은 author_id 도 노출하지 않음 (UI 비교는 is_mine 으로)
+    author_id: isAnon ? "" : raw.author_id,
     board_type: raw.board_type,
     title: raw.title,
     content: raw.content,
@@ -145,8 +160,76 @@ function normalizePost(raw: RawPost): PostRow {
     vote_b: raw.vote_b ?? 0,
     created_at: raw.created_at,
     updated_at: raw.updated_at,
-    author: raw.author,
+    // 익명 게시판은 작성자 식별 정보(nickname/role/avatar) 일체 제거
+    author: isAnon ? null : raw.author,
     comment_count: count,
+    is_mine: isMine,
+  };
+}
+
+/** 현재 로그인 사용자 ID — 데이터 마스킹용. 미로그인/오류 시 null. */
+async function getCurrentUserId(): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.getUser();
+    return data?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** 결정적 해시 (post_id + author_id) → 같은 글 내에서만 같은 시드, 다른 글에선 매칭 불가 */
+function makeAnonSeed(postId: string, authorId: string): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0xdeadbeef;
+  const mix = `${postId}:${authorId}`;
+  for (let i = 0; i < mix.length; i++) {
+    const c = mix.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = (h1 ^ (h1 >>> 16)) >>> 0;
+  h2 = (h2 ^ (h2 >>> 13)) >>> 0;
+  return (h1.toString(16) + h2.toString(16)).slice(0, 16);
+}
+
+type RawComment = {
+  id: string;
+  post_id: string;
+  parent_id: string | null;
+  author_id: string;
+  content: string;
+  created_at: string;
+  author: {
+    id: string;
+    nickname: string;
+    role: Role;
+    avatar_url: string | null;
+  } | null;
+};
+
+/** 댓글 정규화 — 익명 게시판 글의 댓글이면 작성자 식별 정보 제거 */
+function normalizeComment(
+  raw: RawComment,
+  currentUserId: string | null,
+  postBoardType: BoardType,
+  postAuthorIdRaw: string,
+): CommentRow {
+  const isAnon = postBoardType === "anonymous";
+  const isMine = !!currentUserId && raw.author_id === currentUserId;
+  const isPostAuthor = raw.author_id === postAuthorIdRaw;
+  return {
+    id: raw.id,
+    post_id: raw.post_id,
+    parent_id: raw.parent_id,
+    // 익명게시판 댓글은 author_id 마스킹
+    author_id: isAnon ? "" : raw.author_id,
+    content: raw.content,
+    created_at: raw.created_at,
+    author: isAnon ? null : raw.author,
+    is_mine: isMine,
+    is_post_author: isPostAuthor,
+    // 다른 글에선 매칭 불가능한 시드 — 같은 글 댓글 내에서만 동일 작성자 그룹화에 사용
+    anon_seed: isAnon ? makeAnonSeed(raw.post_id, raw.author_id) : null,
   };
 }
 
@@ -199,7 +282,10 @@ export async function listPosts(
     return { posts: [], total: 0 };
   }
 
-  const posts = ((data ?? []) as unknown as RawPost[]).map(normalizePost);
+  const uid = await getCurrentUserId();
+  const posts = ((data ?? []) as unknown as RawPost[]).map((r) =>
+    normalizePost(r, uid),
+  );
   return { posts, total: count ?? 0 };
 }
 
@@ -291,7 +377,8 @@ export async function getPost(postId: string): Promise<PostRow | null> {
     return null;
   }
   if (!data) return null;
-  return normalizePost(data as unknown as RawPost);
+  const uid = await getCurrentUserId();
+  return normalizePost(data as unknown as RawPost, uid);
 }
 
 export async function createPost(input: {
@@ -425,17 +512,32 @@ const COMMENT_SELECT = `
 `;
 
 export async function listComments(postId: string): Promise<CommentRow[]> {
-  const { data, error } = await supabase
-    .from("comments")
-    .select(COMMENT_SELECT)
-    .eq("post_id", postId)
-    .order("created_at", { ascending: true });
+  // 글의 board_type / author_id 를 먼저 가져와야 익명 마스킹 규칙을 적용할 수 있다
+  const [{ data: postMeta }, { data, error }, uid] = await Promise.all([
+    supabase
+      .from("posts")
+      .select("board_type, author_id")
+      .eq("id", postId)
+      .maybeSingle(),
+    supabase
+      .from("comments")
+      .select(COMMENT_SELECT)
+      .eq("post_id", postId)
+      .order("created_at", { ascending: true }),
+    getCurrentUserId(),
+  ]);
 
   if (error) {
     console.error("[listComments] 실패", error);
     return [];
   }
-  return (data ?? []) as unknown as CommentRow[];
+
+  const boardType = (postMeta?.board_type as BoardType | undefined) ?? "free";
+  const postAuthorId = (postMeta?.author_id as string | undefined) ?? "";
+
+  return ((data ?? []) as unknown as RawComment[]).map((c) =>
+    normalizeComment(c, uid, boardType, postAuthorId),
+  );
 }
 
 export async function createComment(input: {
@@ -494,7 +596,10 @@ export async function getHotPosts(
     console.error("[getHotPosts] 실패", error);
     return [];
   }
-  const posts = ((data ?? []) as unknown as RawPost[]).map(normalizePost);
+  const uid = await getCurrentUserId();
+  const posts = ((data ?? []) as unknown as RawPost[]).map((r) =>
+    normalizePost(r, uid),
+  );
   posts.sort(
     (a, b) =>
       b.like_count + b.view_count - (a.like_count + a.view_count),
@@ -513,7 +618,10 @@ export async function getLatestPosts(limit: number = 15): Promise<PostRow[]> {
     console.error("[getLatestPosts] 실패", error);
     return [];
   }
-  return ((data ?? []) as unknown as RawPost[]).map(normalizePost);
+  const uid = await getCurrentUserId();
+  return ((data ?? []) as unknown as RawPost[]).map((r) =>
+    normalizePost(r, uid),
+  );
 }
 
 /** 오늘(현지 자정 기준) 작성된 글 개수 — 슬림바에서 사용 */
@@ -1404,7 +1512,10 @@ export async function getUserPosts(
     console.error("[getUserPosts] 실패", error);
     return [];
   }
-  return ((data ?? []) as unknown as RawPost[]).map(normalizePost);
+  // 본인 페이지에서 호출되므로 userId 가 곧 currentUserId
+  return ((data ?? []) as unknown as RawPost[]).map((r) =>
+    normalizePost(r, userId),
+  );
 }
 
 /** 본인이 작성한 댓글 (소속 글 정보 포함) — /profile 페이지용 */
@@ -1423,9 +1534,9 @@ export async function getUserComments(
   const { data, error } = await supabase
     .from("comments")
     .select(
-      `id, post_id, author_id, content, created_at,
+      `id, post_id, parent_id, author_id, content, created_at,
        author:profiles!author_id ( id, nickname, role, avatar_url ),
-       post:posts!post_id ( id, title, board_type )`,
+       post:posts!post_id ( id, title, board_type, author_id )`,
     )
     .eq("author_id", userId)
     .order("created_at", { ascending: false })
@@ -1434,7 +1545,28 @@ export async function getUserComments(
     console.error("[getUserComments] 실패", error);
     return [];
   }
-  return (data ?? []) as unknown as UserCommentRow[];
+
+  type Raw = RawComment & {
+    post:
+      | { id: string; title: string; board_type: BoardType; author_id: string }
+      | null;
+  };
+
+  return ((data ?? []) as unknown as Raw[]).map((row) => {
+    const boardType = (row.post?.board_type ?? "free") as BoardType;
+    const postAuthorId = row.post?.author_id ?? "";
+    const norm = normalizeComment(row, userId, boardType, postAuthorId);
+    return {
+      ...norm,
+      post: row.post
+        ? {
+            id: row.post.id,
+            title: row.post.title,
+            board_type: row.post.board_type,
+          }
+        : null,
+    };
+  });
 }
 
 export async function getUserStats(userId: string): Promise<UserStats> {

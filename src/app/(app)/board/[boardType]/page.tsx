@@ -89,6 +89,7 @@ import {
   type StudySubject,
   type YoutubeCategory,
 } from "@/lib/board";
+import { displayAuthorNameFor } from "@/lib/author-display";
 
 const VALID_BOARDS = Object.keys(BOARD_LABEL) as BoardType[];
 
@@ -708,7 +709,7 @@ function DefaultList({
                   </p>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-500">
                     <span className="font-medium text-gray-700 dark:text-gray-300">
-                      {post.author?.nickname ?? "(알수없음)"}
+                      {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
                     </span>
                     {post.author && (
                       <Badge
@@ -812,7 +813,7 @@ function LostCard({ post }: { post: PostRow }) {
         )}
         <div className="mt-auto flex items-center justify-between pt-1 text-[11px] text-gray-400">
           <span className="font-medium text-gray-600 dark:text-gray-300">
-            {post.author?.nickname ?? "(알수없음)"}
+            {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
           </span>
           <span className="flex items-center gap-2">
             <span className="flex items-center gap-0.5">
@@ -933,7 +934,7 @@ function MarketCard({ post }: { post: PostRow }) {
         </div>
         <div className="mt-auto flex items-center justify-between pt-1 text-[11px] text-gray-400">
           <span className="font-medium text-gray-600 dark:text-gray-300">
-            {post.author?.nickname ?? "(알수없음)"}
+            {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
           </span>
           <span className="tabular-nums">{relativeTime(post.created_at)}</span>
         </div>
@@ -1025,7 +1026,7 @@ function IssueRow({ post }: { post: PostRow }) {
 
         <div className="mt-3 flex items-center gap-2 text-[11px] text-gray-500">
           <span className="font-medium text-gray-700 dark:text-gray-300">
-            {post.author?.nickname ?? "(알수없음)"}
+            {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
           </span>
           {post.author && (
             <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
@@ -1198,7 +1199,7 @@ function ChallengeCard({ post, streak }: { post: PostRow; streak: number }) {
       {/* 닉네임 + 날짜 오버레이 */}
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent px-3 pb-2 pt-6">
         <p className="line-clamp-1 text-[11px] font-semibold text-white drop-shadow">
-          {post.author?.nickname ?? "(알수없음)"}
+          {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
         </p>
         <p className="text-[10px] text-white/80 drop-shadow">
           {relativeTime(post.created_at)}
@@ -1293,7 +1294,7 @@ function FreeCard({
 
             <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
               <span className="font-medium text-gray-700 dark:text-gray-300">
-                {post.author?.nickname ?? "(알수없음)"}
+                {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
               </span>
               {post.author && (
                 <Badge
@@ -1413,7 +1414,7 @@ function QaRow({ post }: { post: PostRow }) {
 
         <div className="mt-2.5 flex items-center gap-2 text-[11px] text-gray-500">
           <span className="font-medium text-gray-700 dark:text-gray-300">
-            {post.author?.nickname ?? "(알수없음)"}
+            {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
           </span>
           {post.author && (
             <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
@@ -1511,7 +1512,7 @@ function YoutubeCard({ post }: { post: PostRow }) {
         <div className="mt-auto flex items-center justify-between pt-1 text-[11px] text-gray-400">
           <span className="flex items-center gap-1.5">
             <span className="font-medium text-gray-600 dark:text-gray-300">
-              {post.author?.nickname ?? "(알수없음)"}
+              {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
             </span>
             {post.author && (
               <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
@@ -1625,7 +1626,7 @@ function ResourceRow({ post }: { post: PostRow }) {
           )}
           <div className="mt-1.5 flex items-center gap-2 text-[11px] text-gray-500">
             <span className="font-medium text-gray-700 dark:text-gray-300">
-              {post.author?.nickname ?? "(알수없음)"}
+              {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
             </span>
             {post.author && (
               <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
@@ -1741,7 +1742,7 @@ function StudyCard({ post }: { post: PostRow }) {
       <div className="mt-auto flex items-center justify-between pt-3 text-[11px] text-gray-500">
         <span className="flex items-center gap-1.5">
           <span className="font-medium text-gray-700 dark:text-gray-300">
-            {post.author?.nickname ?? "(알수없음)"}
+            {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
           </span>
           {post.author && (
             <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
@@ -1832,7 +1833,7 @@ function NewsHero({ post }: { post: PostRow }) {
         )}
         <div className="mt-3 flex items-center gap-2 text-[11px] text-gray-500">
           <span className="font-medium text-gray-700 dark:text-gray-300">
-            {post.author?.nickname ?? "(알수없음)"}
+            {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
           </span>
           {post.author && (
             <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
@@ -1900,7 +1901,7 @@ function NewsRow({ post }: { post: PostRow }) {
           )}
           <div className="mt-1.5 flex items-center gap-2 text-[11px] text-gray-500">
             <span className="font-medium text-gray-700 dark:text-gray-300">
-              {post.author?.nickname ?? "(알수없음)"}
+              {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
             </span>
             {post.author && (
               <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
@@ -1997,7 +1998,7 @@ function AlumniRow({ post }: { post: PostRow }) {
         )}
         <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500">
           <span className="font-medium text-gray-700 dark:text-gray-300">
-            {post.author?.nickname ?? "(알수없음)"}
+            {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
           </span>
           {post.author && (
             <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
@@ -2084,7 +2085,7 @@ function SeniorCard({ post }: { post: PostRow }) {
       <div className="mt-auto flex items-center justify-between text-[11px] text-gray-500">
         <span className="flex items-center gap-1.5">
           <span className="font-medium text-gray-700 dark:text-gray-300">
-            {post.author?.nickname ?? "(알수없음)"}
+            {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
           </span>
           {post.author && (
             <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />

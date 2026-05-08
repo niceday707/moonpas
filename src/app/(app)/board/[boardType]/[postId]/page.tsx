@@ -76,6 +76,10 @@ import {
   type YoutubeContent,
 } from "@/lib/board";
 import {
+  displayAuthorNameFor,
+  shouldShowAuthorBadgeFor,
+} from "@/lib/author-display";
+import {
   addLikedPost,
   getVote,
   isPostLiked,
@@ -188,7 +192,8 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
     );
   }
 
-  const isOwner = !!user && user.id === post.author_id;
+  // 익명 게시판은 author_id 가 마스킹되므로 is_mine 으로 본인 판별
+  const isOwner = !!user && (post.is_mine || user.id === post.author_id);
   const role = (profile?.role ?? "") as string;
   const canPin =
     boardType === "notice" && (role === "admin" || role === "teacher");
@@ -452,9 +457,11 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
             size="sm"
           />
           <span className="font-semibold text-gray-700 dark:text-gray-200">
-            {post.author?.nickname ?? "(알수없음)"}
+            {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
           </span>
-          {post.author && <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />}
+          {shouldShowAuthorBadgeFor(post.board_type) && post.author && (
+            <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
+          )}
           <span className="text-gray-300">·</span>
           <span className="tabular-nums">{formatDateTime(post.created_at)}</span>
           <span className="text-gray-300">·</span>
@@ -846,7 +853,7 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
         ) : (
           <ul className="mt-3 divide-y divide-gray-100 dark:divide-white/[0.04]">
             {comments.map((c) => {
-              const owner = !!user && user.id === c.author_id;
+              const owner = !!user && (c.is_mine || user.id === c.author_id);
               return (
                 <li key={c.id} className="py-3">
                   <div className="flex items-center gap-2 text-[11px] text-gray-500">
@@ -857,9 +864,9 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
                       size="xs"
                     />
                     <span className="font-semibold text-gray-700 dark:text-gray-200">
-                      {c.author?.nickname ?? "(알수없음)"}
+                      {displayAuthorNameFor({ boardType: post.board_type, author: c.author })}
                     </span>
-                    {c.author && (
+                    {shouldShowAuthorBadgeFor(post.board_type) && c.author && (
                       <Badge role={c.author.role} className="text-[9px] py-0 px-1.5" />
                     )}
                     <span className="text-gray-300">·</span>
@@ -935,10 +942,20 @@ function CommentInput({
   }
 
   return (
-    <div className="mt-4 flex items-end gap-2">
+    <div
+      className="mt-4 flex items-end gap-2"
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+    >
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
+        onFocus={(e) => {
+          // 모바일 키보드 노출 시 입력창이 가려지지 않도록 스크롤
+          const el = e.currentTarget;
+          setTimeout(() => {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+          }, 250);
+        }}
         placeholder="댓글을 입력하세요"
         rows={2}
         disabled={submitting}

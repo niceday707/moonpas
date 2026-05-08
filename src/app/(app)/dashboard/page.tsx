@@ -49,6 +49,10 @@ import {
   type PostRow,
   type UserStats,
 } from "@/lib/board";
+import {
+  displayAuthorNameFor,
+  shouldShowAuthorBadgeFor,
+} from "@/lib/author-display";
 
 // ── 상수 ──────────────────────────────────────────────────
 
@@ -268,7 +272,10 @@ function HotPostList({
               {variant === "full" && (
                 <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-gray-400">
                   <span className="text-gray-500 dark:text-gray-300">
-                    {p.author?.nickname ?? "(알수없음)"}
+                    {displayAuthorNameFor({
+                      boardType: p.board_type,
+                      author: p.author,
+                    })}
                   </span>
                   <span>·</span>
                   <span>{BOARD_LABEL[p.board_type]}</span>
@@ -529,12 +536,15 @@ function LatestFeedList({
               </span>
             )}
 
-            {/* 작성자 */}
+            {/* 작성자 — 익명 게시판은 무조건 "익명", 배지/아이덴티티 노출 금지 */}
             <span className="hidden shrink-0 items-center gap-1 text-[11px] sm:flex">
               <span className="text-gray-600 dark:text-gray-300">
-                {p.author?.nickname ?? "(알수없음)"}
+                {displayAuthorNameFor({
+                  boardType: p.board_type,
+                  author: p.author,
+                })}
               </span>
-              {p.author && (
+              {shouldShowAuthorBadgeFor(p.board_type) && p.author && (
                 <Badge role={p.author.role} className="text-[9px] py-0 px-1" />
               )}
             </span>

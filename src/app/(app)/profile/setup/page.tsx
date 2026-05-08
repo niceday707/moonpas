@@ -2,7 +2,7 @@
 
 // 닉네임 설정/변경 화면.
 // - 최초 설정(lastNicknameChange === null): 자유롭게 설정 가능.
-// - 변경: 30일 쿨다운이 적용되며, 남은 일수 동안은 입력이 잠긴다.
+// - 변경: 7일 쿨다운이 적용되며, 남은 일수 동안은 입력이 잠긴다.
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -97,8 +97,8 @@ function ProfileSetupForm() {
             </h1>
             <p className="mt-0.5 text-xs text-foreground/55">
               {initialSetup
-                ? "문파스에서 사용할 닉네임이에요. 30일에 한 번씩 변경할 수 있어요."
-                : "변경 후엔 30일 동안 다시 바꿀 수 없어요."}
+                ? "문파스에서 사용할 닉네임이에요. 7일에 한 번씩 변경할 수 있어요."
+                : "변경 후엔 7일 동안 다시 바꿀 수 없어요."}
             </p>
           </div>
         </div>

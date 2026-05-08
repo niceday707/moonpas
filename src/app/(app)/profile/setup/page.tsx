@@ -4,7 +4,7 @@
 // - Supabase profiles.nickname 을 직접 UPDATE 한다 (이전엔 localStorage 목업만 호출하던 버그 수정).
 // - 쿨다운 정책 폐지 — 언제든 자유롭게 변경 가능.
 // - 중복 검사는 supabase-profile.ts 의 updateNicknameInDb 가 자기 자신을 .neq 로 제외해 처리.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -94,12 +94,16 @@ function ProfileSetupForm() {
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  // profile 이 로드되면 현재 닉네임을 기본값으로
+  // profile 이 처음 도착했을 때 한 번만 기존 닉네임으로 hydrate.
+  // 사용자가 입력을 모두 지워서 빈 문자열이 되어도 다시 채워 넣지 않는다.
+  const hydrated = useRef(false);
   useEffect(() => {
-    if (profile?.nickname && !name) {
+    if (hydrated.current) return;
+    if (profile?.nickname) {
       setName(profile.nickname);
+      hydrated.current = true;
     }
-  }, [profile, name]);
+  }, [profile]);
 
   // 실시간 형식 검사
   const liveValidation = useMemo<FormatError | null>(() => {
@@ -127,16 +131,38 @@ function ProfileSetupForm() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (submitting || !isValid) return;
+    if (submitting) return;
     if (!user) {
       setServerError("로그인이 필요해요.");
+      return;
+    }
+
+    // 빈 상태에서 클릭한 경우 — 명시적인 안내 메시지
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setServerError("닉네임을 입력해주세요.");
+      return;
+    }
+
+    // 형식 검사 (라이브 검증과 동일한 규칙)
+    const formatErr = validateFormat(trimmed);
+    if (formatErr) {
+      setServerError(FORMAT_ERROR_MESSAGES[formatErr]);
+      return;
+    }
+    if (
+      !initialSetup &&
+      profile?.nickname &&
+      trimmed === profile.nickname.trim()
+    ) {
+      setServerError(FORMAT_ERROR_MESSAGES.same);
       return;
     }
 
     setServerError(null);
     setSubmitting(true);
     try {
-      const result = await updateNicknameInDb(user.id, name.trim());
+      const result = await updateNicknameInDb(user.id, trimmed);
       if (result.ok) {
         showToast("닉네임이 변경되었습니다!");
         await refetch();
@@ -239,7 +265,11 @@ function ProfileSetupForm() {
                 setName(e.target.value);
                 setServerError(null);
               }}
-              placeholder="2~10자, 한글·영문·숫자"
+              placeholder={
+                initialSetup
+                  ? "2~10자, 한글·영문·숫자"
+                  : "새 닉네임을 입력하세요"
+              }
               maxLength={20}
               disabled={submitting || loading}
               className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-foreground/35 disabled:opacity-60"
@@ -268,13 +298,14 @@ function ProfileSetupForm() {
                 : "2~10자, 한글·영문·숫자 조합으로 입력해주세요"}
           </p>
 
-          {/* 제출 */}
+          {/* 제출 — 빈 상태에서도 클릭 허용 (submit 핸들러가 안내 메시지 표시) */}
           <button
             type="submit"
-            disabled={!isValid || submitting || loading}
+            disabled={submitting || loading}
             className={cn(
               "mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold text-white transition-opacity",
               "bg-[linear-gradient(135deg,#7c3aed_0%,#06b6d4_100%)] shadow-[0_6px_20px_rgba(124,58,237,0.4)]",
+              isValid ? "" : "opacity-80",
               "disabled:cursor-not-allowed disabled:opacity-40",
             )}
           >

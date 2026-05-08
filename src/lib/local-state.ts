@@ -1,34 +1,7 @@
-// 좋아요/투표 중복 방지용 localStorage 헬퍼.
-// 서버 측 인증 데이터가 아니라 단순 클라이언트 캐시이므로,
-// 한 사용자가 여러 디바이스에서 좋아요/투표를 다시 누를 수는 있다.
-// 본격적인 1인 1표 보장이 필요하면 별도 테이블(post_likes / post_votes) 로 옮기자.
+// 투표(이슈토론) 중복 방지용 localStorage 헬퍼.
+// 좋아요는 010_post_likes 마이그레이션 이후 서버 post_likes 테이블이 권위 소스.
 
-const LIKED_KEY = "moonpas_liked_posts";
 const VOTED_KEY = "moonpas_voted_posts";
-
-// ── 좋아요 ─────────────────────────────────────────────
-export function getLikedPosts(): Set<string> {
-  if (typeof window === "undefined") return new Set();
-  try {
-    const raw = window.localStorage.getItem(LIKED_KEY);
-    if (!raw) return new Set();
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? new Set(arr.filter((x) => typeof x === "string")) : new Set();
-  } catch {
-    return new Set();
-  }
-}
-
-export function isPostLiked(id: string): boolean {
-  return getLikedPosts().has(id);
-}
-
-export function addLikedPost(id: string): void {
-  if (typeof window === "undefined") return;
-  const set = getLikedPosts();
-  set.add(id);
-  window.localStorage.setItem(LIKED_KEY, JSON.stringify([...set]));
-}
 
 // ── 투표 (이슈토론) ─────────────────────────────────────
 export type VoteChoice = "a" | "b";

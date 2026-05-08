@@ -21,13 +21,13 @@ import {
 import {
   createPost,
   deletePost,
-  incrementLikeCount,
+  getLikedPostIds,
   listPosts,
+  toggleLike,
   type PostRow,
 } from "@/lib/board";
 import { useSupabaseUser } from "@/lib/supabase-profile";
 import { uploadImage } from "@/lib/storage";
-import { addLikedPost, getLikedPosts } from "@/lib/local-state";
 import { relativeTime } from "@/lib/format";
 import { ShareButton } from "@/components/board/ShareButton";
 import { cn } from "@/lib/utils";
@@ -160,26 +160,28 @@ function AnonCard({
         </div>
       )}
 
-      {/* 하단: 공감/댓글/조회 */}
-      <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/[0.07]">
+      {/* 하단: 공감/댓글/조회 — 모바일 좁은 폭에서도 겹치지 않게 flex-wrap + shrink-0 + whitespace-nowrap */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 pt-3 border-t border-white/[0.07]">
         <button
           type="button"
           onClick={onLike}
+          aria-pressed={liked}
+          aria-label={liked ? "좋아요 취소" : "좋아요"}
           className={cn(
-            "flex items-center gap-1.5 text-xs transition-colors",
+            "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs transition-colors",
             liked ? "text-pink-400" : "text-white/35 hover:text-pink-400",
           )}
         >
           <Heart className={cn("h-3.5 w-3.5 transition-all", liked && "fill-current scale-110")} />
-          {post.like_count}
+          <span className="tabular-nums">{post.like_count}</span>
         </button>
-        <span className="flex items-center gap-1.5 text-xs text-white/35">
+        <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-white/35">
           <MessageCircle className="h-3.5 w-3.5" />
-          {post.comment_count}
+          <span className="tabular-nums">{post.comment_count}</span>
         </span>
-        <span className="flex items-center gap-1.5 text-xs text-white/35 ml-auto">
+        <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-white/35 ml-auto">
           <Eye className="h-3.5 w-3.5" />
-          {post.view_count}
+          <span className="tabular-nums">{post.view_count}</span>
         </span>
         <ShareButton
           boardType="anonymous"
@@ -293,10 +295,20 @@ export default function AnonBoardPage() {
   const feedTopRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 좋아요 상태 초기화
+  // 좋아요 상태 초기화 — posts 배열의 ID 들로 서버에서 hydrate
   useEffect(() => {
-    setLikedIds(getLikedPosts());
-  }, []);
+    if (posts.length === 0) {
+      setLikedIds(new Set());
+      return;
+    }
+    let active = true;
+    getLikedPostIds(posts.map((p) => p.id)).then((s) => {
+      if (active) setLikedIds(s);
+    });
+    return () => {
+      active = false;
+    };
+  }, [posts]);
 
   // 글 로드
   const loadPosts = useCallback(
@@ -381,16 +393,54 @@ export default function AnonBoardPage() {
     setPosts((prev) => prev.filter((p) => p.id !== postId));
   }, []);
 
-  // 좋아요
+  // 좋아요 토글 — 이미 했으면 취소, 안 했으면 추가
   const handleLike = async (e: React.MouseEvent, postId: string) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!user || likedIds.has(postId)) return;
-    addLikedPost(postId);
-    setLikedIds((prev) => new Set([...prev, postId]));
-    const { nextCount } = await incrementLikeCount(postId);
-    if (nextCount !== null) {
-      setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, like_count: nextCount } : p)));
+    if (!user) return;
+    const wasLiked = likedIds.has(postId);
+    // optimistic
+    setLikedIds((prev) => {
+      const s = new Set(prev);
+      if (wasLiked) s.delete(postId);
+      else s.add(postId);
+      return s;
+    });
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? { ...p, like_count: Math.max(0, p.like_count + (wasLiked ? -1 : 1)) }
+          : p,
+      ),
+    );
+    const { error, liked, like_count } = await toggleLike(postId);
+    if (error) {
+      // 롤백
+      setLikedIds((prev) => {
+        const s = new Set(prev);
+        if (wasLiked) s.add(postId);
+        else s.delete(postId);
+        return s;
+      });
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId
+            ? { ...p, like_count: Math.max(0, p.like_count + (wasLiked ? 1 : -1)) }
+            : p,
+        ),
+      );
+      return;
+    }
+    setLikedIds((prev) => {
+      const s = new Set(prev);
+      if (liked) s.add(postId);
+      else s.delete(postId);
+      return s;
+    });
+    if (like_count != null) {
+      setPosts((prev) =>
+        prev.map((p) => (p.id === postId ? { ...p, like_count } : p)),
+      );
     }
   };
 

@@ -1311,30 +1311,92 @@ export function stringifySeniorContent(input: SeniorContent): string {
 // ─────────────────────────────────────────────────────────
 
 /**
- * 좋아요 +1 — read-then-update.
- * 동시 요청 시 race condition 가능성 있으나 학교 커뮤니티 트래픽에는 충분.
- * 정확한 카운트가 필요하면 SQL 함수로 옮길 것.
+ * 좋아요 토글.
+ *   - post_likes 에 (user_id, post_id) 행이 있으면 DELETE → 트리거가 like_count -1
+ *   - 없으면 INSERT → 트리거가 like_count +1
+ *
+ *   서버 트리거가 카운트를 동기화하므로 클라이언트는 토글 결과만 확정.
+ *   like_count 는 트리거 적용 후 최신 값을 다시 조회해서 돌려준다.
  */
-export async function incrementLikeCount(
+export async function toggleLike(
   postId: string,
-): Promise<{ error: string | null; nextCount: number | null }> {
-  const { data, error: readErr } = await supabase
+): Promise<{ error: string | null; liked: boolean; like_count: number | null }> {
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData.user?.id;
+  if (!uid) {
+    return { error: "로그인이 필요해요.", liked: false, like_count: null };
+  }
+
+  const { data: existing, error: readErr } = await supabase
+    .from("post_likes")
+    .select("user_id")
+    .eq("user_id", uid)
+    .eq("post_id", postId)
+    .maybeSingle();
+  if (readErr) {
+    return { error: readErr.message, liked: false, like_count: null };
+  }
+
+  if (existing) {
+    const { error: delErr } = await supabase
+      .from("post_likes")
+      .delete()
+      .eq("user_id", uid)
+      .eq("post_id", postId);
+    if (delErr) {
+      return { error: delErr.message, liked: true, like_count: null };
+    }
+    const { data: row } = await supabase
+      .from("posts")
+      .select("like_count")
+      .eq("id", postId)
+      .maybeSingle();
+    return { error: null, liked: false, like_count: row?.like_count ?? null };
+  }
+
+  const { error: insErr } = await supabase
+    .from("post_likes")
+    .insert({ user_id: uid, post_id: postId });
+  if (insErr) {
+    // 동일 PK 중복 INSERT (rapid double-click) — 이미 좋아요 상태로 간주
+    const { data: row } = await supabase
+      .from("posts")
+      .select("like_count")
+      .eq("id", postId)
+      .maybeSingle();
+    return {
+      error: insErr.code === "23505" ? null : insErr.message,
+      liked: true,
+      like_count: row?.like_count ?? null,
+    };
+  }
+  const { data: row } = await supabase
     .from("posts")
     .select("like_count")
     .eq("id", postId)
     .maybeSingle();
-  if (readErr || !data) {
-    return { error: readErr?.message ?? "글을 찾을 수 없어요.", nextCount: null };
-  }
-  const next = (data.like_count ?? 0) + 1;
-  const { error: writeErr } = await supabase
-    .from("posts")
-    .update({ like_count: next })
-    .eq("id", postId);
-  if (writeErr) {
-    return { error: writeErr.message, nextCount: null };
-  }
-  return { error: null, nextCount: next };
+  return { error: null, liked: true, like_count: row?.like_count ?? null };
+}
+
+/**
+ * 현재 로그인 유저가 이미 좋아요한 글 ID 집합.
+ * 목록/상세 페이지의 초기 liked 상태 hydrate 용.
+ */
+export async function getLikedPostIds(
+  postIds: string[],
+): Promise<Set<string>> {
+  if (postIds.length === 0) return new Set();
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData.user?.id;
+  if (!uid) return new Set();
+
+  const { data, error } = await supabase
+    .from("post_likes")
+    .select("post_id")
+    .eq("user_id", uid)
+    .in("post_id", postIds);
+  if (error || !data) return new Set();
+  return new Set((data as Array<{ post_id: string }>).map((r) => r.post_id));
 }
 
 /** 이슈 토론 투표 +1 (a or b) — read-then-update */

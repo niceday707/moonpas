@@ -22,10 +22,11 @@ import {
 import {
   deleteComment,
   deletePost,
+  getLikedPostIds,
   getPost,
-  incrementLikeCount,
   incrementViewCount,
   listComments,
+  toggleLike,
   updatePost,
   type CommentRow,
   type PostRow,
@@ -35,7 +36,6 @@ import {
   type ReplyTarget,
 } from "@/components/comments/CommentComposer";
 import { useSupabaseUser } from "@/lib/supabase-profile";
-import { addLikedPost, getLikedPosts } from "@/lib/local-state";
 import { relativeTime } from "@/lib/format";
 import { buildPostShareUrl, sharePost } from "@/lib/share";
 import { cn } from "@/lib/utils";
@@ -242,12 +242,16 @@ export default function AnonPostPage() {
     if (!postId) return;
     let active = true;
     (async () => {
-      const [p, c] = await Promise.all([getPost(postId), listComments(postId)]);
+      const [p, c, likedIds] = await Promise.all([
+        getPost(postId),
+        listComments(postId),
+        getLikedPostIds([postId]),
+      ]);
       if (!active) return;
       if (p) {
         setPost(p);
         setLikeCount(p.like_count);
-        setLiked(getLikedPosts().has(p.id));
+        setLiked(likedIds.has(p.id));
         await incrementViewCount(p.id);
       }
       setComments(c);
@@ -346,15 +350,26 @@ export default function AnonPostPage() {
     }
   };
 
-  // 좋아요
+  // 좋아요 토글 — INSERT/DELETE
   const handleLike = async () => {
-    if (!user || !post || liked) return;
-    setLiked(true);
-    setHeartBurst(true);
-    addLikedPost(post.id);
-    setTimeout(() => setHeartBurst(false), 600);
-    const { nextCount } = await incrementLikeCount(post.id);
-    if (nextCount !== null) setLikeCount(nextCount);
+    if (!user || !post) return;
+    const wasLiked = liked;
+    // optimistic
+    setLiked(!wasLiked);
+    setLikeCount((c) => Math.max(0, c + (wasLiked ? -1 : 1)));
+    if (!wasLiked) {
+      setHeartBurst(true);
+      setTimeout(() => setHeartBurst(false), 600);
+    }
+    const { error, liked: nextLiked, like_count } = await toggleLike(post.id);
+    if (error) {
+      // 롤백
+      setLiked(wasLiked);
+      setLikeCount((c) => Math.max(0, c + (wasLiked ? 1 : -1)));
+      return;
+    }
+    setLiked(nextLiked);
+    if (like_count !== null) setLikeCount(like_count);
   };
 
   // 댓글 삭제

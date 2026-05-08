@@ -50,8 +50,8 @@ import {
   getPost,
   getQaSubjectLabel,
   getResourceCategoryLabel,
+  getLikedPostIds,
   getStudySubjectLabel,
-  incrementLikeCount,
   incrementViewCount,
   listComments,
   parseAlumniContent,
@@ -64,6 +64,7 @@ import {
   parseStudyContent,
   parseYoutubeContent,
   setPostStatus,
+  toggleLike,
   togglePostPin,
   votePost,
   youtubeEmbedUrl,
@@ -85,9 +86,7 @@ import {
   shouldShowAuthorBadgeFor,
 } from "@/lib/author-display";
 import {
-  addLikedPost,
   getVote,
-  isPostLiked,
   recordVote,
   type VoteChoice,
 } from "@/lib/local-state";
@@ -165,14 +164,17 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
     let active = true;
     setLoading(true);
 
-    Promise.all([getPost(postId), listComments(postId)]).then(
-      ([p, c]) => {
-        if (!active) return;
-        setPost(p);
-        setComments(c);
-        setLoading(false);
-      },
-    );
+    Promise.all([
+      getPost(postId),
+      listComments(postId),
+      getLikedPostIds([postId]),
+    ]).then(([p, c, likedIds]) => {
+      if (!active) return;
+      setPost(p);
+      setComments(c);
+      setLiked(likedIds.has(postId));
+      setLoading(false);
+    });
 
     // 조회수 +1 (마운트 1회)
     if (!viewCounted.current) {
@@ -180,9 +182,8 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
       incrementViewCount(postId);
     }
 
-    // localStorage 기반 좋아요/투표 상태 복원
+    // 투표 상태는 localStorage 유지 (별도 마이그레이션 전)
     setMyVote(getVote(postId));
-    setLiked(isPostLiked(postId));
 
     return () => {
       active = false;
@@ -309,18 +310,34 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
   }
 
   async function handleLike() {
-    if (!post || liking || liked) return;
+    if (!post || liking) return;
+    const wasLiked = liked;
+    // optimistic
+    setLiked(!wasLiked);
+    setPost({
+      ...post,
+      like_count: Math.max(0, post.like_count + (wasLiked ? -1 : 1)),
+    });
     setLiking(true);
-    const { error, nextCount } = await incrementLikeCount(post.id);
+    const { error, liked: nextLiked, like_count } = await toggleLike(post.id);
     setLiking(false);
     if (error) {
+      // 롤백
+      setLiked(wasLiked);
+      setPost((p) =>
+        p
+          ? {
+              ...p,
+              like_count: Math.max(0, p.like_count + (wasLiked ? 1 : -1)),
+            }
+          : p,
+      );
       window.alert("좋아요에 실패했어요.\n" + error);
       return;
     }
-    addLikedPost(post.id);
-    setLiked(true);
-    if (nextCount != null) {
-      setPost({ ...post, like_count: nextCount });
+    setLiked(nextLiked);
+    if (like_count != null) {
+      setPost((p) => (p ? { ...p, like_count } : p));
     }
   }
 
@@ -828,15 +845,17 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
           </div>
         )}
 
-        {/* 자유게시판 — 좋아요 버튼 */}
+        {/* 자유게시판 — 좋아요 토글 버튼 */}
         {isFree && (
           <div className="mt-5 flex items-center justify-center">
             <button
               type="button"
               onClick={handleLike}
-              disabled={liking || liked}
+              disabled={liking}
+              aria-pressed={liked}
+              aria-label={liked ? "좋아요 취소" : "좋아요"}
               className={cn(
-                "flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed",
+                "flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
                 liked
                   ? "border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300"
                   : "border-gray-200 bg-white text-gray-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300",
@@ -851,7 +870,7 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
                 />
               )}
               <span className="tabular-nums">
-                {liked ? "좋아요!" : "좋아요"} · {post.like_count.toLocaleString()}
+                {liked ? "좋아요 취소" : "좋아요"} · {post.like_count.toLocaleString()}
               </span>
             </button>
           </div>

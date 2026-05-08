@@ -49,7 +49,6 @@ import { SeniorIntro } from "@/components/board/SeniorIntro";
 import { StudyIntro } from "@/components/board/StudyIntro";
 import { YoutubeIntro } from "@/components/board/YoutubeIntro";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
-import { addLikedPost, getLikedPosts } from "@/lib/local-state";
 import { cn } from "@/lib/utils";
 import {
   BOARD_LABEL,
@@ -63,12 +62,13 @@ import {
   getAlumniCategoryLabel,
   getCareerTrackLabel,
   getChallengeStats,
+  getLikedPostIds,
   getQaSubjectLabel,
   getResourceCategoryLabel,
   getStudySubjectLabel,
   getYoutubeCategoryLabel,
-  incrementLikeCount,
   listPosts,
+  toggleLike,
   parseAlumniContent,
   parseIssueContent,
   parseLostContent,
@@ -387,27 +387,69 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     };
   }, [isChallenge]);
 
-  // 자유게시판 — localStorage 의 좋아요 캐시 복원
+  // 자유게시판 — 현재 페이지 글들에 대해 본인 좋아요 상태를 서버에서 hydrate
   useEffect(() => {
     if (!isFree) return;
-    setLikedSet(getLikedPosts());
-  }, [isFree, page]);
+    if (posts.length === 0) {
+      setLikedSet(new Set());
+      return;
+    }
+    let active = true;
+    getLikedPostIds(posts.map((p) => p.id)).then((s) => {
+      if (active) setLikedSet(s);
+    });
+    return () => {
+      active = false;
+    };
+  }, [isFree, posts]);
 
   async function handleLikeFromCard(postId: string) {
-    if (likingId || likedSet.has(postId)) return;
-    setLikingId(postId);
-    const { error, nextCount } = await incrementLikeCount(postId);
-    setLikingId(null);
-    if (error) return;
-    addLikedPost(postId);
+    if (likingId) return;
+    const wasLiked = likedSet.has(postId);
+    // optimistic — 즉시 UI 반영
     setLikedSet((prev) => {
       const s = new Set(prev);
-      s.add(postId);
+      if (wasLiked) s.delete(postId);
+      else s.add(postId);
       return s;
     });
-    if (nextCount != null) {
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? { ...p, like_count: Math.max(0, p.like_count + (wasLiked ? -1 : 1)) }
+          : p,
+      ),
+    );
+    setLikingId(postId);
+    const { error, liked, like_count } = await toggleLike(postId);
+    setLikingId(null);
+    if (error) {
+      // 실패 시 optimistic 롤백
+      setLikedSet((prev) => {
+        const s = new Set(prev);
+        if (wasLiked) s.add(postId);
+        else s.delete(postId);
+        return s;
+      });
       setPosts((prev) =>
-        prev.map((p) => (p.id === postId ? { ...p, like_count: nextCount } : p)),
+        prev.map((p) =>
+          p.id === postId
+            ? { ...p, like_count: Math.max(0, p.like_count + (wasLiked ? 1 : -1)) }
+            : p,
+        ),
+      );
+      return;
+    }
+    // 서버 확정값으로 동기화
+    setLikedSet((prev) => {
+      const s = new Set(prev);
+      if (liked) s.add(postId);
+      else s.delete(postId);
+      return s;
+    });
+    if (like_count != null) {
+      setPosts((prev) =>
+        prev.map((p) => (p.id === postId ? { ...p, like_count } : p)),
       );
     }
   }
@@ -722,14 +764,14 @@ function DefaultList({
                     <span className="tabular-nums">
                       {formatDate(post.created_at)}
                     </span>
-                    <span className="ml-auto flex items-center gap-2 text-gray-400">
-                      <span className="flex items-center gap-0.5">
+                    <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-400">
+                      <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
                         <Eye className="h-3 w-3" />
-                        {post.view_count}
+                        <span className="tabular-nums">{post.view_count}</span>
                       </span>
-                      <span className="flex items-center gap-0.5">
+                      <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
                         <MessageSquare className="h-3 w-3" />
-                        {post.comment_count}
+                        <span className="tabular-nums">{post.comment_count}</span>
                       </span>
                       <ShareButton
                         boardType={boardType}
@@ -821,14 +863,14 @@ function LostCard({ post }: { post: PostRow }) {
           <span className="font-medium text-gray-600 dark:text-gray-300">
             {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
           </span>
-          <span className="flex items-center gap-2">
-            <span className="flex items-center gap-0.5">
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
               <Eye className="h-3 w-3" />
-              {post.view_count}
+              <span className="tabular-nums">{post.view_count}</span>
             </span>
-            <span className="flex items-center gap-0.5">
+            <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
               <MessageSquare className="h-3 w-3" />
-              {post.comment_count}
+              <span className="tabular-nums">{post.comment_count}</span>
             </span>
             <ShareButton
               boardType={post.board_type}
@@ -1042,14 +1084,14 @@ function IssueRow({ post }: { post: PostRow }) {
           {post.author && (
             <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
           )}
-          <span className="ml-auto flex items-center gap-2 text-gray-400">
-            <span className="flex items-center gap-0.5">
+          <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-400">
+            <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
               <Eye className="h-3 w-3" />
-              {post.view_count}
+              <span className="tabular-nums">{post.view_count}</span>
             </span>
-            <span className="flex items-center gap-0.5">
+            <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
               <MessageSquare className="h-3 w-3" />
-              {post.comment_count}
+              <span className="tabular-nums">{post.comment_count}</span>
             </span>
           </span>
         </div>
@@ -1266,103 +1308,100 @@ function FreeCard({
 
   return (
     <li>
-      <div className="relative rounded-xl border border-gray-200 bg-white transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(124,58,237,0.15)] dark:border-white/[0.07] dark:bg-[#16162a]">
-        <Link
-          href={`/board/free/${post.id}`}
-          className="flex items-start gap-3 p-4"
-        >
-          {post.image_url && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={post.image_url}
-              alt=""
-              className="h-20 w-20 shrink-0 rounded-lg object-cover sm:h-24 sm:w-24"
-            />
-          )}
-
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              {popular && (
-                <span className="inline-flex items-center gap-0.5 rounded-md bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 ring-1 ring-inset ring-rose-500/30 dark:text-rose-300">
-                  🔥 인기
-                </span>
-              )}
-              {fresh && (
-                <span className="inline-flex items-center rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
-                  NEW
-                </span>
-              )}
-            </div>
-
-            <p className="mt-1 line-clamp-1 text-base font-extrabold text-gray-900 dark:text-white">
-              {post.title}
-            </p>
-            {preview && (
-              <p className="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
-                {preview}
-              </p>
+      <div className="rounded-xl border border-gray-200 bg-white transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(124,58,237,0.15)] dark:border-white/[0.07] dark:bg-[#16162a]">
+        <Link href={`/board/free/${post.id}`} className="block p-4">
+          <div className="flex items-start gap-3">
+            {post.image_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={post.image_url}
+                alt=""
+                className="h-20 w-20 shrink-0 rounded-lg object-cover sm:h-24 sm:w-24"
+              />
             )}
 
-            <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {popular && (
+                  <span className="inline-flex items-center gap-0.5 rounded-md bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 ring-1 ring-inset ring-rose-500/30 dark:text-rose-300">
+                    🔥 인기
+                  </span>
+                )}
+                {fresh && (
+                  <span className="inline-flex items-center rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
+                    NEW
+                  </span>
+                )}
+              </div>
+
+              <p className="mt-1 line-clamp-1 text-base font-extrabold text-gray-900 dark:text-white">
+                {post.title}
+              </p>
+              {preview && (
+                <p className="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
+                  {preview}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* 메타 행 — 작성자/시간 + 조회/댓글/좋아요/공유.
+              모바일에서 좁아도 겹치지 않게 flex-wrap + gap-x-3 + 각 항목 shrink-0/whitespace-nowrap */}
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] text-gray-500">
+            <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
               <span className="font-medium text-gray-700 dark:text-gray-300">
                 {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
               </span>
               {post.author && (
-                <Badge
-                  role={post.author.role}
-                  className="text-[9px] py-0 px-1.5"
-                />
+                <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
               )}
-              <span className="text-gray-300">·</span>
-              <span className="tabular-nums">
-                {relativeTime(post.created_at)}
+            </span>
+            <span className="shrink-0 tabular-nums whitespace-nowrap">
+              {relativeTime(post.created_at)}
+            </span>
+            <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-400">
+              <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
+                <Eye className="h-3 w-3" />
+                <span className="tabular-nums">{post.view_count}</span>
               </span>
-              <span className="ml-auto flex items-center gap-2 text-gray-400">
-                <span className="flex items-center gap-0.5">
-                  <Eye className="h-3 w-3" />
-                  {post.view_count}
-                </span>
-                <span className="flex items-center gap-0.5">
-                  <MessageSquare className="h-3 w-3" />
-                  {post.comment_count}
-                </span>
-                <ShareButton
-                  boardType="free"
-                  postId={post.id}
-                  title={post.title}
-                />
+              <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
+                <MessageSquare className="h-3 w-3" />
+                <span className="tabular-nums">{post.comment_count}</span>
               </span>
-            </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (loading) return;
+                  onLike(post.id);
+                }}
+                disabled={loading}
+                aria-pressed={liked}
+                aria-label={liked ? "좋아요 취소" : "좋아요"}
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 transition disabled:cursor-not-allowed",
+                  liked
+                    ? "text-rose-500 dark:text-rose-300"
+                    : "text-gray-400 hover:text-rose-500 dark:text-gray-400 dark:hover:text-rose-300",
+                )}
+              >
+                {loading ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Heart
+                    className={cn("h-3 w-3", liked && "fill-current")}
+                    strokeWidth={2.2}
+                  />
+                )}
+                <span className="tabular-nums">
+                  {post.like_count.toLocaleString()}
+                </span>
+              </button>
+              <ShareButton boardType="free" postId={post.id} title={post.title} />
+            </span>
           </div>
         </Link>
-
-        {/* 좋아요 버튼 — 카드 우하단 (Link 외부) */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onLike(post.id);
-          }}
-          disabled={loading || liked}
-          aria-label={liked ? "이미 좋아요한 글" : "좋아요"}
-          className={cn(
-            "absolute bottom-3 right-3 flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold transition disabled:cursor-not-allowed",
-            liked
-              ? "border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300"
-              : "border-gray-200 bg-white text-gray-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-400 dark:hover:bg-rose-500/10 dark:hover:text-rose-300",
-          )}
-        >
-          {loading ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Heart
-              className={cn("h-3.5 w-3.5", liked && "fill-current")}
-              strokeWidth={2.2}
-            />
-          )}
-          <span className="tabular-nums">{post.like_count.toLocaleString()}</span>
-        </button>
       </div>
     </li>
   );

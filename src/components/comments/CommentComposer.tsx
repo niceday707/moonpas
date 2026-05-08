@@ -208,14 +208,27 @@ export function CommentComposer({
           disabled={disabled}
           rows={1}
           maxLength={500}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          // 모바일 브라우저가 시스템 색상으로 textarea 를 덮어쓰지 않도록 보호:
+          //   · data-comment-composer-input: globals.css 의 autofill / -webkit-appearance 차단 규칙 매칭
+          //   · colorScheme: 시스템 다크모드 폼 컨트롤 색이 페이지 다크모드와 일치하도록
+          data-comment-composer-input
           className={cn(
             "min-h-[36px] max-h-32 flex-1 resize-none rounded-2xl border px-3 py-2 text-sm leading-relaxed outline-none transition-all",
             isLight
-              ? "border-gray-200 bg-gray-50 text-gray-900 placeholder:text-gray-400 focus:border-violet-500 focus:bg-white dark:border-white/[0.1] dark:bg-white/[0.04] dark:text-white"
-              : "border-white/[0.09] bg-white/[0.07] text-white/85 placeholder-white/30 focus:border-violet-400/40 focus:bg-white/[0.09]",
+              ? // 라이트 게시판: 라이트 기본 + 다크모드일 때 명시적으로 어두운 배경/흰 글자/흰 캐럿
+                "border-gray-200 bg-gray-50 text-gray-900 caret-violet-600 placeholder:text-gray-400 focus:border-violet-500 focus:bg-white dark:border-white/[0.1] dark:bg-gray-800 dark:text-white dark:caret-white dark:placeholder:text-white/40 dark:focus:border-violet-400/60 dark:focus:bg-gray-800"
+              : // 익명(다크) 게시판: 항상 다크 — 시스템 라이트 모드여도 일관되게 어두운 배경/흰 글자
+                "border-white/[0.09] bg-white/[0.07] text-white caret-white placeholder-white/40 focus:border-violet-400/40 focus:bg-white/[0.09]",
             "disabled:cursor-not-allowed disabled:opacity-40",
           )}
-          style={{ scrollbarWidth: "none" }}
+          style={{
+            scrollbarWidth: "none",
+            // 다크 테마는 항상 dark, 라이트 테마는 light dark (시스템 따라감 — caret/스크롤바 등)
+            colorScheme: isLight ? "light dark" : "dark",
+          }}
         />
         <button
           type="button"

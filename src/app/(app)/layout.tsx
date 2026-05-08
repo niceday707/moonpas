@@ -1,7 +1,8 @@
-// 로그인 후 진입하는 메인 앱 셸 — 메가메뉴 TopBar + 모바일 BottomNav
+// 로그인 후 진입하는 메인 앱 셸.
+// 게시글 상세 페이지에서 BottomNav 를 숨겨 CommentComposer 와 충돌하지 않게 함.
+// (셸 자체는 client 컴포넌트 — usePathname 으로 경로 분기)
 import type { ReactNode } from "react";
-import { TopBar } from "@/components/nav/TopBar";
-import { BottomNav } from "@/components/ui/BottomNav";
+import { AppShell } from "@/components/nav/AppShell";
 import { ComposeShell } from "@/components/compose/ComposeShell";
 import { NotificationProvider } from "@/lib/notifications";
 
@@ -9,12 +10,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <NotificationProvider>
       <ComposeShell>
-        <div className="min-h-screen">
-          <TopBar />
-          {/* 모바일: 하단 네비게이션(~60px+safe-area) 공간 확보 / 태블릿+데스크톱: 일반 패딩 */}
-          <main className="pb-28 pt-0 md:pb-12">{children}</main>
-          <BottomNav />
-        </div>
+        <AppShell>{children}</AppShell>
       </ComposeShell>
     </NotificationProvider>
   );

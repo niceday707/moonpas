@@ -199,3 +199,34 @@ a {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(124, 58, 237, 0.6);
 }
+
+/* ──────────────────────────────────────────────────────────────────
+ * 댓글 입력 textarea 다크모드 보호
+ * iOS Safari / Android Chrome 에서 textarea 가 시스템 색을 덮어써
+ * 텍스트가 흰색 배경 위 흰색으로 보이거나, autofill 시 흰 배경이 되는 이슈 방지.
+ *
+ *   1) data-comment-composer textarea 자체에 background-color: transparent 강제
+ *   2) -webkit-appearance: none 으로 모바일 OS 기본 스타일 차단
+ *   3) autofill 시에도 다크 배경 + 흰 글자가 유지되도록 inset shadow 주입
+ *   4) caret-color 명시 (iOS 에선 시스템 캐럿이 깜빡임)
+ * ──────────────────────────────────────────────────────────────── */
+[data-comment-composer-input] {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent !important;
+}
+
+.dark [data-comment-composer-input] {
+  color: #ffffff;
+  caret-color: #ffffff;
+}
+
+/* autofill — 다크모드일 때 흰 배경으로 깜빡이는 것 방지 */
+.dark [data-comment-composer-input]:-webkit-autofill,
+.dark [data-comment-composer-input]:-webkit-autofill:hover,
+.dark [data-comment-composer-input]:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #1f2937 inset;
+  -webkit-text-fill-color: #ffffff;
+  caret-color: #ffffff;
+  transition: background-color 9999s ease-in-out 0s;
+}

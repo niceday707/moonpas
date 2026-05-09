@@ -5,10 +5,13 @@ import type { ReactNode } from "react";
 import { AppShell } from "@/components/nav/AppShell";
 import { ComposeShell } from "@/components/compose/ComposeShell";
 import { NotificationProvider } from "@/lib/notifications";
+import { VisitorTracker } from "@/components/visit/VisitorTracker";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <NotificationProvider>
+      {/* 셸 마운트 시 1회 /api/visit POST — 자식 트리에 영향 없음 */}
+      <VisitorTracker />
       <ComposeShell>
         <AppShell>{children}</AppShell>
       </ComposeShell>

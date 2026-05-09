@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { GraduationCap, ChevronDown, PenSquare, Menu, X, Search, Bell } from "lucide-react";
+import { GraduationCap, ChevronDown, PenSquare, Menu, X, Search, Bell, Eye } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useNotifications } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
@@ -91,6 +91,7 @@ export function TopBar() {
   const [searchQuery, setSearchQuery] = useState("");
   const [counts, setCounts] = useState<Partial<Record<BoardType, number>>>({});
   const [todayCount, setTodayCount] = useState(0);
+  const [todayVisitors, setTodayVisitors] = useState<number | null>(null);
   const { unreadCount } = useNotifications();
 
   // Supabase posts 테이블에서 board_type 별 카운트 + 오늘 작성된 글 수 (마운트 1회)
@@ -104,6 +105,29 @@ export function TopBar() {
     });
     return () => {
       active = false;
+    };
+  }, []);
+
+  // 오늘 방문자 수 — 마운트 시 + 5분마다 refetch
+  useEffect(() => {
+    let active = true;
+    const fetchVisitors = async () => {
+      try {
+        const res = await fetch("/api/visit/today", { cache: "no-store" });
+        if (!res.ok) return;
+        const json = (await res.json()) as { count?: number };
+        if (active && typeof json.count === "number") {
+          setTodayVisitors(json.count);
+        }
+      } catch {
+        /* 네트워크 오류 무시 — 다음 주기에 재시도 */
+      }
+    };
+    fetchVisitors();
+    const id = window.setInterval(fetchVisitors, 5 * 60 * 1000);
+    return () => {
+      active = false;
+      window.clearInterval(id);
     };
   }, []);
 
@@ -202,13 +226,44 @@ export function TopBar() {
             </nav>
 
             <div className="ml-auto flex items-center gap-2">
+              {/* 오늘 방문자 — 모바일/태블릿 컴팩트 배지 (lg- 만 표시) */}
+              {todayVisitors !== null && (
+                <span
+                  className="flex shrink-0 items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 dark:bg-violet-500/10 dark:text-violet-300 lg:hidden"
+                  aria-label={`오늘 방문자 ${todayVisitors.toLocaleString()}명`}
+                  title={`오늘 ${todayVisitors.toLocaleString()}명 방문`}
+                >
+                  <Eye className="h-3 w-3" strokeWidth={2.5} />
+                  <span className="tabular-nums">
+                    {todayVisitors.toLocaleString()}
+                  </span>
+                </span>
+              )}
+
               {/* 통합검색 — 데스크톱 전용 */}
               <form
                 onSubmit={handleSearch}
                 className="hidden items-center gap-2 lg:flex"
               >
-                <span className="hidden text-[11px] font-semibold text-gray-500 dark:text-gray-400 xl:inline">
-                  문태고 커뮤니티
+                <span className="hidden items-center gap-1 text-[11px] font-semibold text-gray-500 dark:text-gray-400 xl:inline-flex">
+                  <span>문태고 커뮤니티</span>
+                  {todayVisitors !== null && (
+                    <>
+                      <span aria-hidden>·</span>
+                      <Eye
+                        className="h-3 w-3 text-violet-500 dark:text-violet-400"
+                        strokeWidth={2.5}
+                        aria-hidden
+                      />
+                      <span>
+                        오늘{" "}
+                        <strong className="font-extrabold text-violet-600 tabular-nums dark:text-violet-400">
+                          {todayVisitors.toLocaleString()}
+                        </strong>
+                        명 방문
+                      </span>
+                    </>
+                  )}
                 </span>
                 <div className="flex h-9 items-center overflow-hidden rounded-lg border border-gray-200 bg-white focus-within:border-violet-400 dark:border-white/[0.1] dark:bg-[#14142a]">
                   <Search className="ml-2.5 h-3.5 w-3.5 shrink-0 text-gray-400" />

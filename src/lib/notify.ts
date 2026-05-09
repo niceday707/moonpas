@@ -1,35 +1,83 @@
 "use client";
 
-// 알림 생성 헬퍼 — notifications 테이블에 row 를 INSERT 하는 4가지 케이스.
+// 알림 생성 헬퍼 — /api/notifications/create (service_role) 를 통해 INSERT.
 //
 //   - notifyComment : 누군가 내 글에 댓글
-//   - notifyReply   : 누군가 내 댓글에 답글 (+ 인스타 스타일 mention_user_id)
+//   - notifyReply   : 누군가 내 댓글에 답글
 //   - notifyLike    : 누군가 내 글에 좋아요
 //   - notifyNotice  : 새 공지사항 (전체 사용자 fan-out, 최대 500명)
 //
+// 왜 서버 API 경유인가:
+//   브라우저에서 supabase anon key 로 직접 INSERT 하면:
+//     1) actor_id FK 위반 (profiles row 미생성 엣지케이스) → silent fail
+//     2) RLS INSERT 정책 변경 이력에 따른 불안정
+//     3) 에러가 브라우저 콘솔에만 남아 추적 불가
+//   /api/notifications/create 에서 service_role key 로 처리함으로써 해결.
+//
 // 공통 규칙
-//   1) 자기 자신에게는 알림을 만들지 않는다 (본인 글에 본인 댓글/좋아요 등).
-//   2) 익명 게시판은 actor 닉네임을 "익명" 으로 마스킹한다.
-//      대댓글의 경우 익명게시판은 mention_user_id 자체가 NULL 이므로,
-//      누구에게 답글인지 식별 불가 → 답글 알림은 만들지 않는다.
-//   3) 수신자의 notification_settings(JSONB) 에서 해당 채널이 꺼져 있으면 만들지 않는다.
-//      row 가 없거나 컬럼이 NULL 이어도 기본값(true) 으로 동작.
-//   4) RLS 정책상 actor (인증된 사용자) 가 직접 INSERT — 트리거 없이 클라이언트가 처리.
+//   1) 수신자의 notification_settings 에서 해당 채널이 꺼져 있으면 생성 안 함.
+//   2) 익명 게시판은 actor 닉네임을 "익명" 으로 마스킹.
+//      대댓글의 경우 익명게시판은 answer_user_id 자체가 NULL 이므로 알림 생성 안 함.
+//   3) RLS 정책상 직접 INSERT 대신 서버 API 경유.
 
 import { supabase } from "@/lib/supabase";
 
-// board.ts 에서 import 하면 순환 의존 발생 — 여기서 직접 정의
 type BoardType = string;
+
+// ─────────────────────────────────────────────────────────
+// 내부 헬퍼: 세션 토큰
+// ─────────────────────────────────────────────────────────
+
+async function getSessionToken(): Promise<string | null> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// 내부 헬퍼: 서버 API 를 통해 알림 INSERT
+//   /api/notifications/create 에서 service_role key 로 RLS 우회 INSERT
+// ─────────────────────────────────────────────────────────
+
+type NotifRow = {
+  user_id: string;
+  type: string;
+  message: string;
+  post_id?: string | null;
+  comment_id?: string | null;
+  actor_id?: string | null;
+};
+
+async function createNotifications(token: string, rows: NotifRow[]): Promise<boolean> {
+  if (rows.length === 0) return true;
+  try {
+    const res = await fetch("/api/notifications/create", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ rows }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      console.error("[createNotifications] API 실패", res.status, j);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("[createNotifications] fetch 오류", e);
+    return false;
+  }
+}
 
 // ─────────────────────────────────────────────────────────
 // 푸시 알림 발송 헬퍼 (fire-and-forget)
 // ─────────────────────────────────────────────────────────
 
-/**
- * /api/push 엔드포인트를 통해 FCM 푸시를 발송한다.
- * 현재 세션 토큰이 없으면 조용히 무시 (비로그인 상태에서는 알림 생성 자체도 없음).
- * await 없이 호출해 UX 블로킹을 방지한다.
- */
 function sendPush(userIds: string[], title: string, body: string, link: string): void {
   if (userIds.length === 0) return;
   supabase.auth.getSession().then(({ data: { session } }) => {
@@ -64,10 +112,6 @@ const DEFAULT_SETTINGS: NotificationSettings = {
   onNotice: true,
 };
 
-/**
- * 수신자의 알림 설정을 조회해 해당 채널이 켜져 있는지 확인.
- * profiles row 가 없거나 컬럼이 NULL/부분 누락이어도 기본값(true) 로 폴백.
- */
 async function recipientAllows(
   userId: string,
   key: keyof NotificationSettings,
@@ -78,15 +122,13 @@ async function recipientAllows(
       .select("notification_settings")
       .eq("id", userId)
       .maybeSingle();
-    const ns = (data?.notification_settings ??
-      null) as Partial<NotificationSettings> | null;
+    const ns = (data?.notification_settings ?? null) as Partial<NotificationSettings> | null;
     return ns?.[key] ?? DEFAULT_SETTINGS[key];
   } catch {
     return DEFAULT_SETTINGS[key];
   }
 }
 
-/** 수신자 다중 조회 — fan-out 시 N+1 회피용 */
 async function filterRecipientsByChannel(
   userIds: string[],
   key: keyof NotificationSettings,
@@ -97,7 +139,7 @@ async function filterRecipientsByChannel(
       .from("profiles")
       .select("id, notification_settings")
       .in("id", userIds);
-    if (error || !data) return userIds; // 조회 실패 시 모두 허용으로 폴백
+    if (error || !data) return userIds;
     return (data as Array<{
       id: string;
       notification_settings: Partial<NotificationSettings> | null;
@@ -109,7 +151,6 @@ async function filterRecipientsByChannel(
   }
 }
 
-/** 익명 게시판은 actor 닉네임을 "익명" 으로 마스킹. 빈 문자열이면 "누군가". */
 function maskActor(nickname: string | null | undefined, boardType: BoardType): string {
   if (boardType === "anonymous") return "익명";
   const trimmed = (nickname ?? "").trim();
@@ -127,6 +168,9 @@ export async function notifyComment(input: {
   actorNickname: string;
 }): Promise<void> {
   try {
+    const token = await getSessionToken();
+    if (!token) return;
+
     const { data: post } = await supabase
       .from("posts")
       .select("author_id, board_type")
@@ -136,21 +180,20 @@ export async function notifyComment(input: {
     const authorId = post.author_id as string;
     const boardType = post.board_type as BoardType;
 
-    if (!authorId || authorId === input.actorId) return;
+    if (!authorId) return;
     if (!(await recipientAllows(authorId, "onComment"))) return;
 
     const actor = maskActor(input.actorNickname, boardType);
     const msg = `${actor}님이 회원님의 글에 댓글을 달았습니다`;
-    const { error } = await supabase.from("notifications").insert({
-      user_id: authorId,
-      actor_id: input.actorId,
-      type: "comment",
-      message: msg,
-      post_id: input.postId,
+    const ok = await createNotifications(token, [{
+      user_id:    authorId,
+      actor_id:   input.actorId,
+      type:       "comment",
+      message:    msg,
+      post_id:    input.postId,
       comment_id: input.commentId,
-    });
-    if (error) console.error("[notifyComment] insert 실패", error);
-    else sendPush([authorId], "문파스 댓글 알림", msg, `/board/free/${input.postId}`);
+    }]);
+    if (ok) sendPush([authorId], "문파스 댓글 알림", msg, `/board/free/${input.postId}`);
   } catch (e) {
     console.error("[notifyComment] 예외", e);
   }
@@ -158,24 +201,21 @@ export async function notifyComment(input: {
 
 // ─────────────────────────────────────────────────────────
 // 2) 대댓글(답글) 알림
-//
-//    수신자 후보 (중복 제거, 자기 자신 제외):
-//      a) 부모 댓글(=root) 작성자
-//      b) mention_user_id (인스타 스타일 답글에서 "@닉네임" 으로 호명한 사용자)
-//
-//    익명 게시판은 actor/대상 식별이 모두 마스킹되므로 알림을 만들지 않는다.
+//    익명 게시판은 actor/대상 식별이 마스킹되므로 알림을 만들지 않는다.
 // ─────────────────────────────────────────────────────────
 
 export async function notifyReply(input: {
   postId: string;
   parentCommentId: string;
-  /** 인스타 스타일 답글에서 "@닉네임" 으로 호명한 사용자 (없으면 null). 익명 게시판은 항상 null. */
   mentionUserId: string | null;
   commentId: string;
   actorId: string;
   actorNickname: string;
 }): Promise<void> {
   try {
+    const token = await getSessionToken();
+    if (!token) return;
+
     const { data: post } = await supabase
       .from("posts")
       .select("board_type")
@@ -184,7 +224,6 @@ export async function notifyReply(input: {
     if (!post) return;
     const boardType = post.board_type as BoardType;
 
-    // 익명 게시판은 답글 알림 비대상 (수신자 식별 불가)
     if (boardType === "anonymous") return;
 
     const { data: parent } = await supabase
@@ -194,35 +233,25 @@ export async function notifyReply(input: {
       .maybeSingle();
     const parentAuthorId = (parent?.author_id as string | undefined) ?? null;
 
-    // 수신자 후보 — 부모 댓글 작성자 + mention_user_id (자기 자신 제외, 중복 제거)
     const candidates = new Set<string>();
-    if (parentAuthorId && parentAuthorId !== input.actorId) {
-      candidates.add(parentAuthorId);
-    }
-    if (input.mentionUserId && input.mentionUserId !== input.actorId) {
-      candidates.add(input.mentionUserId);
-    }
+    if (parentAuthorId) candidates.add(parentAuthorId);
+    if (input.mentionUserId) candidates.add(input.mentionUserId);
     if (candidates.size === 0) return;
 
-    const targets = await filterRecipientsByChannel(
-      Array.from(candidates),
-      "onReply",
-    );
+    const targets = await filterRecipientsByChannel(Array.from(candidates), "onReply");
     if (targets.length === 0) return;
 
     const actor = maskActor(input.actorNickname, boardType);
     const message = `${actor}님이 회원님의 댓글에 답글을 달았습니다`;
-    const rows = targets.map((uid) => ({
-      user_id: uid,
-      actor_id: input.actorId,
-      type: "reply",
+    const ok = await createNotifications(token, targets.map((uid) => ({
+      user_id:    uid,
+      actor_id:   input.actorId,
+      type:       "reply",
       message,
-      post_id: input.postId,
+      post_id:    input.postId,
       comment_id: input.commentId,
-    }));
-    const { error } = await supabase.from("notifications").insert(rows);
-    if (error) console.error("[notifyReply] insert 실패", error);
-    else sendPush(targets, "문파스 답글 알림", message, `/board/free/${input.postId}`);
+    })));
+    if (ok) sendPush(targets, "문파스 답글 알림", message, `/board/free/${input.postId}`);
   } catch (e) {
     console.error("[notifyReply] 예외", e);
   }
@@ -230,18 +259,18 @@ export async function notifyReply(input: {
 
 // ─────────────────────────────────────────────────────────
 // 3) 좋아요 알림
-//
-//    좋아요 토글 중 INSERT(=처음 누름) 케이스에서만 호출되어야 한다.
-//    취소(DELETE) 시에는 알림을 만들지 않는다 — toggleLike 호출부에서 보장.
+//    toggleLike 에서 INSERT(=처음 누름) 케이스에서만 호출.
 // ─────────────────────────────────────────────────────────
 
 export async function notifyLike(input: {
   postId: string;
   actorId: string;
-  /** actor 의 표시용 닉네임. 미지정/빈 값이면 profiles 에서 조회. */
   actorNickname?: string | null;
 }): Promise<void> {
   try {
+    const token = await getSessionToken();
+    if (!token) return;
+
     const { data: post } = await supabase
       .from("posts")
       .select("author_id, board_type")
@@ -251,7 +280,7 @@ export async function notifyLike(input: {
     const authorId = post.author_id as string;
     const boardType = post.board_type as BoardType;
 
-    if (!authorId || authorId === input.actorId) return;
+    if (!authorId) return;
     if (!(await recipientAllows(authorId, "onLike"))) return;
 
     let nickname = input.actorNickname ?? "";
@@ -266,16 +295,15 @@ export async function notifyLike(input: {
 
     const actor = maskActor(nickname, boardType);
     const msg = `${actor}님이 회원님의 글을 좋아합니다`;
-    const { error } = await supabase.from("notifications").insert({
-      user_id: authorId,
-      actor_id: input.actorId,
-      type: "like",
-      message: msg,
-      post_id: input.postId,
+    const ok = await createNotifications(token, [{
+      user_id:    authorId,
+      actor_id:   input.actorId,
+      type:       "like",
+      message:    msg,
+      post_id:    input.postId,
       comment_id: null,
-    });
-    if (error) console.error("[notifyLike] insert 실패", error);
-    else sendPush([authorId], "문파스 좋아요 알림", msg, `/board/free/${input.postId}`);
+    }]);
+    if (ok) sendPush([authorId], "문파스 좋아요 알림", msg, `/board/free/${input.postId}`);
   } catch (e) {
     console.error("[notifyLike] 예외", e);
   }
@@ -283,22 +311,20 @@ export async function notifyLike(input: {
 
 // ─────────────────────────────────────────────────────────
 // 4) 공지사항 알림 — fan-out
-//
-//    profiles 테이블의 사용자 중 본인 제외 최대 500명에게 INSERT.
-//    onNotice 가 켜진 사람만 대상.  500개를 한 번에 INSERT 하면 요청이 너무
-//    커지므로 100개씩 청크로 나눠서 보낸다.
+//    profiles 의 본인 제외 최대 500명에게 알림.
 // ─────────────────────────────────────────────────────────
 
 const NOTICE_FAN_OUT_LIMIT = 500;
-const NOTIFICATIONS_INSERT_CHUNK = 100;
 
 export async function notifyNotice(input: {
   postId: string;
   title: string;
-  /** 공지 작성자 — 본인 제외 */
   authorId: string;
 }): Promise<void> {
   try {
+    const token = await getSessionToken();
+    if (!token) return;
+
     const { data: rows, error } = await supabase
       .from("profiles")
       .select("id, notification_settings")
@@ -313,37 +339,22 @@ export async function notifyNotice(input: {
       id: string;
       notification_settings: Partial<NotificationSettings> | null;
     }>)
-      .filter(
-        (r) =>
-          r.notification_settings?.onNotice ??
-          DEFAULT_SETTINGS.onNotice,
-      )
+      .filter((r) => r.notification_settings?.onNotice ?? DEFAULT_SETTINGS.onNotice)
       .map((r) => r.id);
     if (targets.length === 0) return;
 
     const message = `새 공지사항: ${input.title}`;
-    const baseRows = targets.map((uid) => ({
-      user_id: uid,
-      type: "notice",
+    const notifRows: NotifRow[] = targets.map((uid) => ({
+      user_id:    uid,
+      actor_id:   input.authorId,
+      type:       "notice",
       message,
-      post_id: input.postId,
+      post_id:    input.postId,
       comment_id: null,
     }));
 
-    let insertOk = true;
-    for (let i = 0; i < baseRows.length; i += NOTIFICATIONS_INSERT_CHUNK) {
-      const slice = baseRows.slice(i, i + NOTIFICATIONS_INSERT_CHUNK);
-      const { error: insErr } = await supabase
-        .from("notifications")
-        .insert(slice);
-      if (insErr) {
-        console.error("[notifyNotice] insert 실패 (chunk)", insErr);
-        insertOk = false;
-      }
-    }
-    if (insertOk) {
-      sendPush(targets, "문파스 공지", message, `/board/notice/${input.postId}`);
-    }
+    const ok = await createNotifications(token, notifRows);
+    if (ok) sendPush(targets, "문파스 공지", message, `/board/notice/${input.postId}`);
   } catch (e) {
     console.error("[notifyNotice] 예외", e);
   }

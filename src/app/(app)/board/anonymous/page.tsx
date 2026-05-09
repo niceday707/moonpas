@@ -22,7 +22,7 @@ import {
   createPost,
   deletePost,
   getLikedPostIds,
-  listPosts,
+  listAnonymousPosts,
   toggleLike,
   type PostRow,
 } from "@/lib/board";
@@ -317,7 +317,7 @@ export default function AnonBoardPage() {
       else setLoadingMore(true);
 
       const contentLike = tagFilter ? `%"tag":"${tagFilter}"%` : null;
-      const { posts: fetched, total } = await listPosts("anonymous", pageNum, {
+      const { posts: fetched, total } = await listAnonymousPosts(pageNum, {
         contentLike,
         sortBy: sort === "popular" ? "like_count" : "created_at",
       });
@@ -366,7 +366,7 @@ export default function AnonBoardPage() {
   useEffect(() => {
     if (!newestAt) return;
     const interval = setInterval(async () => {
-      const { posts: fresh } = await listPosts("anonymous", 1, {
+      const { posts: fresh } = await listAnonymousPosts(1, {
         contentLike: tagFilter ? `%"tag":"${tagFilter}"%` : null,
       });
       const newer = fresh.filter((p) => p.created_at > newestAt);

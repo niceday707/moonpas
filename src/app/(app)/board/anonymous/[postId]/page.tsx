@@ -22,10 +22,10 @@ import {
 import {
   deleteComment,
   deletePost,
+  getAnonymousPost,
   getLikedPostIds,
-  getPost,
   incrementViewCount,
-  listComments,
+  listAnonymousComments,
   toggleLike,
   toggleCommentReaction,
   updatePost,
@@ -384,8 +384,8 @@ export default function AnonPostPage() {
     let active = true;
     (async () => {
       const [p, c, likedIds] = await Promise.all([
-        getPost(postId),
-        listComments(postId),
+        getAnonymousPost(postId),
+        listAnonymousComments(postId),
         getLikedPostIds([postId]),
       ]);
       if (!active) return;
@@ -454,7 +454,7 @@ export default function AnonPostPage() {
       return;
     }
     // 갱신 후 다시 로드
-    const fresh = await getPost(post.id);
+    const fresh = await getAnonymousPost(post.id);
     if (fresh) setPost(fresh);
     setEditMode(false);
     if (searchParams.get("edit") === "1" && postId) {
@@ -517,7 +517,7 @@ export default function AnonPostPage() {
   const handleDeleteComment = async (commentId: string) => {
     if (!confirm("댓글을 삭제할까요?")) return;
     await deleteComment(commentId);
-    const fresh = await listComments(postId);
+    const fresh = await listAnonymousComments(postId);
     setComments(fresh);
   };
 
@@ -807,7 +807,7 @@ export default function AnonPostPage() {
         enableMentions={false}
         onFocus={scrollToLatestComment}
         onSubmitted={async () => {
-          const fresh = await listComments(post.id);
+          const fresh = await listAnonymousComments(post.id);
           setComments(fresh);
           scrollToLatestComment();
         }}

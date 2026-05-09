@@ -1525,6 +1525,143 @@ export function stringifySeniorContent(input: SeniorContent): string {
 }
 
 // ─────────────────────────────────────────────────────────
+// 익명 게시판 전용 RPC 래퍼
+// DB 에서 이미 sanitize 된 데이터만 반환 — author_id, profiles join 없음
+// ─────────────────────────────────────────────────────────
+
+// RPC 반환 타입 (내부 전용)
+type AnonPostRpc = {
+  id: string;
+  board_type: string;
+  title: string;
+  content: string;
+  image_url: string | null;
+  file_url: string | null;
+  file_name: string | null;
+  view_count: number;
+  like_count: number;
+  is_pinned: boolean;
+  status: string;
+  vote_a: number;
+  vote_b: number;
+  created_at: string;
+  updated_at: string;
+  comment_count: number;
+  is_mine: boolean;
+  total_count?: number;
+};
+
+type AnonCommentRpc = {
+  id: string;
+  post_id: string;
+  parent_id: string | null;
+  content: string;
+  created_at: string;
+  is_mine: boolean;
+  is_post_author: boolean;
+  anon_seed: string;
+  like_count: number;
+  my_reaction: "like" | "dislike" | null;
+};
+
+function anonPostToPostRow(r: AnonPostRpc): PostRow {
+  return {
+    id: r.id,
+    author_id: "",
+    board_type: r.board_type as BoardType,
+    title: r.title,
+    content: r.content,
+    image_url: r.image_url,
+    file_url: r.file_url,
+    file_name: r.file_name,
+    view_count: r.view_count,
+    like_count: r.like_count,
+    is_pinned: r.is_pinned,
+    status: (r.status as PostStatus) ?? "active",
+    vote_a: r.vote_a,
+    vote_b: r.vote_b,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+    author: null,
+    comment_count: r.comment_count,
+    is_mine: r.is_mine,
+  };
+}
+
+function anonCommentToCommentRow(r: AnonCommentRpc): CommentRow {
+  return {
+    id: r.id,
+    post_id: r.post_id,
+    parent_id: r.parent_id,
+    author_id: "",
+    content: r.content,
+    created_at: r.created_at,
+    author: null,
+    is_mine: r.is_mine,
+    is_post_author: r.is_post_author,
+    anon_seed: r.anon_seed,
+    mention_user_id: null,
+    mention_user: null,
+    like_count: r.like_count,
+    my_reaction: r.my_reaction,
+  };
+}
+
+/** 익명 게시판 글 단건 — DB RPC 로 author_id/profiles 노출 없이 반환 */
+export async function getAnonymousPost(postId: string): Promise<PostRow | null> {
+  const uid = await getCurrentUserId();
+  const { data, error } = await supabase
+    .rpc("get_anon_post", { p_post_id: postId, p_user_id: uid ?? null })
+    .maybeSingle();
+  if (error) {
+    console.error("[getAnonymousPost] 실패", error);
+    return null;
+  }
+  if (!data) return null;
+  return anonPostToPostRow(data as AnonPostRpc);
+}
+
+/** 익명 게시판 댓글 목록 — DB RPC 로 anon_seed/is_mine/is_post_author 만 반환 */
+export async function listAnonymousComments(postId: string): Promise<CommentRow[]> {
+  const uid = await getCurrentUserId();
+  const { data, error } = await supabase.rpc("list_anon_comments", {
+    p_post_id: postId,
+    p_user_id: uid ?? null,
+  });
+  if (error) {
+    console.error("[listAnonymousComments] 실패", error);
+    return [];
+  }
+  return ((data ?? []) as AnonCommentRpc[]).map(anonCommentToCommentRow);
+}
+
+/** 익명 게시판 글 목록 — DB RPC, total_count 는 윈도우 함수로 별도 쿼리 불필요 */
+export async function listAnonymousPosts(
+  page: number = 1,
+  options?: {
+    contentLike?: string | null;
+    sortBy?: "created_at" | "like_count";
+  },
+): Promise<{ posts: PostRow[]; total: number }> {
+  const uid = await getCurrentUserId();
+  const from = (page - 1) * POSTS_PER_PAGE;
+  const { data, error } = await supabase.rpc("list_anon_posts", {
+    p_user_id: uid ?? null,
+    p_limit: POSTS_PER_PAGE,
+    p_offset: from,
+    p_content_like: options?.contentLike ?? null,
+    p_sort: options?.sortBy ?? "created_at",
+  });
+  if (error) {
+    console.error("[listAnonymousPosts] 실패", error);
+    return { posts: [], total: 0 };
+  }
+  const rows = (data ?? []) as AnonPostRpc[];
+  const total = rows[0]?.total_count ?? 0;
+  return { posts: rows.map(anonPostToPostRow), total: Number(total) };
+}
+
+// ─────────────────────────────────────────────────────────
 // 좋아요 / 투표 mutator
 // ─────────────────────────────────────────────────────────
 

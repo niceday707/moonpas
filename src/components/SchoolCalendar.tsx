@@ -216,18 +216,25 @@ export function SchoolCalendar() {
             className="grid grid-cols-7 gap-0.5"
           >
             {cells.map((d, idx) => {
-              const ymd = toYmd(d);
               const inMonth = d.getMonth() === cursor.m;
+
+              // 해당 월에 속하지 않는 칸은 완전히 비워둠 — 숫자/이모지/클릭 모두 없음
+              if (!inMonth) {
+                return (
+                  <div key={idx} aria-hidden className="aspect-square" />
+                );
+              }
+
+              const ymd = toYmd(d);
               const dow = d.getDay();
               const holiday = hasHoliday(ymd);
               const isToday = isSameDay(d, today);
               const isSelected = selected === ymd;
               const emojis = getDayEmojis(ymd);
 
-              // 글자 색 결정
-              const baseColor = !inMonth
-                ? "text-gray-300 dark:text-gray-600"
-                : holiday || dow === 0
+              // 글자 색 결정 — 일/공휴일 빨강, 토요일 파랑, 그 외 기본
+              const baseColor =
+                holiday || dow === 0
                   ? "text-red-500"
                   : dow === 6
                     ? "text-blue-500"

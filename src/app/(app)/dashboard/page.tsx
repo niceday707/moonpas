@@ -1049,30 +1049,31 @@ export default function DashboardPage() {
         {/* 태블릿 (md ~ lg 미만): 2단 — 가운데(flex-1) | 우측(280px)
             급식은 가운데 컬럼 상단에 배치. */}
         <div className="flex gap-5 lg:hidden">
-          {/* 가운데 메인 */}
+          {/* 가운데 메인 — 태블릿엔 좌측 사이드바가 없어서 학사일정 아래에 공지 카드를 함께 배치 */}
           <main className="flex min-w-0 flex-1 flex-col gap-4">
             <MealCard />
             <SchoolCalendar />
+            <NoticesCard posts={noticePosts} loading={noticeLoading} />
             <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
             <LatestFeedCard posts={latestPosts} loading={latestLoading} />
           </main>
 
-          {/* 우측 사이드바 — 280px 고정 */}
+          {/* 우측 사이드바 — 280px 고정 (공지는 좌측/메인으로 이동했으므로 제거) */}
           <aside className="flex w-[280px] shrink-0 flex-col gap-4">
             {profileOrLogin}
             <TrendingSearchCard />
             <HotPostsCard posts={hotPosts} loading={hotLoading} />
-            <NoticesCard posts={noticePosts} loading={noticeLoading} />
             <ShortcutsCard />
           </aside>
         </div>
 
-        {/* 데스크톱 (lg+): 3단 — 좌측(280px, 급식) | 가운데(flex-1, 문튜브·최신글) | 우측(300px) */}
+        {/* 데스크톱 (lg+): 3단 — 좌측(280px, 급식·학사일정·공지) | 가운데(flex-1, 문튜브·최신글) | 우측(300px) */}
         <div className="hidden lg:flex lg:gap-5">
-          {/* 좌측 사이드바 — 280px 고정, lg 부터 노출 */}
+          {/* 좌측 사이드바 — 280px 고정, lg 부터 노출. 순서: 급식 → 학사일정 → 최신 공지 */}
           <aside className="flex w-[280px] shrink-0 flex-col gap-4">
             <MealCard />
             <SchoolCalendar />
+            <NoticesCard posts={noticePosts} loading={noticeLoading} />
           </aside>
 
           {/* 가운데 메인 — 배너는 위로 빠졌으므로 문튜브 → 최신글 순서 */}
@@ -1081,12 +1082,11 @@ export default function DashboardPage() {
             <LatestFeedCard posts={latestPosts} loading={latestLoading} />
           </main>
 
-          {/* 우측 사이드바 — 300px 고정 */}
+          {/* 우측 사이드바 — 300px 고정 (공지는 좌측으로 이동했으므로 제거) */}
           <aside className="flex w-[300px] shrink-0 flex-col gap-4">
             {profileOrLogin}
             <TrendingSearchCard />
             <HotPostsCard posts={hotPosts} loading={hotLoading} />
-            <NoticesCard posts={noticePosts} loading={noticeLoading} />
             <ShortcutsCard />
           </aside>
         </div>

@@ -22,6 +22,31 @@ import { supabase } from "@/lib/supabase";
 type BoardType = string;
 
 // ─────────────────────────────────────────────────────────
+// 푸시 알림 발송 헬퍼 (fire-and-forget)
+// ─────────────────────────────────────────────────────────
+
+/**
+ * /api/push 엔드포인트를 통해 FCM 푸시를 발송한다.
+ * 현재 세션 토큰이 없으면 조용히 무시 (비로그인 상태에서는 알림 생성 자체도 없음).
+ * await 없이 호출해 UX 블로킹을 방지한다.
+ */
+function sendPush(userIds: string[], title: string, body: string, link: string): void {
+  if (userIds.length === 0) return;
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    const token = session?.access_token;
+    if (!token) return;
+    fetch("/api/push", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ userIds, title, body, link }),
+    }).catch(() => {});
+  }).catch(() => {});
+}
+
+// ─────────────────────────────────────────────────────────
 // 알림 설정 폴백
 // ─────────────────────────────────────────────────────────
 
@@ -115,15 +140,17 @@ export async function notifyComment(input: {
     if (!(await recipientAllows(authorId, "onComment"))) return;
 
     const actor = maskActor(input.actorNickname, boardType);
+    const msg = `${actor}님이 회원님의 글에 댓글을 달았습니다`;
     const { error } = await supabase.from("notifications").insert({
       user_id: authorId,
       actor_id: input.actorId,
       type: "comment",
-      message: `${actor}님이 회원님의 글에 댓글을 달았습니다`,
+      message: msg,
       post_id: input.postId,
       comment_id: input.commentId,
     });
     if (error) console.error("[notifyComment] insert 실패", error);
+    else sendPush([authorId], "문파스 댓글 알림", msg, `/board/free/${input.postId}`);
   } catch (e) {
     console.error("[notifyComment] 예외", e);
   }
@@ -195,6 +222,7 @@ export async function notifyReply(input: {
     }));
     const { error } = await supabase.from("notifications").insert(rows);
     if (error) console.error("[notifyReply] insert 실패", error);
+    else sendPush(targets, "문파스 답글 알림", message, `/board/free/${input.postId}`);
   } catch (e) {
     console.error("[notifyReply] 예외", e);
   }
@@ -237,15 +265,17 @@ export async function notifyLike(input: {
     }
 
     const actor = maskActor(nickname, boardType);
+    const msg = `${actor}님이 회원님의 글을 좋아합니다`;
     const { error } = await supabase.from("notifications").insert({
       user_id: authorId,
       actor_id: input.actorId,
       type: "like",
-      message: `${actor}님이 회원님의 글을 좋아합니다`,
+      message: msg,
       post_id: input.postId,
       comment_id: null,
     });
     if (error) console.error("[notifyLike] insert 실패", error);
+    else sendPush([authorId], "문파스 좋아요 알림", msg, `/board/free/${input.postId}`);
   } catch (e) {
     console.error("[notifyLike] 예외", e);
   }
@@ -300,6 +330,7 @@ export async function notifyNotice(input: {
       comment_id: null,
     }));
 
+    let insertOk = true;
     for (let i = 0; i < baseRows.length; i += NOTIFICATIONS_INSERT_CHUNK) {
       const slice = baseRows.slice(i, i + NOTIFICATIONS_INSERT_CHUNK);
       const { error: insErr } = await supabase
@@ -307,8 +338,11 @@ export async function notifyNotice(input: {
         .insert(slice);
       if (insErr) {
         console.error("[notifyNotice] insert 실패 (chunk)", insErr);
-        // 한 청크 실패해도 다음 청크는 계속 시도
+        insertOk = false;
       }
+    }
+    if (insertOk) {
+      sendPush(targets, "문파스 공지", message, `/board/notice/${input.postId}`);
     }
   } catch (e) {
     console.error("[notifyNotice] 예외", e);

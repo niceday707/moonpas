@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { BannerSlider } from "@/components/dashboard/BannerSlider";
 import { NicknameSetupModal } from "@/components/dashboard/NicknameSetupModal";
+import { PushNotificationBanner } from "@/components/dashboard/PushNotificationBanner";
 // DdayCard 는 일시 비활성화 — 추후 관리자 기능과 연동 후 다시 노출 예정.
 // 컴포넌트 파일(@/components/DdayCard) 자체는 그대로 유지한다.
 import { MealCard } from "@/components/MealCard";
@@ -1210,6 +1211,9 @@ export default function DashboardPage() {
       transition={{ duration: 0.3 }}
       className="mx-auto max-w-screen-xl px-4 py-4 md:px-6"
     >
+      {/* 푸시 알림 권한 배너 — 로그인 사용자에게만 표시 */}
+      {isLoggedIn && user && <PushNotificationBanner userId={user.id} />}
+
       {/* ─────────────────────────────────────────────────────────────
           모바일 (md 미만): 1단 세로 스택
           순서: 급식 → 배너 → 문튜브 → 최신 글 → 프로필/로그인 →

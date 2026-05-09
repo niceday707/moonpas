@@ -14,7 +14,34 @@ export type SupabaseProfile = {
   role: Role;
   avatar_url: string | null;
   created_at: string;
+  /** 한줄 소개 — 항상 공개 (max 30자, DB CHECK 강제). */
+  bio: string | null;
+  /** 학년 1/2/3. show_grade=true 일 때만 다른 사용자에게 노출. */
+  grade: number | null;
+  /** 생일 월/일 — 항상 비공개. "오늘의 생일" 이벤트 매칭에만 사용. */
+  birth_month: number | null;
+  birth_day: number | null;
+  show_grade: boolean;
+  show_stats: boolean;
 };
+
+/** 다른 사용자에게 보여줄 수 있는 컬럼만 추린 공개 프로필 */
+export type PublicProfile = {
+  id: string;
+  nickname: string;
+  role: Role;
+  avatar_url: string | null;
+  bio: string | null;
+  grade: number | null;
+  show_grade: boolean;
+  show_stats: boolean;
+};
+
+/** profiles SELECT 시 사용하는 공통 컬럼 목록 — 본인 조회는 더 많은 컬럼을 포함. */
+const SELF_PROFILE_COLUMNS =
+  "id, nickname, role, avatar_url, created_at, bio, grade, birth_month, birth_day, show_grade, show_stats";
+const PUBLIC_PROFILE_COLUMNS =
+  "id, nickname, role, avatar_url, bio, grade, show_grade, show_stats";
 
 /** 현재 Supabase 세션의 사용자. 미로그인 시 null */
 export function useSupabaseUser(): { user: User | null; loading: boolean } {
@@ -79,7 +106,7 @@ export function useSupabaseProfile(): {
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, nickname, role, avatar_url, created_at")
+        .select(SELF_PROFILE_COLUMNS)
         .eq("id", uid)
         .maybeSingle();
 
@@ -174,7 +201,7 @@ export async function updateMyNickname(
   userId: string,
   nickname: string,
 ): Promise<{ error: string | null }> {
-  const trimmed = nickname.trim();
+  const trimmed = normalizeNickname(nickname);
   if (!trimmed) {
     return { error: "닉네임을 입력해주세요." };
   }
@@ -207,7 +234,8 @@ export async function updateNicknameInDb(
   userId: string,
   nickname: string,
 ): Promise<UpdateNicknameResult> {
-  const trimmed = nickname.trim();
+  // 공백 허용 + 연속 공백 정리 — 정규식 검증과 DB 저장에 동일하게 적용.
+  const trimmed = normalizeNickname(nickname);
   if (!trimmed) {
     return { ok: false, reason: "unknown", message: "닉네임을 입력해주세요." };
   }
@@ -282,6 +310,70 @@ export async function updateNicknameInDb(
 
   console.log("[updateNicknameInDb] 성공", data);
   return { ok: true };
+}
+
+/**
+ * 닉네임 정규화 — UI/저장 모두 동일 규칙 적용.
+ * - 앞뒤 공백 trim
+ * - 연속 공백(2 칸 이상) 1 칸으로 치환
+ * - 그 외 문자(한글/영문/숫자/공백)는 보존 — 검증은 별도 정규식 담당
+ */
+export function normalizeNickname(input: string): string {
+  return input.trim().replace(/\s{2,}/g, " ");
+}
+
+/**
+ * 본인 프로필의 부분 갱신.
+ * - bio / grade / birth_month / birth_day / show_grade / show_stats / avatar_url 만 허용
+ * - nickname / role / id / created_at 는 절대 받지 않음 (별도 함수 사용)
+ */
+export type UpdatableProfilePatch = {
+  bio?: string | null;
+  grade?: number | null;
+  birth_month?: number | null;
+  birth_day?: number | null;
+  show_grade?: boolean;
+  show_stats?: boolean;
+  avatar_url?: string | null;
+};
+
+export async function updateMyProfile(
+  userId: string,
+  patch: UpdatableProfilePatch,
+): Promise<{ error: string | null }> {
+  // 키가 하나도 없으면 호출 자체를 막아 의미 없는 UPDATE 트래픽 방지.
+  if (Object.keys(patch).length === 0) {
+    return { error: null };
+  }
+  const { error } = await supabase
+    .from("profiles")
+    .update(patch)
+    .eq("id", userId);
+  if (error) {
+    console.error("[updateMyProfile] update 실패", {
+      userId,
+      patch,
+      message: error.message,
+      code: (error as unknown as { code?: string }).code,
+    });
+  }
+  return { error: error?.message ?? null };
+}
+
+/** 다른 사용자의 공개 프로필 조회 — 닉네임 클릭 팝업에서 사용. */
+export async function getPublicProfile(
+  userId: string,
+): Promise<PublicProfile | null> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select(PUBLIC_PROFILE_COLUMNS)
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) {
+    console.error("[getPublicProfile] 실패", { userId, error: error.message });
+    return null;
+  }
+  return (data as PublicProfile | null) ?? null;
 }
 
 /** profiles.avatar_url 업데이트. null 이면 기본 아바타로 되돌림 */

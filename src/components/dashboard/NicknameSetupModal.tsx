@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Sparkles } from "lucide-react";
 import type { Role } from "@/components/ui/Badge";
+import { normalizeNickname } from "@/lib/supabase-profile";
 
-// 한글 완성형 + 영문 + 숫자, 2~10자
-const NICKNAME_REGEX = /^[가-힣a-zA-Z0-9]{2,10}$/;
+// 한글 완성형 + 영문 + 숫자 + 공백, 2~10자 (공백은 정규화 후 허용)
+const NICKNAME_REGEX = /^[가-힣a-zA-Z0-9 ]{2,10}$/;
 
 export type NicknameSubmitResult =
   | { ok: true }
@@ -47,13 +48,14 @@ export function NicknameSetupModal({
   }, [open, defaultNickname, defaultRole]);
 
   async function handleSubmit() {
-    const trimmed = value.trim();
+    // 앞뒤 공백 + 연속 공백 정리 후 검증.
+    const trimmed = normalizeNickname(value);
     if (!trimmed) {
       setError("닉네임을 입력해주세요.");
       return;
     }
     if (!NICKNAME_REGEX.test(trimmed)) {
-      setError("한글·영문·숫자 2~10자만 사용할 수 있어요.");
+      setError("한글·영문·숫자·공백 2~10자만 사용할 수 있어요.");
       return;
     }
     setSubmitting(true);

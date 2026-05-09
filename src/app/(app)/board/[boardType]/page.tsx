@@ -91,6 +91,7 @@ import {
   type YoutubeCategory,
 } from "@/lib/board";
 import { ComingSoon } from "@/components/ui/ComingSoon";
+import { NicknameButton } from "@/components/profile/NicknameButton";
 import { displayAuthorNameFor } from "@/lib/author-display";
 import { extractPostPreview } from "@/lib/parsePostContent";
 
@@ -794,9 +795,12 @@ function DefaultList({
                     )}
                   </p>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-500">
-                    <span className="font-medium text-gray-700 dark:text-gray-300">
+                    <NicknameButton
+                      userId={post.author?.id ?? null}
+                      className="font-medium text-gray-700 dark:text-gray-300"
+                    >
                       {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
-                    </span>
+                    </NicknameButton>
                     {post.author && (
                       <Badge
                         role={post.author.role}

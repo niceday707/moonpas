@@ -38,6 +38,7 @@ import {
 import { BannerSlider } from "@/components/dashboard/BannerSlider";
 import { NicknameSetupModal } from "@/components/dashboard/NicknameSetupModal";
 import { PushNotificationBanner } from "@/components/dashboard/PushNotificationBanner";
+import { NicknameButton } from "@/components/profile/NicknameButton";
 // DdayCard 는 일시 비활성화 — 추후 관리자 기능과 연동 후 다시 노출 예정.
 // 컴포넌트 파일(@/components/DdayCard) 자체는 그대로 유지한다.
 import { MealCard } from "@/components/MealCard";
@@ -609,14 +610,23 @@ function LatestFeedList({
               </span>
             )}
 
+            {/* 조회수 — 모바일 포함 항상 표시 (PC 의 별도 슬롯은 아래 lg 영역) */}
+            <span className="flex shrink-0 items-center gap-0.5 text-[11px] text-gray-400 lg:hidden">
+              <Eye className="h-3 w-3" />
+              {p.view_count.toLocaleString()}
+            </span>
+
             {/* 작성자 — 익명 게시판은 무조건 "익명", 배지/아이덴티티 노출 금지 */}
             <span className="hidden shrink-0 items-center gap-1 text-[11px] sm:flex">
-              <span className="text-gray-600 dark:text-gray-300">
+              <NicknameButton
+                userId={p.author?.id ?? null}
+                className="text-gray-600 dark:text-gray-300"
+              >
                 {displayAuthorNameFor({
                   boardType: p.board_type,
                   author: p.author,
                 })}
-              </span>
+              </NicknameButton>
               {shouldShowAuthorBadgeFor(p.board_type) && p.author && (
                 <Badge role={p.author.role} className="text-[9px] py-0 px-1" />
               )}
@@ -627,7 +637,7 @@ function LatestFeedList({
               {formatShortDate(p.created_at)}
             </span>
 
-            {/* 조회수 */}
+            {/* 조회수 — PC 슬롯 */}
             <span className="hidden shrink-0 items-center gap-0.5 text-[11px] text-gray-400 lg:flex">
               <Eye className="h-3 w-3" />
               {p.view_count.toLocaleString()}

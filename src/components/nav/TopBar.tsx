@@ -122,6 +122,8 @@ export function TopBar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
+  // 모바일/태블릿 헤더의 돋보기 버튼으로 토글되는 슬라이드다운 검색 패널.
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [counts, setCounts] = useState<Partial<Record<BoardType, number>>>({});
   const [noticeCounts, setNoticeCounts] = useState<Record<string, number>>({});
   const [todayCount, setTodayCount] = useState(0);
@@ -243,7 +245,11 @@ export function TopBar() {
     if (keyword.length < 2) return;
     // 로그는 fire-and-forget — 라우팅을 막지 않도록 await 하지 않음
     void logSearch(searchQuery);
-    router.push(`/board/free?search=${encodeURIComponent(keyword)}`);
+    // 모든 게시판 통합 검색 페이지로 이동.
+    router.push(`/search?q=${encodeURIComponent(keyword)}`);
+    // 모바일 검색 패널이 열려 있으면 닫는다 (페이지 이동 후 잔존 방지).
+    setMobileSearchOpen(false);
+    setSearchQuery("");
   };
 
   return (
@@ -369,6 +375,17 @@ export function TopBar() {
                 </div>
               </form>
 
+              {/* 모바일/태블릿 검색 버튼 — lg 미만에서만 노출. 토글 시 슬라이드다운 패널 오픈. */}
+              <button
+                type="button"
+                onClick={() => setMobileSearchOpen((v) => !v)}
+                aria-label="검색"
+                aria-expanded={mobileSearchOpen}
+                className="grid h-11 w-11 place-items-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5 lg:hidden"
+              >
+                <Search className="h-5 w-5" />
+              </button>
+
               {/* 알림 벨 — 태블릿 + 데스크톱 (모바일은 BottomNav에 있음) */}
               <Link
                 href="/notifications"
@@ -396,6 +413,53 @@ export function TopBar() {
               </button>
             </div>
           </div>
+
+          {/* ── 모바일/태블릿 슬라이드다운 검색 패널 (lg 미만) ── */}
+          <AnimatePresence initial={false}>
+            {mobileSearchOpen && (
+              <motion.div
+                key="mobile-search"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+                className="overflow-hidden border-t border-gray-100 bg-white dark:border-white/[0.05] dark:bg-[#0f0f1a] lg:hidden"
+              >
+                <form
+                  onSubmit={handleSearch}
+                  className="mx-auto flex max-w-screen-xl items-center gap-2 px-4 py-2.5 md:px-6"
+                >
+                  <div className="flex h-10 flex-1 items-center overflow-hidden rounded-lg border border-gray-200 bg-white focus-within:border-violet-400 dark:border-white/[0.1] dark:bg-[#14142a]">
+                    <Search className="ml-2.5 h-4 w-4 shrink-0 text-gray-400" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="모든 게시판에서 통합 검색"
+                      autoFocus
+                      className="min-w-0 flex-1 bg-transparent px-2 py-1 text-sm text-gray-800 outline-none placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-gray-500"
+                    />
+                    <button
+                      type="submit"
+                      className="h-full bg-violet-600 px-3 text-xs font-bold text-white transition-colors hover:bg-violet-700"
+                    >
+                      검색
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileSearchOpen(false);
+                      setSearchQuery("");
+                    }}
+                    className="rounded-lg px-2 text-xs font-semibold text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"
+                  >
+                    취소
+                  </button>
+                </form>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </header>
       </div>
 

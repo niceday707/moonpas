@@ -1996,6 +1996,55 @@ export async function getUserComments(
   });
 }
 
+/**
+ * 모든 board_type 통합 검색 — 제목 + 내용 ILIKE.
+ * 익명(anonymous) 게시판은 결과에서 제외 (별도 화면, 마스킹 규칙 다름).
+ *
+ * @param keyword 검색어 — normalize 후 2글자 이상이어야 호출 측에서 검사.
+ * @param limit   최대 결과 개수 (기본 60).
+ */
+export async function searchAllPosts(
+  keyword: string,
+  limit: number = 60,
+): Promise<PostRow[]> {
+  const k = keyword.trim();
+  if (!k) return [];
+  const pattern = `%${k.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+  const { data, error } = await supabase
+    .from("posts")
+    .select(POST_SELECT)
+    .neq("board_type", "anonymous")
+    .or(`title.ilike.${pattern},content.ilike.${pattern}`)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("[searchAllPosts] 실패", { keyword, error: error.message });
+    return [];
+  }
+  const uid = await getCurrentUserId();
+  return ((data ?? []) as unknown as RawPost[]).map((r) => normalizePost(r, uid));
+}
+
+/** 특정 사용자가 작성한 글 목록 (익명 제외, 최신순). */
+export async function listPostsByAuthor(
+  userId: string,
+  limit: number = 50,
+): Promise<PostRow[]> {
+  const { data, error } = await supabase
+    .from("posts")
+    .select(POST_SELECT)
+    .eq("author_id", userId)
+    .neq("board_type", "anonymous")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("[listPostsByAuthor] 실패", { userId, error: error.message });
+    return [];
+  }
+  const uid = await getCurrentUserId();
+  return ((data ?? []) as unknown as RawPost[]).map((r) => normalizePost(r, uid));
+}
+
 export async function getUserStats(userId: string): Promise<UserStats> {
   const [postsRes, commentsRes, likesRes] = await Promise.all([
     supabase

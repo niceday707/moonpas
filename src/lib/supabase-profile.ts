@@ -55,26 +55,47 @@ export function useSupabaseUser(): { user: User | null; loading: boolean } {
   return { user, loading };
 }
 
-/** profiles 테이블의 본인 row. 없으면 null */
+/**
+ * profiles 테이블의 본인 row.
+ * - row 가 실제로 없는 경우와 fetch 자체가 실패한 경우(네트워크/RLS)를 분리해야 한다.
+ *   둘을 합쳐서 null 로 처리하면 호출 측에서 "row 없음 → 신규 가입" 으로 오인하고
+ *   닉네임 모달을 띄워 기존 row 를 덮어쓰는 사고가 난다 (실제 발생한 사례 있음).
+ */
 export function useSupabaseProfile(): {
   user: User | null;
   profile: SupabaseProfile | null;
+  /** fetch 단계에서 발생한 에러. row 가 없을 뿐인 경우엔 null. */
+  error: string | null;
   loading: boolean;
   refetch: () => Promise<void>;
 } {
   const { user, loading: userLoading } = useSupabaseUser();
   const [profile, setProfile] = useState<SupabaseProfile | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
 
   const fetchProfile = useCallback(async (uid: string) => {
     setProfileLoading(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
         .select("id, nickname, role, avatar_url, created_at")
         .eq("id", uid)
         .maybeSingle();
+
+      if (error) {
+        // 네트워크 / RLS / 권한 등 — row 부재가 아니라 "조회 실패".
+        // profile 상태는 기존 값을 유지(null 일 수 있음)하되 절대 신규로 오인되지 않도록
+        // error 를 별도로 노출한다.
+        console.error("[useSupabaseProfile] fetch 실패", error);
+        setProfileError(error.message);
+        return;
+      }
+      setProfileError(null);
       setProfile((data as SupabaseProfile | null) ?? null);
+    } catch (e) {
+      console.error("[useSupabaseProfile] fetch 예외", e);
+      setProfileError(e instanceof Error ? e.message : String(e));
     } finally {
       setProfileLoading(false);
     }
@@ -83,6 +104,7 @@ export function useSupabaseProfile(): {
   useEffect(() => {
     if (!user) {
       setProfile(null);
+      setProfileError(null);
       return;
     }
     fetchProfile(user.id);
@@ -92,33 +114,80 @@ export function useSupabaseProfile(): {
     if (user) await fetchProfile(user.id);
   }, [user, fetchProfile]);
 
-  return { user, profile, loading: userLoading || profileLoading, refetch };
+  return {
+    user,
+    profile,
+    error: profileError,
+    loading: userLoading || profileLoading,
+    refetch,
+  };
 }
 
-/** profiles 테이블에 닉네임 + 역할 upsert */
-export async function saveNickname(
+/**
+ * 최초 가입 시 profiles row 를 생성한다 — INSERT only, upsert 아님.
+ *
+ * 과거 구현(saveNickname)은 .upsert({id, nickname, role}, {onConflict:'id'})
+ * 였는데, 닉네임 모달이 어떤 이유로든 기존 사용자에게 다시 열리면
+ * 본인의 nickname/role 이 통째로 덮어써졌다 (admin 가 student 로 강등되는 사고).
+ * 이제는 INSERT 가 23505(unique violation) 로 거부되면 호출 측이 "이미 존재함"
+ * 으로 안전하게 분기할 수 있다.
+ *
+ * 반환:
+ *   - { error: null }                                 → 신규 INSERT 성공
+ *   - { error: '...', alreadyExists: true }           → 이미 row 가 있음 (덮어쓰기 방지)
+ *   - { error: '...' , alreadyExists: false }         → 그 외 실패
+ */
+export async function createInitialProfile(
   userId: string,
   nickname: string,
   role: Role,
-): Promise<{ error: string | null }> {
+): Promise<{ error: string | null; alreadyExists: boolean }> {
   const { data, error } = await supabase
     .from("profiles")
-    .upsert({ id: userId, nickname, role }, { onConflict: "id" })
+    .insert({ id: userId, nickname, role })
     .select()
-    .single();
+    .maybeSingle();
+
   if (error) {
-    console.error("[saveNickname] upsert 실패", {
+    const code = (error as unknown as { code?: string }).code;
+    const alreadyExists = code === "23505";
+    console.error("[createInitialProfile] insert 실패", {
       userId,
       nickname,
       role,
       message: error.message,
-      code: (error as unknown as { code?: string }).code,
-      details: (error as unknown as { details?: string }).details,
-      hint: (error as unknown as { hint?: string }).hint,
-      raw: error,
+      code,
+      alreadyExists,
     });
-  } else {
-    console.log("[saveNickname] upsert 성공", data);
+    return { error: error.message, alreadyExists };
+  }
+
+  console.log("[createInitialProfile] insert 성공", data);
+  return { error: null, alreadyExists: false };
+}
+
+/**
+ * 본인 profiles.nickname 만 변경. role / avatar_url / created_at 등 다른 컬럼은
+ * 절대 건드리지 않는다. 중복 검사는 호출 측 또는 updateNicknameInDb 가 담당.
+ */
+export async function updateMyNickname(
+  userId: string,
+  nickname: string,
+): Promise<{ error: string | null }> {
+  const trimmed = nickname.trim();
+  if (!trimmed) {
+    return { error: "닉네임을 입력해주세요." };
+  }
+  const { error } = await supabase
+    .from("profiles")
+    .update({ nickname: trimmed })
+    .eq("id", userId);
+  if (error) {
+    console.error("[updateMyNickname] update 실패", {
+      userId,
+      nickname: trimmed,
+      message: error.message,
+    });
   }
   return { error: error?.message ?? null };
 }

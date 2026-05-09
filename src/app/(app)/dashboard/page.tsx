@@ -46,8 +46,8 @@ import { Badge, type Role } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useAuth, attemptGoogleLogin } from "@/lib/auth";
 import {
+  createInitialProfile,
   pickDisplayName,
-  saveNickname,
   useSupabaseProfile,
 } from "@/lib/supabase-profile";
 import {
@@ -1004,8 +1004,13 @@ function NoticesCard({
 
 export default function DashboardPage() {
   const { isLoggedIn } = useAuth();
-  const { user, profile, loading: profileLoading, refetch } =
-    useSupabaseProfile();
+  const {
+    user,
+    profile,
+    error: profileError,
+    loading: profileLoading,
+    refetch,
+  } = useSupabaseProfile();
   const [setupOpen, setSetupOpen] = useState(false);
   const [inviteRole, setInviteRole] = useState<Role | null>(null);
   const [stats, setStats] = useState<UserStats>({
@@ -1150,9 +1155,12 @@ export default function DashboardPage() {
     };
   }, [user, profile]);
 
-  // 최초 로그인 — profiles row 없으면 닉네임 모달 자동 오픈
+  // 최초 로그인 — profiles row 없으면 닉네임 모달 자동 오픈.
+  // ⚠️ profileError 가 있으면(네트워크/RLS 에러) 절대 모달을 열지 않는다.
+  // fetch 실패를 "신규 가입" 으로 오인하면 createInitialProfile 이 호출되며
+  // 기존 row 가 있어도 23505 로 막히긴 하지만, 사용자에게 잘못된 모달을 보여주는 자체가 혼란.
   useEffect(() => {
-    if (!profileLoading && user && !profile) {
+    if (!profileLoading && user && !profile && !profileError) {
       if (typeof window !== "undefined") {
         const r = sessionStorage.getItem("inviteRole");
         if (r === "parent" || r === "alumni" || r === "student" || r === "teacher") {
@@ -1163,14 +1171,30 @@ export default function DashboardPage() {
     } else if (profile) {
       setSetupOpen(false);
     }
-  }, [user, profile, profileLoading]);
+  }, [user, profile, profileError, profileLoading]);
 
   async function handleSubmitNickname(nickname: string, role: Role) {
     if (!user) {
       return { ok: false as const, message: "로그인이 필요합니다." };
     }
     const finalRole: Role = inviteRole ?? role;
-    const { error } = await saveNickname(user.id, nickname, finalRole);
+    // INSERT-only — 이미 row 가 있으면 23505 로 거부되어 nickname/role 덮어쓰기를 차단한다.
+    const { error, alreadyExists } = await createInitialProfile(
+      user.id,
+      nickname,
+      finalRole,
+    );
+    if (alreadyExists) {
+      // 이전 fetch 가 실패했거나 race condition 으로 모달이 열린 경우.
+      // 기존 프로필을 다시 불러와서 모달을 닫고 정상 화면으로 복귀시킨다.
+      await refetch();
+      setSetupOpen(false);
+      return {
+        ok: false as const,
+        message:
+          "이미 등록된 프로필이 있어요. 잠시 후 새로고침하면 정상으로 보여요.",
+      };
+    }
     if (error) {
       return {
         ok: false as const,

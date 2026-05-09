@@ -65,6 +65,7 @@ import {
   parseYoutubeContent,
   setPostStatus,
   toggleLike,
+  toggleCommentReaction,
   togglePostPin,
   votePost,
   youtubeEmbedUrl,
@@ -1168,6 +1169,34 @@ function CommentItem({
   const owner =
     !!currentUserId && (comment.is_mine || currentUserId === comment.author_id);
 
+  const [myReaction, setMyReaction] = useState<"like" | "dislike" | null>(comment.my_reaction);
+  const [likeCount, setLikeCount] = useState(comment.like_count);
+  const [reacting, setReacting] = useState(false);
+
+  const handleReaction = async (r: "like" | "dislike") => {
+    if (!currentUserId || reacting) return;
+    const prev = { myReaction, likeCount };
+    // optimistic update
+    if (myReaction === r) {
+      setMyReaction(null);
+      if (r === "like") setLikeCount((c) => Math.max(0, c - 1));
+    } else {
+      if (myReaction === "like") setLikeCount((c) => Math.max(0, c - 1));
+      if (r === "like") setLikeCount((c) => c + 1);
+      setMyReaction(r);
+    }
+    setReacting(true);
+    const result = await toggleCommentReaction(comment.id, r);
+    setReacting(false);
+    if (result.error) {
+      setMyReaction(prev.myReaction);
+      setLikeCount(prev.likeCount);
+    } else {
+      setMyReaction(result.my_reaction);
+      setLikeCount(result.like_count);
+    }
+  };
+
   return (
     <div className={cn(isReply && "py-2")}>
       <div className="flex items-center gap-2 text-[11px] text-gray-500">
@@ -1204,8 +1233,8 @@ function CommentItem({
         className="mt-1.5 text-sm text-gray-800 dark:text-gray-200"
       />
 
-      {replyButton && (
-        <div className="mt-1.5 flex items-center gap-2">
+      <div className="mt-1.5 flex items-center gap-2">
+        {replyButton && (
           <button
             type="button"
             onClick={replyButton.onClick}
@@ -1220,8 +1249,38 @@ function CommentItem({
             <CornerDownRight className="h-3 w-3" />
             답글 {replyButton.count > 0 ? replyButton.count : ""}
           </button>
-        </div>
-      )}
+        )}
+
+        {/* 좋아요 / 싫어요 */}
+        <button
+          type="button"
+          onClick={() => handleReaction("like")}
+          disabled={!currentUserId || reacting}
+          aria-pressed={myReaction === "like"}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed",
+            myReaction === "like"
+              ? "bg-blue-500/15 text-blue-600 dark:text-blue-300"
+              : "text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-white/[0.06] dark:hover:text-gray-300",
+          )}
+        >
+          👍{likeCount > 0 && <span className="tabular-nums">{likeCount}</span>}
+        </button>
+        <button
+          type="button"
+          onClick={() => handleReaction("dislike")}
+          disabled={!currentUserId || reacting}
+          aria-pressed={myReaction === "dislike"}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed",
+            myReaction === "dislike"
+              ? "text-gray-700 dark:text-gray-200"
+              : "text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-white/[0.06] dark:hover:text-gray-300",
+          )}
+        >
+          👎
+        </button>
+      </div>
     </div>
   );
 }

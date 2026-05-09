@@ -27,6 +27,7 @@ import {
   incrementViewCount,
   listComments,
   toggleLike,
+  toggleCommentReaction,
   updatePost,
   type CommentRow,
   type PostRow,
@@ -134,6 +135,7 @@ function CommentCard({
   anonMap,
   isReply,
   rootId,
+  currentUserId,
   onReply,
   onDelete,
 }: {
@@ -145,12 +147,40 @@ function CommentCard({
    * 답글의 답글을 등록할 때도 parent_id 는 root 의 id 를 사용해야 하므로 별도 전달.
    */
   rootId: string;
+  currentUserId: string | null;
   onReply?: (rootId: string, label: string) => void;
   onDelete: (id: string) => void;
 }) {
   const label = getAnonLabel(comment, anonMap);
   const isPostAuthor = comment.is_post_author;
   const isOwn = comment.is_mine;
+
+  const [myReaction, setMyReaction] = useState<"like" | "dislike" | null>(comment.my_reaction);
+  const [likeCount, setLikeCount] = useState(comment.like_count);
+  const [reacting, setReacting] = useState(false);
+
+  const handleReaction = async (r: "like" | "dislike") => {
+    if (!currentUserId || reacting) return;
+    const prev = { myReaction, likeCount };
+    if (myReaction === r) {
+      setMyReaction(null);
+      if (r === "like") setLikeCount((c) => Math.max(0, c - 1));
+    } else {
+      if (myReaction === "like") setLikeCount((c) => Math.max(0, c - 1));
+      if (r === "like") setLikeCount((c) => c + 1);
+      setMyReaction(r);
+    }
+    setReacting(true);
+    const result = await toggleCommentReaction(comment.id, r);
+    setReacting(false);
+    if (result.error) {
+      setMyReaction(prev.myReaction);
+      setLikeCount(prev.likeCount);
+    } else {
+      setMyReaction(result.my_reaction);
+      setLikeCount(result.like_count);
+    }
+  };
 
   // 본문 앞쪽의 "@익명N " 멘션 토큰을 violet 으로 강조 (인스타 스타일)
   const mentionMatch = comment.content.match(/^(@\S+)\s+([\s\S]*)$/);
@@ -203,6 +233,37 @@ function CommentCard({
                 답글
               </button>
             )}
+
+            {/* 좋아요 / 싫어요 */}
+            <button
+              type="button"
+              onClick={() => handleReaction("like")}
+              disabled={!currentUserId || reacting}
+              aria-pressed={myReaction === "like"}
+              className={cn(
+                "flex items-center gap-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed",
+                myReaction === "like"
+                  ? "text-blue-300"
+                  : "text-white/25 hover:text-white/55",
+              )}
+            >
+              👍{likeCount > 0 && <span className="tabular-nums">{likeCount}</span>}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleReaction("dislike")}
+              disabled={!currentUserId || reacting}
+              aria-pressed={myReaction === "dislike"}
+              className={cn(
+                "flex items-center gap-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed",
+                myReaction === "dislike"
+                  ? "text-white/70"
+                  : "text-white/25 hover:text-white/55",
+              )}
+            >
+              👎
+            </button>
+
             {isOwn && (
               <button
                 type="button"
@@ -225,12 +286,14 @@ function AnonRepliesList({
   replies,
   rootId,
   anonMap,
+  currentUserId,
   onReply,
   onDelete,
 }: {
   replies: CommentRow[];
   rootId: string;
   anonMap: Map<string, number>;
+  currentUserId: string | null;
   onReply: (rootId: string, label: string) => void;
   onDelete: (id: string) => void;
 }) {
@@ -261,6 +324,7 @@ function AnonRepliesList({
           comment={reply}
           anonMap={anonMap}
           rootId={rootId}
+          currentUserId={currentUserId}
           isReply
           onReply={onReply}
           onDelete={onDelete}
@@ -684,6 +748,7 @@ export default function AnonPostPage() {
                     comment={c}
                     anonMap={anonMap}
                     rootId={c.id}
+                    currentUserId={user?.id ?? null}
                     onReply={handleReply}
                     onDelete={handleDeleteComment}
                   />
@@ -692,6 +757,7 @@ export default function AnonPostPage() {
                     replies={repliesMap.get(c.id) ?? []}
                     rootId={c.id}
                     anonMap={anonMap}
+                    currentUserId={user?.id ?? null}
                     onReply={handleReply}
                     onDelete={handleDeleteComment}
                   />

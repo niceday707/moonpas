@@ -124,6 +124,10 @@ export type CommentRow = {
     role: Role;
     avatar_url: string | null;
   } | null;
+  /** 댓글 좋아요 수 (comment_reactions 집계) */
+  like_count: number;
+  /** 현재 로그인 사용자의 리액션. 미로그인/없음 → null */
+  my_reaction: "like" | "dislike" | null;
 };
 
 // PostgREST 임베딩은 FK 컬럼명으로 가리키는 게 가장 안전 (FK constraint 이름이 환경마다 달라질 수 있어서).
@@ -253,7 +257,52 @@ function normalizeComment(
     // 익명 게시판은 멘션 포인터도 노출하지 않음
     mention_user_id: isAnon ? null : raw.mention_user_id,
     mention_user: isAnon ? null : raw.mention_user,
+    // 리액션 — listComments 에서 별도로 채워짐 (기본값)
+    like_count: 0,
+    my_reaction: null,
   };
+}
+
+/** 댓글 ID 목록에 대한 리액션 집계 및 현재 사용자 리액션 조회 */
+async function fetchCommentReactions(
+  commentIds: string[],
+  uid: string | null,
+): Promise<{
+  likeCountMap: Map<string, number>;
+  myReactionMap: Map<string, "like" | "dislike">;
+}> {
+  if (commentIds.length === 0) {
+    return { likeCountMap: new Map(), myReactionMap: new Map() };
+  }
+  try {
+    const { data, error } = await supabase
+      .from("comment_reactions")
+      .select("comment_id, user_id, reaction")
+      .in("comment_id", commentIds);
+    if (error) throw error;
+
+    const rows = (data ?? []) as Array<{
+      comment_id: string;
+      user_id: string;
+      reaction: "like" | "dislike";
+    }>;
+
+    const likeCountMap = new Map<string, number>();
+    const myReactionMap = new Map<string, "like" | "dislike">();
+
+    for (const row of rows) {
+      if (row.reaction === "like") {
+        likeCountMap.set(row.comment_id, (likeCountMap.get(row.comment_id) ?? 0) + 1);
+      }
+      if (uid && row.user_id === uid) {
+        myReactionMap.set(row.comment_id, row.reaction);
+      }
+    }
+    return { likeCountMap, myReactionMap };
+  } catch {
+    // comment_reactions 테이블 미적용 환경 — 조용히 빈 값 반환
+    return { likeCountMap: new Map(), myReactionMap: new Map() };
+  }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -583,7 +632,13 @@ export async function listComments(postId: string): Promise<CommentRow[]> {
   const boardType = (postMeta?.board_type as BoardType | undefined) ?? "free";
   const postAuthorId = (postMeta?.author_id as string | undefined) ?? "";
 
-  return ((data as Partial<RawComment>[] | null) ?? []).map((raw) => {
+  const rawList = (data as Partial<RawComment>[] | null) ?? [];
+
+  // 리액션 집계 — 별도 테이블에서 댓글 ID 목록으로 한 번에 조회
+  const commentIds = rawList.map((r) => r.id).filter(Boolean) as string[];
+  const { likeCountMap, myReactionMap } = await fetchCommentReactions(commentIds, uid);
+
+  return rawList.map((raw) => {
     // 레거시 응답 보강 — 누락 필드 기본값
     const filled: RawComment = {
       id: raw.id ?? "",
@@ -596,7 +651,10 @@ export async function listComments(postId: string): Promise<CommentRow[]> {
       author: raw.author ?? null,
       mention_user: raw.mention_user ?? null,
     };
-    return normalizeComment(filled, uid, boardType, postAuthorId);
+    const comment = normalizeComment(filled, uid, boardType, postAuthorId);
+    comment.like_count = likeCountMap.get(filled.id) ?? 0;
+    comment.my_reaction = myReactionMap.get(filled.id) ?? null;
+    return comment;
   });
 }
 
@@ -664,6 +722,72 @@ export async function deleteComment(commentId: string): Promise<{ error: string 
     return { error: error.message };
   }
   return { error: null };
+}
+
+/**
+ * 댓글 리액션 토글 (좋아요/싫어요).
+ *   - 없음 → INSERT (reaction 활성화)
+ *   - 같은 버튼 재클릭 → DELETE (리액션 취소)
+ *   - 다른 버튼 클릭 → UPDATE (like ↔ dislike 전환)
+ */
+export async function toggleCommentReaction(
+  commentId: string,
+  reaction: "like" | "dislike",
+): Promise<{
+  error: string | null;
+  my_reaction: "like" | "dislike" | null;
+  like_count: number;
+}> {
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData.user?.id;
+  if (!uid) {
+    return { error: "로그인이 필요해요.", my_reaction: null, like_count: 0 };
+  }
+
+  const { data: existing, error: readErr } = await supabase
+    .from("comment_reactions")
+    .select("reaction")
+    .eq("comment_id", commentId)
+    .eq("user_id", uid)
+    .maybeSingle();
+
+  if (readErr) {
+    return { error: readErr.message, my_reaction: null, like_count: 0 };
+  }
+
+  let nextReaction: "like" | "dislike" | null = null;
+
+  if (!existing) {
+    const { error: insErr } = await supabase
+      .from("comment_reactions")
+      .insert({ comment_id: commentId, user_id: uid, reaction });
+    if (insErr) return { error: insErr.message, my_reaction: null, like_count: 0 };
+    nextReaction = reaction;
+  } else if ((existing as { reaction: string }).reaction === reaction) {
+    const { error: delErr } = await supabase
+      .from("comment_reactions")
+      .delete()
+      .eq("comment_id", commentId)
+      .eq("user_id", uid);
+    if (delErr) return { error: delErr.message, my_reaction: reaction, like_count: 0 };
+    nextReaction = null;
+  } else {
+    const { error: updErr } = await supabase
+      .from("comment_reactions")
+      .update({ reaction })
+      .eq("comment_id", commentId)
+      .eq("user_id", uid);
+    if (updErr) return { error: updErr.message, my_reaction: (existing as { reaction: "like" | "dislike" }).reaction, like_count: 0 };
+    nextReaction = reaction;
+  }
+
+  const { count } = await supabase
+    .from("comment_reactions")
+    .select("*", { count: "exact", head: true })
+    .eq("comment_id", commentId)
+    .eq("reaction", "like");
+
+  return { error: null, my_reaction: nextReaction, like_count: count ?? 0 };
 }
 
 // ─────────────────────────────────────────────────────────

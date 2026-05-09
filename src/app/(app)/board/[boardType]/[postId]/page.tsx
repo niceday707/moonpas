@@ -221,7 +221,6 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
   const isLost = boardType === "lost";
   const isMarket = boardType === "market";
   const isIssue = boardType === "debate";
-  const isFree = boardType === "free";
   const isQa = boardType === "qa";
   const isYoutube = boardType === "youtube";
   const isResources = boardType === "resources";

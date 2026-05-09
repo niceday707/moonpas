@@ -38,6 +38,7 @@ import {
 import { HighlightedContent } from "@/components/comments/HighlightedContent";
 import { Badge } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { AuthGate } from "@/components/auth/AuthGate";
 import {
   BOARD_LABEL,
@@ -656,10 +657,8 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
             </div>
           </div>
         ) : post.image_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <ImageLightbox
             src={post.image_url}
-            alt=""
             className="mt-4 max-h-96 w-full rounded-lg object-contain"
           />
         ) : null}

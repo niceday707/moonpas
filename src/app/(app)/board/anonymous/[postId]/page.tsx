@@ -40,6 +40,7 @@ import { useSupabaseUser } from "@/lib/supabase-profile";
 import { relativeTime } from "@/lib/format";
 import { buildPostShareUrl, sharePost } from "@/lib/share";
 import { cn } from "@/lib/utils";
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { ANON_TAGS, parseAnonContent, getTagInfo, type AnonTagKey } from "../anon-utils";
 
 // ── 익명 번호 할당 헬퍼 ──────────────────────────────────────
@@ -602,12 +603,19 @@ export default function AnonPostPage() {
         className="sticky top-0 z-20 border-b border-white/[0.06] backdrop-blur-xl"
         style={{ background: "rgba(15,12,41,0.85)" }}
       >
-        <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3">
-          <Link
-            href="/board/anonymous"
-            className="flex items-center gap-1.5 text-sm text-white/55 hover:text-white/85 transition-colors"
+        <div className="mx-auto flex max-w-2xl items-center gap-2 px-4 py-3">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            aria-label="뒤로 가기"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white/55 transition-colors hover:bg-white/10 hover:text-white/85"
           >
             <ArrowLeft className="h-4 w-4" />
+          </button>
+          <Link
+            href="/board/anonymous"
+            className="text-sm font-medium text-white/55 hover:text-white/85 transition-colors"
+          >
             문태 에타
           </Link>
           <span className="ml-auto text-xs text-white/30">🌙 익명 게시판</span>
@@ -677,8 +685,7 @@ export default function AnonPostPage() {
               {/* 이미지 */}
               {post.image_url && (
                 <div className="mt-4 overflow-hidden rounded-xl">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={post.image_url} alt="" className="w-full object-cover" />
+                  <ImageLightbox src={post.image_url} className="w-full object-cover" />
                 </div>
               )}
             </>

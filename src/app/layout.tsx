@@ -41,6 +41,9 @@ export const metadata: Metadata = {
     images: ["/icon-512.png"],
   },
   robots: { index: true, follow: true },
+  verification: {
+    google: "scpGUP7LuQIzBEuEqzQMZZi8DWxlzWPLuNuItTI_3aA",
+  },
 };
 
 export const viewport: Viewport = {

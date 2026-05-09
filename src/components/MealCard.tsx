@@ -127,7 +127,7 @@ export function MealCard() {
   const hasMenu = !!block && block.menus.length > 0;
 
   return (
-    <div className="relative flex h-[200px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/[0.07] dark:bg-[#16162a] sm:h-[220px]">
+    <div className="relative flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/[0.07] dark:bg-[#16162a]">
       {/* 상단 헤더 — 컴팩트 */}
       <div className="relative flex shrink-0 items-center justify-between bg-gradient-to-br from-orange-100 via-amber-50 to-yellow-50 px-3 py-2 dark:from-orange-500/[0.12] dark:via-amber-500/[0.08] dark:to-yellow-500/[0.05]">
         <div className="flex items-center gap-1.5">
@@ -192,8 +192,8 @@ export function MealCard() {
         </div>
       )}
 
-      {/* 본문 — 남는 공간 채우고 메뉴가 길면 내부 스크롤 */}
-      <div className="relative min-h-0 flex-1 overflow-y-auto">
+      {/* 본문 — 콘텐츠 길이만큼 자동으로 늘어남, 내부 스크롤 없음 */}
+      <div className="relative">
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={`${toYmd(date)}-${tab}-${weekend ? "w" : "d"}`}

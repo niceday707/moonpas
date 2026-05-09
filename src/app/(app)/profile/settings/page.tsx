@@ -14,7 +14,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Bell,
   Globe,
-  Mail,
   MessageCircle,
   MessageSquare,
   Heart,
@@ -164,13 +163,11 @@ const DEFAULT_DB_SETTINGS: DbSettings = {
 type UiOnlySettings = {
   siteNotification: boolean;
   browserPush: boolean;
-  emailNotification: boolean;
 };
 
 const DEFAULT_UI_SETTINGS: UiOnlySettings = {
   siteNotification: true,
   browserPush: false,
-  emailNotification: false,
 };
 
 export default function SettingsPage() {
@@ -242,10 +239,10 @@ export default function SettingsPage() {
     showToast("저장되었어요");
   }
 
-  // ── UI-only 토글 (사이트/푸시/이메일) ────────────────────
+  // ── UI-only 토글 (사이트/푸시) ───────────────────────────
   function toggleUi(key: keyof UiOnlySettings) {
     setUiSettings((p) => ({ ...p, [key]: !p[key] }));
-    showToast("브라우저 푸시 / 이메일 알림은 곧 지원됩니다");
+    showToast("브라우저 푸시 알림은 곧 지원됩니다");
   }
 
   const disabled = !user || !hydrated;
@@ -302,17 +299,6 @@ export default function SettingsPage() {
             desc="사이트를 닫아도 브라우저 알림을 받아요"
             checked={uiSettings.browserPush}
             onChange={() => toggleUi("browserPush")}
-            badge="준비중"
-          />
-          <SettingRow
-            icon={Mail}
-            iconColor="text-green-600"
-            iconBg="bg-green-50 dark:bg-green-900/20"
-            title="이메일 알림"
-            desc="학교 구글 계정으로 이메일을 받아요"
-            checked={uiSettings.emailNotification}
-            onChange={() => toggleUi("emailNotification")}
-            badge="준비중"
           />
         </div>
 

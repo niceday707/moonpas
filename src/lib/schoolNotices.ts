@@ -1,38 +1,42 @@
-// 문태고 홈페이지 공지 게시판 3종 크롤링 + DB upsert.
+// 문태고 홈페이지 공지 게시판 4종 크롤링 + DB upsert.
 //
-//   selectNttList.do 페이지의 게시글 목록 table 을 cheerio 로 파싱한다.
+//   selectNttList.do 페이지의 게시글 목록 table / gallery 를 cheerio 로 파싱한다.
 //   각 게시판의 mi/bbsId 는 source 별로 고정 — 사용자가 명시한 값 사용.
 //
 //   실제 HTML 구조 (2026.05 기준 확인):
+//   ── 테이블형 (school/news/letter) ──
 //     <div class="bbs_ListA">
 //       <table id="myTable">
 //         <tbody>
 //           <tr>
-//             <td class="modNone">671</td>             ← 번호 또는 "공지" 뱃지
+//             <td class="modNone">671</td>
 //             <td class="bbs_tit">
-//               <a href="javascript:" data-id="1801043214" class="nttInfoBtn">
-//                 제목 텍스트
-//               </a>
+//               <a href="javascript:" data-id="1801043214" class="nttInfoBtn">제목</a>
 //             </td>
-//             <td>... 작성자 ...</td>
 //             <td><em class="mTit">등록일</em> 2026.04.28</td>
-//             <td><em class="mTit">조회수</em> 285</td>
 //           </tr>
-//           ...
 //
-//   ★ 핵심: nttSn 은 <a href> 가 아니라 <a class="nttInfoBtn" data-id="..."> 의
-//     data-id 속성에 있다. 클릭 시 JS 가 form submit 으로 상세 페이지로 이동.
+//   ── 갤러리형 (gallery) ──
+//     <div class="bbs_GallA">  또는  <ul class="gall_list">
+//       <li>
+//         <a href="javascript:" data-id="9876543" class="nttInfoBtn">
+//           <span class="img_area"><img ...></span>
+//           <strong class="tit">제목</strong>
+//           <span class="date">2026.04.15</span>
+//         </a>
+//       </li>
 //
+//   ★ 핵심: nttSn 은 <a class="nttInfoBtn" data-id="..."> 의 data-id 속성에 있다.
 //   원문 상세 URL 패턴:
 //     /moontae_hs/na/ntt/selectNttInfo.do?mi={mi}&nttSn={nttSn}&bbsId={bbsId}
 
 import * as cheerio from "cheerio";
 
-export type SchoolNoticeSource = "school" | "news" | "letter";
+export type SchoolNoticeSource = "school" | "news" | "letter" | "gallery";
 
 export const SCHOOL_NOTICE_SOURCE_META: Record<
   SchoolNoticeSource,
-  { label: string; emoji: string; mi: string; bbsId: string }
+  { label: string; emoji: string; mi: string; bbsId: string; loginNote?: string }
 > = {
   school: {
     label: "학교공지",
@@ -52,9 +56,16 @@ export const SCHOOL_NOTICE_SOURCE_META: Record<
     mi: "113111",
     bbsId: "113111",
   },
+  gallery: {
+    label: "행사갤러리",
+    emoji: "🖼️",
+    mi: "113103",
+    bbsId: "113103",
+    loginNote: "상세 페이지는 학교 홈페이지 로그인이 필요합니다.",
+  },
 };
 
-export const ALL_SOURCES: SchoolNoticeSource[] = ["school", "news", "letter"];
+export const ALL_SOURCES: SchoolNoticeSource[] = ["school", "news", "letter", "gallery"];
 
 const BASE_LIST_URL =
   "https://moontae.hs.jne.kr/moontae_hs/na/ntt/selectNttList.do";
@@ -95,12 +106,24 @@ export type ParsedNotice = {
 
 /**
  * cheerio 로 목록 HTML 을 파싱해 공지 배열로 변환.
- *   1) <a class="nttInfoBtn" data-id="..."> 의 data-id 를 우선 사용 (현재 구조)
- *   2) <a href> 에 nttSn 쿼리가 있으면 폴백 (구버전 대비)
- *   3) <a onclick> 에 nttSn 토큰이 있으면 폴백
- *   4) 날짜는 같은 행의 td 에서 YYYY.MM.DD 패턴 매칭
- *   5) 동일 nttSn 이 두 번 나오면 첫 항목만 유지
- *      ('공지' 고정 + 일반 노출 케이스에서 정렬 안정성을 위해)
+ *   테이블형(school/news/letter)과 갤러리형(gallery) 모두 지원.
+ *
+ *   nttSn 추출 우선순위:
+ *     1) <a class="nttInfoBtn" data-id="..."> 의 data-id
+ *     2) <a href> 쿼리에 nttSn 포함
+ *     3) <a onclick> 에 nttSn 토큰
+ *
+ *   제목 추출:
+ *     - 갤러리형: a 하위 span.tit / strong.tit / .tit 우선, 없으면 날짜·이미지 제거 후 텍스트
+ *     - 테이블형: a 의 직접 텍스트
+ *
+ *   날짜 추출:
+ *     1) span.date / .date / .etc 등 내부 날짜 요소
+ *     2) 같은 항목(td / li)의 전체 텍스트에서 YYYY.MM.DD 패턴
+ *     3) 없으면 오늘 날짜 폴백
+ *
+ *   동일 nttSn 이 두 번 나오면 첫 항목만 유지
+ *     ('공지' 고정 + 일반 노출 케이스 중복 방지)
  */
 export function parseNoticeList(
   html: string,
@@ -110,29 +133,58 @@ export function parseNoticeList(
   const out: ParsedNotice[] = [];
   const seen = new Set<string>();
 
-  // 1차: id="myTable" 우선, 폴백으로 일반 table
-  const $rows = $("table#myTable tbody tr, .bbs_ListA table tbody tr").length
-    ? $("table#myTable tbody tr, .bbs_ListA table tbody tr")
-    : $("table tbody tr");
+  // 테이블형과 갤러리형 항목을 통합 선택.
+  // 갤러리 페이지는 <ul class="gall_list"> / <div class="bbs_GallA"> 구조를 쓴다.
+  const TABLE_SEL = "table#myTable tbody tr, .bbs_ListA table tbody tr";
+  const GALLERY_SEL = [
+    ".gall_list li",
+    ".bbs_GallA li",
+    "ul[class*='gall'] li",
+    "div[class*='gall'] li",
+    ".gallery_list li",
+  ].join(", ");
 
-  $rows.each((_, tr) => {
-    const $tr = $(tr);
+  // 타입 호환을 위해 단일 selector 문자열로 결정 후 한 번만 $() 호출
+  const activeSel = $(TABLE_SEL).length
+    ? TABLE_SEL
+    : $(GALLERY_SEL).length
+      ? GALLERY_SEL
+      : "table tbody tr";
+  const $items = $(activeSel);
+
+  $items.each((_, el) => {
+    const $el = $(el);
     let nttSn: string | null = null;
     let title = "";
 
     // (1) data-id 속성을 가진 a 태그
-    $tr.find("a[data-id], a.nttInfoBtn").each((_i, a) => {
+    $el.find("a[data-id], a.nttInfoBtn").each((_i, a) => {
       if (nttSn) return;
-      const dataId = $(a).attr("data-id") ?? "";
+      const $a = $(a);
+      const dataId = $a.attr("data-id") ?? "";
       if (dataId && DIGITS_ONLY_RE.test(dataId)) {
         nttSn = dataId;
-        title = $(a).text().replace(/\s+/g, " ").trim();
+        // 갤러리형: span.tit / strong.tit 우선
+        const $tit = $a.find("span.tit, strong.tit, .tit").first();
+        if ($tit.length) {
+          title = $tit.text().replace(/\s+/g, " ").trim();
+        } else {
+          // 날짜·이미지 요소 제거 후 텍스트 (갤러리 a 안에 날짜 span 이 있는 경우 대비)
+          title = $a
+            .clone()
+            .find("span.date, .date, img, .img_area")
+            .remove()
+            .end()
+            .text()
+            .replace(/\s+/g, " ")
+            .trim();
+        }
       }
     });
 
     // (2) href 에 nttSn 쿼리 — 구버전 폴백
     if (!nttSn) {
-      $tr.find("a").each((_i, a) => {
+      $el.find("a").each((_i, a) => {
         if (nttSn) return;
         const href = $(a).attr("href") ?? "";
         const m = NTT_SN_HREF_RE.exec(href);
@@ -145,7 +197,7 @@ export function parseNoticeList(
 
     // (3) onclick 안의 nttSn 토큰
     if (!nttSn) {
-      $tr.find("a").each((_i, a) => {
+      $el.find("a").each((_i, a) => {
         if (nttSn) return;
         const onclick = $(a).attr("onclick") ?? "";
         const m = NTT_SN_ONCLICK_RE.exec(onclick);
@@ -159,26 +211,44 @@ export function parseNoticeList(
     if (!nttSn || !title) return;
     if (seen.has(nttSn)) return;
 
-    // 날짜 — 같은 행의 td 에서 YYYY.MM.DD 패턴 (등록일 셀)
+    // 날짜 추출 ─────────────────────────────────────────────
     let date: string | null = null;
-    $tr.find("td").each((_i, td) => {
+
+    // 1단계: 갤러리형 — span.date / .date / .etc 요소 내 날짜
+    $el.find("span.date, .date, .etc, .info").each((_i, d) => {
       if (date) return;
-      const txt = $(td).text();
+      const txt = $(d).text();
       const dm = DATE_RE.exec(txt);
       if (dm) {
-        const yy = dm[1];
-        const mm = dm[2].padStart(2, "0");
-        const dd = dm[3].padStart(2, "0");
-        date = `${yy}-${mm}-${dd}`;
+        date = `${dm[1]}-${dm[2].padStart(2, "0")}-${dm[3].padStart(2, "0")}`;
       }
     });
+
+    // 2단계: 테이블형 — td 전체 텍스트에서 날짜 패턴
     if (!date) {
-      // 날짜가 없으면 오늘 날짜로 폴백 — 정렬 안정성
+      $el.find("td").each((_i, td) => {
+        if (date) return;
+        const txt = $(td).text();
+        const dm = DATE_RE.exec(txt);
+        if (dm) {
+          date = `${dm[1]}-${dm[2].padStart(2, "0")}-${dm[3].padStart(2, "0")}`;
+        }
+      });
+    }
+
+    // 3단계: 항목 전체 텍스트에서 날짜 패턴 (갤러리형 폴백)
+    if (!date) {
+      const txt = $el.text();
+      const dm = DATE_RE.exec(txt);
+      if (dm) {
+        date = `${dm[1]}-${dm[2].padStart(2, "0")}-${dm[3].padStart(2, "0")}`;
+      }
+    }
+
+    // 4단계: 날짜가 전혀 없으면 오늘 날짜
+    if (!date) {
       const now = new Date();
-      const yy = now.getFullYear();
-      const mm = String(now.getMonth() + 1).padStart(2, "0");
-      const dd = String(now.getDate()).padStart(2, "0");
-      date = `${yy}-${mm}-${dd}`;
+      date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     }
 
     seen.add(nttSn);

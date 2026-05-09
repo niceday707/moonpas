@@ -44,6 +44,7 @@ const MEGA_NAV: NavGroup[] = [
       { href: "/notices/school", label: "학교공지" },
       { href: "/notices/news", label: "문태소식" },
       { href: "/notices/letter", label: "가정통신문" },
+      { href: "/notices/gallery", label: "행사갤러리" },
       { boardType: "college", label: "대입정보" },
       { boardType: "curriculum", label: "교육과정" },
       { boardType: "council", label: "학생회" },

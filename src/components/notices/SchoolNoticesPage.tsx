@@ -101,6 +101,11 @@ export function SchoolNoticesPage({ source }: { source: SchoolNoticeSource }) {
             <p className="mt-1 text-sm text-foreground/55">
               제목·날짜만 가져옵니다. 원문은 클릭 시 새 탭으로 열려요.
             </p>
+            {meta.loginNote && (
+              <p className="mt-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                ⚠️ {meta.loginNote}
+              </p>
+            )}
           </div>
 
           <button

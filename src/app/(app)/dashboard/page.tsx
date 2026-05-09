@@ -383,6 +383,11 @@ const SOURCE_BADGE: Record<
     label: SCHOOL_NOTICE_SOURCE_META.letter.label,
     cls: "bg-cyan-50 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300",
   },
+  gallery: {
+    emoji: SCHOOL_NOTICE_SOURCE_META.gallery.emoji,
+    label: SCHOOL_NOTICE_SOURCE_META.gallery.label,
+    cls: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+  },
 };
 
 function NoticeList({

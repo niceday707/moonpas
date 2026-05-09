@@ -30,7 +30,7 @@ const A: Record<string, Author> = {
   // ME — mock-data 의 AUTHORS.kimminsu 와 동일한 사용자(u-kimminsu).
   // 닉네임은 profile 스토어가 setMyNickname 으로 mock-data 쪽 ME 만 갱신하므로,
   // 여기서는 기본 닉네임을 동일한 값으로 시드한다. (학번/실명은 관리자 전용)
-  kimminsu: { id: "u-kimminsu", name: "김민준", realName: "김민수", role: "student", className: "3-2" },
+  kimminsu: { id: "u-kimminsu", name: "", realName: "김민수", role: "student", className: "3-2" },
   jeongyeeun: { id: "u-jeongyeeun", name: "정예은", role: "student", className: "2-4" },
   leejunho: { id: "u-leejunho", name: "이준호", role: "student", className: "3-5" },
   kanghyerin: { id: "u-kanghyerin", name: "강혜린", role: "student", className: "1-3" },

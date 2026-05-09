@@ -91,7 +91,7 @@ const AUTHORS: Record<string, Author> = {
   // 개발 모드의 "나" — 닉네임은 profile 스토어를 통해 변경되면 setMyNickname() 으로 동기화됨
   kimminsu: {
     id: "u-kimminsu",
-    name: "김민준",
+    name: "",
     realName: "김민수",
     studentId: "10302",
     role: "student",

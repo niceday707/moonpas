@@ -13,15 +13,15 @@ import { Loader2, Send } from "lucide-react";
 import { motion } from "framer-motion";
 import {
   CHANNEL_LABEL,
-  ME,
   createPost,
   extractHashtags,
   getAllHashtags,
   type Channel,
   type Post,
 } from "@/lib/mock-data";
-import { Avatar } from "@/components/feed/Avatar";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { Badge } from "@/components/ui/Badge";
+import { useSupabaseProfile } from "@/lib/supabase-profile";
 import { ChannelSelect } from "./ChannelSelect";
 import {
   HashtagAutocomplete,
@@ -38,6 +38,7 @@ type Props = {
 };
 
 export function Composer({ onSubmitted, onCancel, autoFocus = true }: Props) {
+  const { profile } = useSupabaseProfile();
   const [content, setContent] = useState("");
   const [channel, setChannel] = useState<Channel>("free");
   const [submitting, setSubmitting] = useState(false);
@@ -156,11 +157,17 @@ export function Composer({ onSubmitted, onCancel, autoFocus = true }: Props) {
     <div className="flex flex-col">
       {/* 헤더 — 작성자 + 채널 */}
       <div className="flex items-center gap-3 pb-3">
-        <Avatar author={ME} />
+        <UserAvatar
+          nickname={profile?.nickname}
+          role={profile?.role}
+          avatarUrl={profile?.avatar_url}
+        />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="truncate font-semibold">{ME.name}</span>
-            <Badge role={ME.role} />
+            <span className="truncate font-semibold">
+              {profile?.nickname ?? "닉네임 미설정"}
+            </span>
+            {profile?.role && <Badge role={profile.role} />}
           </div>
           <p className="text-xs text-foreground/55">
             {CHANNEL_LABEL[channel]}에 게시돼요

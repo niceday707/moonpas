@@ -28,7 +28,7 @@ export type UserProfile = {
 
 // 개발 모드 기본값. Supabase 연동 후엔 실제 사용자 데이터로 대체된다.
 const DEFAULT_PROFILE: UserProfile = {
-  nickname: "김민준",
+  nickname: "",
   role: "student",
   profileImage: null,
   lastNicknameChange: null,

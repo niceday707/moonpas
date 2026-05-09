@@ -1,14 +1,20 @@
 "use client";
 
 // 대시보드 — 실제 Supabase 데이터로 채워진 포탈 홈
-//  · 최상단 (전체 폭): BannerSlider → 문튜브 가로 스크롤 strip (PC/모바일 공통)
-//  · 모바일/태블릿 (lg 미만): 1컬럼 — 급식 → 프로필 → 최신글 → 실시간검색 → HOT → 공지 → 바로가기
-//  · 데스크톱 (lg 이상): 2컬럼 grid-cols-[1fr_340px]
-//      좌측 메인: 급식 → 최신글
-//      우측 사이드바: 프로필 → 실시간검색 → HOT → 공지
 //
-//  중복 렌더 방지를 위해 `lg:hidden` / `hidden lg:grid` 로 명확히 분리.
-//  태블릿은 좁은 사이드바가 깨지므로 데스크톱 2컬럼은 lg(1024px) 부터만 활성화.
+// 반응형 3-tier 레이아웃:
+//  · 모바일 (md 미만): 1컬럼 세로 스택
+//      급식 → 배너 → 문튜브 → 최신글 → 프로필/로그인 → 실시간검색 → HOT → 공지 → 바로가기
+//  · 태블릿 (md ~ lg 미만): 2단 (가운데 flex-1 | 우측 280px)
+//      가운데: 급식 → 배너 → 문튜브 → 최신글
+//      우측 : 프로필 → 실시간검색 → HOT → 공지 → 바로가기
+//  · 데스크톱 (lg 이상): 3단 (좌측 280px | 가운데 flex-1 | 우측 300px)
+//      좌측 : 급식 (+ 추후 학사일정 캘린더)
+//      가운데: 배너 → 문튜브 → 최신글
+//      우측 : 프로필 → 실시간검색 → HOT → 공지 → 바로가기
+//
+// 중복 렌더 방지를 위해 `md:hidden` / `hidden md:flex lg:hidden` / `hidden lg:flex`
+// 세 블록으로 명확히 분리. 배너는 가운데 컬럼 내부에 들어가며 전체 폭이 아니다.
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
@@ -768,6 +774,85 @@ function ProfileCard({
   );
 }
 
+// ── 카드 래퍼 — 3단 레이아웃 곳곳에서 재사용 ────────────────
+
+/** 최신 글 카드 — 헤더 + 리스트 + 글쓰기 버튼 푸터를 묶은 단일 카드 */
+function LatestFeedCard({
+  posts,
+  loading,
+}: {
+  posts: PostRow[];
+  loading: boolean;
+}) {
+  return (
+    <Card>
+      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-white/[0.05]">
+        <div className="flex items-center gap-1.5 text-sm font-bold text-violet-600 dark:text-violet-400">
+          <MessageSquare className="h-4 w-4" />
+          최신 글
+        </div>
+        <Link
+          href="/board/free"
+          className="text-xs text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-200"
+        >
+          전체보기 →
+        </Link>
+      </div>
+      <LatestFeedList posts={posts} loading={loading} />
+      <div className="flex items-center justify-end border-t border-gray-100 px-4 py-3 dark:border-white/[0.05]">
+        <Link
+          href="/board/free/write"
+          className="rounded-lg bg-violet-600 px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-violet-700"
+        >
+          글쓰기
+        </Link>
+      </div>
+    </Card>
+  );
+}
+
+/** HOT 게시물 카드 */
+function HotPostsCard({
+  posts,
+  loading,
+}: {
+  posts: PostRow[];
+  loading: boolean;
+}) {
+  return (
+    <Card>
+      <SectionHead
+        icon={Flame}
+        title="HOT 게시물"
+        href="/board/free"
+        iconColor="text-orange-500"
+      />
+      <HotPostList posts={posts} loading={loading} variant="compact" />
+    </Card>
+  );
+}
+
+/** 최신 공지 카드 */
+function NoticesCard({
+  posts,
+  loading,
+}: {
+  posts: PostRow[];
+  loading: boolean;
+}) {
+  return (
+    <Card>
+      <SectionHead
+        icon={Bell}
+        title="최신 공지"
+        href="/board/notice"
+        iconColor="text-red-500"
+      />
+      <NoticeList posts={posts} loading={loading} max={5} />
+    </Card>
+  );
+}
+
 // ── 메인 페이지 ───────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -911,6 +996,20 @@ export default function DashboardPage() {
   const displayRole: Role | null = profile?.role ?? null;
   const displayAvatar: string | null = profile?.avatar_url ?? null;
 
+  // 우측 사이드바(혹은 모바일 1컬럼 후반부)에 들어갈 항목들 — 3단/2단/1단 모두 동일 순서.
+  // 프로필/로그인 카드는 mount 상태에 따라 분기되므로 인라인으로 처리.
+  const profileOrLogin = isLoggedIn ? (
+    <ProfileCard
+      nickname={displayNickname}
+      role={displayRole}
+      avatarUrl={displayAvatar}
+      stats={stats}
+      onSetupClick={() => setSetupOpen(true)}
+    />
+  ) : (
+    <GoogleLoginCard />
+  );
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -918,151 +1017,72 @@ export default function DashboardPage() {
       transition={{ duration: 0.3 }}
       className="mx-auto max-w-screen-xl px-4 py-4 md:px-6"
     >
-      {/* 배너 슬라이더 — 전체 폭 */}
-      <BannerSlider />
-
-      {/* ───────────────────────────────────────────────────── */}
-      {/* 문튜브 가로 스크롤 — 전체 폭, PC/모바일 공통. 카테고리 메뉴 바로 아래, 급식/프로필 위 */}
-      {/* ───────────────────────────────────────────────────── */}
-      <div className="mt-4">
-        <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
-      </div>
-
-      {/* ───────────────────────────────────────────────────── */}
-      {/* 모바일/태블릿 (lg 미만): 1컬럼 — 급식 → 프로필 → 최신글 → 실시간검색 → HOT → 공지 → 바로가기 */}
-      {/* ───────────────────────────────────────────────────── */}
-      <div className="mt-4 flex flex-col gap-4 lg:hidden">
+      {/* ─────────────────────────────────────────────────────────────
+          모바일 (md 미만): 1단 세로 스택
+          순서: 급식 → 배너 → 문튜브 → 최신 글 → 프로필/로그인 →
+                실시간검색 → HOT → 공지 → 바로가기
+          ───────────────────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-4 md:hidden">
         <MealCard />
-
-        {isLoggedIn ? (
-          <ProfileCard
-            nickname={displayNickname}
-            role={displayRole}
-            avatarUrl={displayAvatar}
-            stats={stats}
-            onSetupClick={() => setSetupOpen(true)}
-          />
-        ) : (
-          <GoogleLoginCard />
-        )}
-
-        <Card>
-          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-white/[0.05]">
-            <div className="flex items-center gap-1.5 text-sm font-bold text-violet-600 dark:text-violet-400">
-              <MessageSquare className="h-4 w-4" />
-              최신 글
-            </div>
-            <Link
-              href="/board/free"
-              className="text-xs text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-200"
-            >
-              전체보기 →
-            </Link>
-          </div>
-          <LatestFeedList posts={latestPosts} loading={latestLoading} />
-          <div className="flex items-center justify-end border-t border-gray-100 px-4 py-3 dark:border-white/[0.05]">
-            <Link
-              href="/board/free/write"
-              className="rounded-lg bg-violet-600 px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-violet-700"
-            >
-              글쓰기
-            </Link>
-          </div>
-        </Card>
-
+        <BannerSlider />
+        <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
+        <LatestFeedCard posts={latestPosts} loading={latestLoading} />
+        {profileOrLogin}
         <TrendingSearchCard />
-
-        <Card>
-          <SectionHead
-            icon={Flame}
-            title="HOT 게시물"
-            href="/board/free"
-            iconColor="text-orange-500"
-          />
-          <HotPostList posts={hotPosts} loading={hotLoading} variant="compact" />
-        </Card>
-
-        <Card>
-          <SectionHead
-            icon={Bell}
-            title="최신 공지"
-            href="/board/notice"
-            iconColor="text-red-500"
-          />
-          <NoticeList posts={noticePosts} loading={noticeLoading} max={5} />
-        </Card>
-
+        <HotPostsCard posts={hotPosts} loading={hotLoading} />
+        <NoticesCard posts={noticePosts} loading={noticeLoading} />
         <ShortcutsCard />
       </div>
 
-      {/* ───────────────────────────────────────────────────── */}
-      {/* 데스크톱 (lg 이상): 2컬럼 — 좌측 메인(급식·최신글·문튜브) | 우측 사이드바(프로필·실시간검색·HOT·공지) */}
-      {/* ───────────────────────────────────────────────────── */}
-      <div className="mt-4 hidden gap-5 lg:grid lg:grid-cols-[1fr_340px]">
-        {/* 좌측 메인 (~65-70%) */}
-        <section className="min-w-0 space-y-4">
+      {/* ─────────────────────────────────────────────────────────────
+          태블릿 (md ~ lg 미만): 2단 — 가운데(flex-1) | 우측(280px)
+          급식은 가운데 컬럼 상단에 배치.
+          ───────────────────────────────────────────────────────────── */}
+      <div className="hidden md:flex md:gap-5 lg:hidden">
+        {/* 가운데 메인 */}
+        <main className="flex min-w-0 flex-1 flex-col gap-4">
           <MealCard />
+          <BannerSlider />
+          <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
+          <LatestFeedCard posts={latestPosts} loading={latestLoading} />
+        </main>
 
-          <Card>
-            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-white/[0.05]">
-              <div className="flex items-center gap-1.5 text-sm font-bold text-violet-600 dark:text-violet-400">
-                <MessageSquare className="h-4 w-4" />
-                최신 글
-              </div>
-              <Link
-                href="/board/free"
-                className="text-xs text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-200"
-              >
-                전체보기 →
-              </Link>
-            </div>
-            <LatestFeedList posts={latestPosts} loading={latestLoading} />
-            <div className="flex items-center justify-end border-t border-gray-100 px-4 py-3 dark:border-white/[0.05]">
-              <Link
-                href="/board/free/write"
-                className="rounded-lg bg-violet-600 px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-violet-700"
-              >
-                글쓰기
-              </Link>
-            </div>
-          </Card>
-        </section>
-
-        {/* 우측 사이드바 (340px 고정) */}
-        <aside className="flex flex-col gap-4">
-          {isLoggedIn ? (
-            <ProfileCard
-              nickname={displayNickname}
-              role={displayRole}
-              avatarUrl={displayAvatar}
-              stats={stats}
-              onSetupClick={() => setSetupOpen(true)}
-            />
-          ) : (
-            <GoogleLoginCard />
-          )}
-
+        {/* 우측 사이드바 — 280px 고정 */}
+        <aside className="flex w-[280px] shrink-0 flex-col gap-4">
+          {profileOrLogin}
           <TrendingSearchCard />
+          <HotPostsCard posts={hotPosts} loading={hotLoading} />
+          <NoticesCard posts={noticePosts} loading={noticeLoading} />
+          <ShortcutsCard />
+        </aside>
+      </div>
 
-          <Card>
-            <SectionHead
-              icon={Flame}
-              title="HOT 게시물"
-              href="/board/free"
-              iconColor="text-orange-500"
-            />
-            <HotPostList posts={hotPosts} loading={hotLoading} variant="compact" />
-          </Card>
+      {/* ─────────────────────────────────────────────────────────────
+          데스크톱 (lg 이상): 3단 — 좌측(280px) | 가운데(flex-1) | 우측(300px)
+          좌측은 급식 + (추후 학사일정 캘린더 자리), 가운데는 배너/문튜브/최신글,
+          우측은 프로필 → 실시간검색 → HOT → 공지 → 바로가기.
+          ───────────────────────────────────────────────────────────── */}
+      <div className="hidden lg:flex lg:gap-5">
+        {/* 좌측 사이드바 — 280px 고정, lg 부터 노출 */}
+        <aside className="flex w-[280px] shrink-0 flex-col gap-4">
+          <MealCard />
+          {/* TODO: 학사일정 캘린더 위젯 자리 — 추후 추가 */}
+        </aside>
 
-          <Card>
-            <SectionHead
-              icon={Bell}
-              title="최신 공지"
-              href="/board/notice"
-              iconColor="text-red-500"
-            />
-            <NoticeList posts={noticePosts} loading={noticeLoading} max={5} />
-          </Card>
+        {/* 가운데 메인 */}
+        <main className="flex min-w-0 flex-1 flex-col gap-4">
+          <BannerSlider />
+          <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
+          <LatestFeedCard posts={latestPosts} loading={latestLoading} />
+        </main>
+
+        {/* 우측 사이드바 — 300px 고정 */}
+        <aside className="flex w-[300px] shrink-0 flex-col gap-4">
+          {profileOrLogin}
+          <TrendingSearchCard />
+          <HotPostsCard posts={hotPosts} loading={hotLoading} />
+          <NoticesCard posts={noticePosts} loading={noticeLoading} />
+          <ShortcutsCard />
         </aside>
       </div>
 

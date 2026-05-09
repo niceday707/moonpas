@@ -76,7 +76,7 @@ export function BannerSlider() {
   // 로딩 중에는 스켈레톤 (높이는 유지해서 레이아웃 점프 방지)
   if (loading) {
     return (
-      <div className="relative h-[200px] animate-pulse overflow-hidden rounded-2xl bg-gray-200 dark:bg-white/[0.06] md:h-[280px]" />
+      <div className="relative h-[120px] animate-pulse overflow-hidden rounded-2xl bg-gray-200 dark:bg-white/[0.06] md:h-[140px] lg:h-[160px]" />
     );
   }
 
@@ -89,7 +89,7 @@ export function BannerSlider() {
 
   return (
     <div
-      className="relative h-[200px] overflow-hidden rounded-2xl md:h-[280px]"
+      className="relative h-[120px] overflow-hidden rounded-2xl md:h-[140px] lg:h-[160px]"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onTouchStart={onTouchStart}
@@ -127,10 +127,10 @@ export function BannerSlider() {
             />
           )}
 
-          {/* 텍스트 영역 */}
-          <div className="relative z-10 flex h-full w-[80%] flex-col justify-center gap-2 px-5 md:w-[70%] md:gap-3 md:px-10">
+          {/* 텍스트 영역 — 축소된 배너에 맞춰 패딩/간격 압축 */}
+          <div className="relative z-10 flex h-full w-[80%] flex-col justify-center gap-1 px-4 md:w-[75%] md:gap-1.5 md:px-5 lg:px-6">
             <h2
-              className="line-clamp-2 text-[18px] font-extrabold leading-snug text-white md:text-[28px]"
+              className="line-clamp-2 text-lg font-extrabold leading-snug text-white md:text-xl"
               style={{ textShadow: "0 2px 8px rgba(0,0,0,0.35)" }}
             >
               {b.title}
@@ -138,7 +138,7 @@ export function BannerSlider() {
 
             {b.description && (
               <p
-                className="line-clamp-2 text-[12px] font-medium leading-relaxed text-white/90 md:text-sm"
+                className="line-clamp-1 text-xs font-medium leading-relaxed text-white/90 md:line-clamp-2 md:text-sm"
                 style={{ textShadow: "0 1px 6px rgba(0,0,0,0.3)" }}
               >
                 {b.description}
@@ -148,7 +148,7 @@ export function BannerSlider() {
             {hasLink && (
               <Link
                 href={b.link!}
-                className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-white px-3.5 py-1.5 text-[12px] font-bold text-gray-900 shadow-[0_4px_14px_rgba(0,0,0,0.18)] transition-transform hover:scale-105 md:px-5 md:py-2 md:text-sm"
+                className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-white px-3 py-1 text-[11px] font-bold text-gray-900 shadow-[0_4px_14px_rgba(0,0,0,0.18)] transition-transform hover:scale-105 md:px-3.5 md:py-1.5 md:text-xs"
               >
                 자세히 보기 →
               </Link>
@@ -157,26 +157,26 @@ export function BannerSlider() {
         </motion.div>
       </AnimatePresence>
 
-      {/* 좌/우 버튼 — 2개 이상일 때만 */}
+      {/* 좌/우 버튼 — 2개 이상일 때만, 배너가 작아진 만큼 버튼도 축소 */}
       {total > 1 && (
         <>
           <button
             onClick={prev}
-            className="absolute left-2 top-1/2 z-20 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-colors hover:bg-black/50 md:left-3 md:h-9 md:w-9"
+            className="absolute left-2 top-1/2 z-20 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-colors hover:bg-black/50 md:left-2.5 md:h-8 md:w-8"
             aria-label="이전"
           >
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeft className="h-3.5 w-3.5 md:h-4 md:w-4" />
           </button>
           <button
             onClick={next}
-            className="absolute right-2 top-1/2 z-20 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-colors hover:bg-black/50 md:right-3 md:h-9 md:w-9"
+            className="absolute right-2 top-1/2 z-20 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-colors hover:bg-black/50 md:right-2.5 md:h-8 md:w-8"
             aria-label="다음"
           >
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="h-3.5 w-3.5 md:h-4 md:w-4" />
           </button>
 
           {/* pill 인디케이터 */}
-          <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 gap-1.5">
+          <div className="absolute bottom-2 left-1/2 z-20 flex -translate-x-1/2 gap-1.5">
             {banners.map((_, i) => (
               <button
                 key={i}

@@ -2,7 +2,7 @@
 //
 //   GET                       : 저장된 school_notices 목록 반환 (?source=school|news|letter, ?limit=30)
 //   GET ?sync=true            : 3종 게시판 크롤링 → DB upsert (Vercel Cron + 수동 동기화 모두 사용)
-//   GET ?sync=true&debug=true : 동기화 + 응답에 raw HTML 앞 2000자 + 서버 콘솔 로그
+//   GET ?sync=true&debug=true : 동기화 + 응답에 raw HTML 앞 5000자 + 서버 콘솔 로그
 //
 //   Vercel Cron 은 GET 메서드만 지원하므로 vercel.json 의 crons.path 를
 //   "/api/school-notices?sync=true" 로 두고 동일 핸들러를 사용한다.
@@ -71,9 +71,14 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const sync = url.searchParams.get("sync") === "true";
   const debug = url.searchParams.get("debug") === "true";
+  const counts = url.searchParams.get("counts") === "true";
 
   if (sync) {
     return await syncAndRespond({ debug });
+  }
+
+  if (counts) {
+    return await getCountsAndRespond();
   }
 
   // 일반 조회
@@ -126,7 +131,47 @@ export async function GET(req: NextRequest) {
 }
 
 // ─────────────────────────────────────────────────────────
-// 공통 동기화 — 3종 크롤링 + upsert
+// ?counts=true — source 별 게시글 수 반환 (TopBar 메가메뉴용)
+// ─────────────────────────────────────────────────────────
+
+async function getCountsAndRespond(): Promise<NextResponse> {
+  let client: SupabaseClient;
+  try {
+    client = getReadClient();
+  } catch (e) {
+    return NextResponse.json(
+      { ok: false, error: e instanceof Error ? e.message : String(e) },
+      { status: 500 },
+    );
+  }
+
+  const { data, error } = await client
+    .from("school_notices")
+    .select("source");
+
+  if (error) {
+    return NextResponse.json(
+      { ok: false, error: error.message },
+      { status: 500 },
+    );
+  }
+
+  const counts: Record<string, number> = {};
+  for (const row of (data ?? []) as Array<{ source: string }>) {
+    counts[row.source] = (counts[row.source] ?? 0) + 1;
+  }
+
+  return NextResponse.json(
+    { ok: true, counts },
+    {
+      status: 200,
+      headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
+    },
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// 공통 동기화 — 4종 크롤링 + upsert
 // ─────────────────────────────────────────────────────────
 
 async function syncAndRespond({
@@ -163,13 +208,13 @@ async function syncAndRespond({
 
   const { results, errors, rawHtmls } = await crawlAllSources();
 
-  // debug 모드 — 서버 로그에 각 source 의 HTML 앞 2000자 출력
+  // debug 모드 — 서버 로그에 각 source 의 HTML 앞 5000자 출력
   if (debug) {
     for (const r of rawHtmls) {
       console.log(
         `[/api/school-notices?debug] ${r.source} ${r.url} length=${r.html.length}`,
       );
-      console.log(r.html.slice(0, 2000));
+      console.log(r.html.slice(0, 5000));
       console.log(`--- end of ${r.source} ---`);
     }
     if (errors.length > 0) {
@@ -186,7 +231,7 @@ async function syncAndRespond({
           source: r.source,
           url: r.url,
           length: r.html.length,
-          head: r.html.slice(0, 2000),
+          head: r.html.slice(0, 5000),
         })),
       }
     : {};

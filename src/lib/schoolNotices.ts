@@ -1,10 +1,10 @@
 // 문태고 홈페이지 공지 게시판 4종 크롤링 + DB upsert.
 //
-//   selectNttList.do 페이지의 게시글 목록 table / gallery 를 cheerio 로 파싱한다.
+//   selectNttList.do 페이지의 게시글 목록 table 을 cheerio 로 파싱한다.
 //   각 게시판의 mi/bbsId 는 source 별로 고정 — 사용자가 명시한 값 사용.
 //
 //   실제 HTML 구조 (2026.05 기준 확인):
-//   ── 테이블형 (school/news/letter) ──
+//   ── 테이블형 (school/news/letter/gallery 모두 동일) ──
 //     <div class="bbs_ListA">
 //       <table id="myTable">
 //         <tbody>
@@ -16,15 +16,8 @@
 //             <td><em class="mTit">등록일</em> 2026.04.28</td>
 //           </tr>
 //
-//   ── 갤러리형 (gallery) ──
-//     <div class="bbs_GallA">  또는  <ul class="gall_list">
-//       <li>
-//         <a href="javascript:" data-id="9876543" class="nttInfoBtn">
-//           <span class="img_area"><img ...></span>
-//           <strong class="tit">제목</strong>
-//           <span class="date">2026.04.15</span>
-//         </a>
-//       </li>
+//   ★ gallery(mi=113103) 도 동일한 selectNttList.do 엔드포인트를 사용하므로
+//     테이블형 파서를 공통으로 적용한다.
 //
 //   ★ 핵심: nttSn 은 <a class="nttInfoBtn" data-id="..."> 의 data-id 속성에 있다.
 //   원문 상세 URL 패턴:
@@ -106,20 +99,16 @@ export type ParsedNotice = {
 
 /**
  * cheerio 로 목록 HTML 을 파싱해 공지 배열로 변환.
- *   테이블형(school/news/letter)과 갤러리형(gallery) 모두 지원.
+ *   4종(school/news/letter/gallery) 모두 동일한 테이블형 파서를 사용.
  *
  *   nttSn 추출 우선순위:
  *     1) <a class="nttInfoBtn" data-id="..."> 의 data-id
  *     2) <a href> 쿼리에 nttSn 포함
  *     3) <a onclick> 에 nttSn 토큰
  *
- *   제목 추출:
- *     - 갤러리형: a 하위 span.tit / strong.tit / .tit 우선, 없으면 날짜·이미지 제거 후 텍스트
- *     - 테이블형: a 의 직접 텍스트
- *
  *   날짜 추출:
  *     1) span.date / .date / .etc 등 내부 날짜 요소
- *     2) 같은 항목(td / li)의 전체 텍스트에서 YYYY.MM.DD 패턴
+ *     2) td 전체 텍스트에서 YYYY.MM.DD 패턴
  *     3) 없으면 오늘 날짜 폴백
  *
  *   동일 nttSn 이 두 번 나오면 첫 항목만 유지
@@ -133,54 +122,7 @@ export function parseNoticeList(
   const out: ParsedNotice[] = [];
   const seen = new Set<string>();
 
-  // ── 행사갤러리 전용 파서 ──────────────────────────────────
-  // 실제 HTML: <div class="photo_list"><ul><li>
-  //   <a href="javascript:" data-nm="nttSn" data-param="1801054282" title="제목" class="black selectNttInfo">
-  //     <div class="img"><span style="background-image:url(...)"></span></div>
-  //     <p class="txt">
-  //       <span class="lst_tit">제목</span>
-  //       <span class="date">2026.05.07</span>
-  //       <span class="date">조회수 : 10</span>
-  //     </p>
-  //   </a>
-  // </li></ul></div>
-  if (source === "gallery") {
-    $(".photo_list li").each((_, el) => {
-      const $el = $(el);
-      const $a = $el.find("a[data-nm='nttSn']").first();
-      if (!$a.length) return;
-
-      const nttSn = $a.attr("data-param") ?? "";
-      if (!nttSn || !DIGITS_ONLY_RE.test(nttSn)) return;
-      if (seen.has(nttSn)) return;
-
-      // 제목: span.lst_tit > a[title] 순
-      const title =
-        $a.find("span.lst_tit").text().trim() ||
-        ($a.attr("title") ?? "").trim();
-      if (!title) return;
-
-      // 날짜: span.date 중 DATE_RE 에 매칭되는 첫 번째 (조회수 span 건너뜀)
-      let date: string | null = null;
-      $a.find("span.date").each((_i, d) => {
-        if (date) return;
-        const dm = DATE_RE.exec($(d).text());
-        if (dm) {
-          date = `${dm[1]}-${dm[2].padStart(2, "0")}-${dm[3].padStart(2, "0")}`;
-        }
-      });
-      if (!date) {
-        const now = new Date();
-        date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-      }
-
-      seen.add(nttSn);
-      out.push({ source, title, date, ntt_sn: nttSn, original_url: buildDetailUrl(source, nttSn) });
-    });
-    return out;
-  }
-
-  // ── 테이블형 파서 (school / news / letter) ────────────────
+  // ── 테이블형 파서 (school / news / letter / gallery 공통) ────
   const TABLE_SEL = "table#myTable tbody tr, .bbs_ListA table tbody tr";
   const $items = $(TABLE_SEL).length ? $(TABLE_SEL) : $("table tbody tr");
 

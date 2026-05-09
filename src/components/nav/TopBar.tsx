@@ -90,9 +90,11 @@ function itemKey(item: NavItem): string {
 function itemCount(
   item: NavItem,
   counts: Partial<Record<BoardType, number>>,
+  noticeCounts: Record<string, number>,
 ): number | null {
-  // 학교공지 3종 등 외부 링크 항목은 카운트 미표시 (DB 카운트 없음)
-  return isBoardItem(item) ? counts[item.boardType] ?? 0 : null;
+  if (isBoardItem(item)) return counts[item.boardType] ?? 0;
+  const nc = noticeCounts[item.href];
+  return nc !== undefined ? nc : null;
 }
 
 const SINGLE_NAV = [{ href: "/profile", label: "내 프로필" }];
@@ -113,6 +115,7 @@ export function TopBar() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [counts, setCounts] = useState<Partial<Record<BoardType, number>>>({});
+  const [noticeCounts, setNoticeCounts] = useState<Record<string, number>>({});
   const [todayCount, setTodayCount] = useState(0);
   const [todayVisitors, setTodayVisitors] = useState<number | null>(null);
   const { unreadCount } = useNotifications();
@@ -139,6 +142,28 @@ export function TopBar() {
     getTodayPostCount().then((n) => {
       if (active) setTodayCount(n);
     });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // school_notices 소스별 카운트 — 메가메뉴 학교공지/문태소식/가정통신문/행사갤러리 숫자 배지용
+  useEffect(() => {
+    let active = true;
+    fetch("/api/school-notices?counts=true", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((json: unknown) => {
+        if (!active) return;
+        const j = json as { ok?: boolean; counts?: Record<string, number> };
+        if (j.ok && j.counts) {
+          const map: Record<string, number> = {};
+          for (const [source, count] of Object.entries(j.counts)) {
+            map[`/notices/${source}`] = count;
+          }
+          setNoticeCounts(map);
+        }
+      })
+      .catch(() => {});
     return () => {
       active = false;
     };
@@ -458,7 +483,7 @@ export function TopBar() {
                               <ul>
                                 {nav.items.map((item) => {
                                   const href = itemHref(item);
-                                  const cnt = itemCount(item, counts);
+                                  const cnt = itemCount(item, counts, noticeCounts);
                                   return (
                                     <li key={itemKey(item)}>
                                       <Link
@@ -532,7 +557,7 @@ export function TopBar() {
                 <ul className="space-y-1">
                   {nav.items.map((item) => {
                     const href = itemHref(item);
-                    const cnt = itemCount(item, counts);
+                    const cnt = itemCount(item, counts, noticeCounts);
                     const isActive = pathname.startsWith(href);
                     return (
                       <li key={itemKey(item)}>

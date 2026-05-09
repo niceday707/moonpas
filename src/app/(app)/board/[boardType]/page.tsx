@@ -91,6 +91,7 @@ import {
   type YoutubeCategory,
 } from "@/lib/board";
 import { ComingSoon } from "@/components/ui/ComingSoon";
+import { MobileBackButton } from "@/components/nav/MobileBackButton";
 import { NicknameButton } from "@/components/profile/NicknameButton";
 import { displayAuthorNameFor } from "@/lib/author-display";
 import { extractPostPreview } from "@/lib/parsePostContent";
@@ -546,18 +547,21 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
 
       {/* 헤더 — 인트로가 있으면 압축, 없으면 표준 */}
       <div className={cn("flex items-end justify-between", hasIntro ? "mt-2 mb-3" : "mb-4")}>
-        <div>
-          {!hasIntro && (
-            <>
-              <h1 className="text-xl font-extrabold text-gray-900 dark:text-white">
-                {BOARD_LABEL[boardType]}
-              </h1>
-              <p className="mt-1 text-xs text-gray-400">총 {total}개의 글</p>
-            </>
-          )}
-          {hasIntro && (
-            <p className="text-xs text-gray-400">총 {total}개의 글</p>
-          )}
+        <div className="flex min-w-0 items-center gap-2">
+          <MobileBackButton />
+          <div className="min-w-0">
+            {!hasIntro && (
+              <>
+                <h1 className="truncate text-xl font-extrabold text-gray-900 dark:text-white">
+                  {BOARD_LABEL[boardType]}
+                </h1>
+                <p className="mt-1 text-xs text-gray-400">총 {total}개의 글</p>
+              </>
+            )}
+            {hasIntro && (
+              <p className="text-xs text-gray-400">총 {total}개의 글</p>
+            )}
+          </div>
         </div>
         {canWrite ? (
           <Link

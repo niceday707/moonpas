@@ -40,6 +40,7 @@ import { Badge } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { AuthGate } from "@/components/auth/AuthGate";
+import { NicknameButton } from "@/components/profile/NicknameButton";
 import {
   BOARD_LABEL,
   MARKET_CONDITION_LABEL,
@@ -519,9 +520,12 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
             avatarUrl={post.author?.avatar_url ?? null}
             size="sm"
           />
-          <span className="font-semibold text-gray-700 dark:text-gray-200">
+          <NicknameButton
+            userId={post.author?.id ?? null}
+            className="font-semibold text-gray-700 dark:text-gray-200"
+          >
             {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
-          </span>
+          </NicknameButton>
           {shouldShowAuthorBadgeFor(post.board_type) && post.author && (
             <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
           )}
@@ -1214,9 +1218,12 @@ function CommentItem({
           avatarUrl={comment.author?.avatar_url ?? null}
           size="xs"
         />
-        <span className="font-semibold text-gray-700 dark:text-gray-200">
+        <NicknameButton
+          userId={comment.author?.id ?? null}
+          className="font-semibold text-gray-700 dark:text-gray-200"
+        >
           {displayAuthorNameFor({ boardType, author: comment.author })}
-        </span>
+        </NicknameButton>
         {shouldShowAuthorBadgeFor(boardType) && comment.author && (
           <Badge role={comment.author.role} className="text-[9px] py-0 px-1.5" />
         )}

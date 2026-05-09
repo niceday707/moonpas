@@ -31,6 +31,7 @@ import { uploadImage } from "@/lib/storage";
 import { relativeTime } from "@/lib/format";
 import { ShareButton } from "@/components/board/ShareButton";
 import { cn } from "@/lib/utils";
+import { MobileBackButton } from "@/components/nav/MobileBackButton";
 import { ANON_TAGS, parseAnonContent, getTagInfo, type AnonTagKey } from "./anon-utils";
 
 type SortType = "latest" | "popular" | "comments";
@@ -511,6 +512,13 @@ export default function AnonBoardPage() {
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <Stars />
         <div className="absolute right-8 top-8 text-5xl opacity-[0.12] select-none">🌙</div>
+      </div>
+
+      {/* 모바일 뒤로가기 — 다크 배경에 맞춰 색상 오버라이드 */}
+      <div className="relative px-3 pt-3 md:hidden">
+        <MobileBackButton
+          className="text-white/55 hover:bg-white/10 hover:text-white/85 dark:text-white/55 dark:hover:bg-white/10"
+        />
       </div>
 
       {/* ── 히어로 ── */}

@@ -5,16 +5,17 @@
 // 반응형 3-tier 레이아웃:
 //  · 모바일 (md 미만): 1컬럼 세로 스택
 //      급식 → 배너 → 문튜브 → 최신글 → 프로필/로그인 → 실시간검색 → HOT → 공지 → 바로가기
-//  · 태블릿 (md ~ lg 미만): 2단 (가운데 flex-1 | 우측 280px)
-//      가운데: 급식 → 배너 → 문튜브 → 최신글
+//  · 태블릿 (md ~ lg 미만): 배너(전체 너비) → 그 아래 2단 (가운데 flex-1 | 우측 280px)
+//      가운데: 급식 → 문튜브 → 최신글
 //      우측 : 프로필 → 실시간검색 → HOT → 공지 → 바로가기
-//  · 데스크톱 (lg 이상): 3단 (좌측 280px | 가운데 flex-1 | 우측 300px)
+//  · 데스크톱 (lg 이상): 배너(전체 너비) → 그 아래 3단 (좌측 280px | 가운데 flex-1 | 우측 300px)
 //      좌측 : 급식 (+ 추후 학사일정 캘린더)
-//      가운데: 배너 → 문튜브 → 최신글
+//      가운데: 문튜브 → 최신글
 //      우측 : 프로필 → 실시간검색 → HOT → 공지 → 바로가기
 //
-// 중복 렌더 방지를 위해 `md:hidden` / `hidden md:flex lg:hidden` / `hidden lg:flex`
-// 세 블록으로 명확히 분리. 배너는 가운데 컬럼 내부에 들어가며 전체 폭이 아니다.
+// 배너는 모바일에선 1컬럼 안에 인라인으로, md+ 에선 max-w-screen-xl 컨테이너 폭을 그대로 차지하는
+// 전체 너비 슬라이더로 노출된다. 중복 렌더 방지를 위해 모바일은 `md:hidden`, md+ 는 `hidden md:flex`
+// 래퍼로 분리되어 두 영역 중 한쪽에서만 BannerSlider 가 마운트된다.
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
@@ -1035,55 +1036,57 @@ export default function DashboardPage() {
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          태블릿 (md ~ lg 미만): 2단 — 가운데(flex-1) | 우측(280px)
-          급식은 가운데 컬럼 상단에 배치.
+          md+ 전용 래퍼 — 배너(전체 너비, max-w-screen-xl) + 그 아래 2단 또는 3단 레이아웃.
+          flex-col + gap-4 가 배너와 하위 컬럼 블록 사이의 세로 간격을 자동 처리한다.
+          (디스플레이가 none 인 형제는 flex 자식이 아니므로 gap 도 적용되지 않음.)
           ───────────────────────────────────────────────────────────── */}
-      <div className="hidden md:flex md:gap-5 lg:hidden">
-        {/* 가운데 메인 */}
-        <main className="flex min-w-0 flex-1 flex-col gap-4">
-          <MealCard />
-          <BannerSlider />
-          <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
-          <LatestFeedCard posts={latestPosts} loading={latestLoading} />
-        </main>
+      <div className="hidden md:flex md:flex-col md:gap-4">
+        {/* 배너 — md+ 에서 3단/2단 컬럼 위로 빠진 전체 너비 슬라이더 */}
+        <BannerSlider />
 
-        {/* 우측 사이드바 — 280px 고정 */}
-        <aside className="flex w-[280px] shrink-0 flex-col gap-4">
-          {profileOrLogin}
-          <TrendingSearchCard />
-          <HotPostsCard posts={hotPosts} loading={hotLoading} />
-          <NoticesCard posts={noticePosts} loading={noticeLoading} />
-          <ShortcutsCard />
-        </aside>
-      </div>
+        {/* 태블릿 (md ~ lg 미만): 2단 — 가운데(flex-1) | 우측(280px)
+            급식은 가운데 컬럼 상단에 배치. */}
+        <div className="flex gap-5 lg:hidden">
+          {/* 가운데 메인 */}
+          <main className="flex min-w-0 flex-1 flex-col gap-4">
+            <MealCard />
+            <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
+            <LatestFeedCard posts={latestPosts} loading={latestLoading} />
+          </main>
 
-      {/* ─────────────────────────────────────────────────────────────
-          데스크톱 (lg 이상): 3단 — 좌측(280px) | 가운데(flex-1) | 우측(300px)
-          좌측은 급식 + (추후 학사일정 캘린더 자리), 가운데는 배너/문튜브/최신글,
-          우측은 프로필 → 실시간검색 → HOT → 공지 → 바로가기.
-          ───────────────────────────────────────────────────────────── */}
-      <div className="hidden lg:flex lg:gap-5">
-        {/* 좌측 사이드바 — 280px 고정, lg 부터 노출 */}
-        <aside className="flex w-[280px] shrink-0 flex-col gap-4">
-          <MealCard />
-          {/* TODO: 학사일정 캘린더 위젯 자리 — 추후 추가 */}
-        </aside>
+          {/* 우측 사이드바 — 280px 고정 */}
+          <aside className="flex w-[280px] shrink-0 flex-col gap-4">
+            {profileOrLogin}
+            <TrendingSearchCard />
+            <HotPostsCard posts={hotPosts} loading={hotLoading} />
+            <NoticesCard posts={noticePosts} loading={noticeLoading} />
+            <ShortcutsCard />
+          </aside>
+        </div>
 
-        {/* 가운데 메인 */}
-        <main className="flex min-w-0 flex-1 flex-col gap-4">
-          <BannerSlider />
-          <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
-          <LatestFeedCard posts={latestPosts} loading={latestLoading} />
-        </main>
+        {/* 데스크톱 (lg+): 3단 — 좌측(280px, 급식) | 가운데(flex-1, 문튜브·최신글) | 우측(300px) */}
+        <div className="hidden lg:flex lg:gap-5">
+          {/* 좌측 사이드바 — 280px 고정, lg 부터 노출 */}
+          <aside className="flex w-[280px] shrink-0 flex-col gap-4">
+            <MealCard />
+            {/* TODO: 학사일정 캘린더 위젯 자리 — 추후 추가 */}
+          </aside>
 
-        {/* 우측 사이드바 — 300px 고정 */}
-        <aside className="flex w-[300px] shrink-0 flex-col gap-4">
-          {profileOrLogin}
-          <TrendingSearchCard />
-          <HotPostsCard posts={hotPosts} loading={hotLoading} />
-          <NoticesCard posts={noticePosts} loading={noticeLoading} />
-          <ShortcutsCard />
-        </aside>
+          {/* 가운데 메인 — 배너는 위로 빠졌으므로 문튜브 → 최신글 순서 */}
+          <main className="flex min-w-0 flex-1 flex-col gap-4">
+            <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
+            <LatestFeedCard posts={latestPosts} loading={latestLoading} />
+          </main>
+
+          {/* 우측 사이드바 — 300px 고정 */}
+          <aside className="flex w-[300px] shrink-0 flex-col gap-4">
+            {profileOrLogin}
+            <TrendingSearchCard />
+            <HotPostsCard posts={hotPosts} loading={hotLoading} />
+            <NoticesCard posts={noticePosts} loading={noticeLoading} />
+            <ShortcutsCard />
+          </aside>
+        </div>
       </div>
 
       {/* ── 외부 링크 배너 ── */}

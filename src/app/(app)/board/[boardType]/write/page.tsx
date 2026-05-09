@@ -14,8 +14,6 @@ import {
   MapPin,
   CalendarDays,
   GraduationCap,
-  Clock,
-  Users,
   PlayCircle,
   X,
 } from "lucide-react";
@@ -28,7 +26,6 @@ import {
   MARKET_CONDITION_LABEL,
   QA_SUBJECTS,
   RESOURCE_CATEGORIES,
-  STUDY_SUBJECTS,
   YOUTUBE_CATEGORIES,
   createPost,
   extractYoutubeId,
@@ -49,16 +46,20 @@ import {
   stringifyQaContent,
   stringifyResourceContent,
   stringifySeniorContent,
-  stringifyStudyContent,
   stringifyYoutubeContent,
   updatePost,
+  STUDY_GRADE_LABEL,
+  STUDY_POST_CATEGORY_LABEL,
+  STUDY_SUBJECT_TAG_LABEL,
   type AlumniCategory,
   type BoardType,
   type CareerTrack,
   type MarketCondition,
   type QaSubject,
   type ResourceCategory,
-  type StudySubject,
+  type StudyGrade,
+  type StudyPostCategory,
+  type StudySubjectTag,
   type YoutubeCategory,
 } from "@/lib/board";
 import { cn } from "@/lib/utils";
@@ -118,11 +119,11 @@ function WriteInner() {
   const [youtubeCategory, setYoutubeCategory] = useState<YoutubeCategory>("etc");
   // 자료실 전용 — 카테고리
   const [resourceCategory, setResourceCategory] = useState<ResourceCategory>("study");
-  // 스터디 전용
-  const [studySubject, setStudySubject] = useState<StudySubject>("etc");
-  const [studyMaxMembers, setStudyMaxMembers] = useState<number>(4);
-  const [studySchedule, setStudySchedule] = useState("");
-  const [studyLocation, setStudyLocation] = useState("");
+  // 신규 학습게시판 전용 — 학년 / 교과 / 글 종류. 모두 필수, 미선택 시 작성 불가.
+  // 구 스터디 모집 양식(과목/모집인원/시간대/장소) 은 023 마이그레이션 이후 폐기됨.
+  const [studyGrade, setStudyGrade] = useState<StudyGrade | "">("");
+  const [studySubjectTag, setStudySubjectTag] = useState<StudySubjectTag | "">("");
+  const [studyPostCategory, setStudyPostCategory] = useState<StudyPostCategory | "">("");
   // 졸업생(선배에게 물어봐) 전용
   const [alumniCategory, setAlumniCategory] =
     useState<AlumniCategory>("college-life");
@@ -193,12 +194,19 @@ function WriteInner() {
         setResourceCategory(parsed.category);
         setContent(parsed.description);
       } else if (post.board_type === "study") {
-        const parsed = parseStudyContent(post.content);
-        setStudySubject(parsed.subject);
-        setStudyMaxMembers(parsed.maxMembers);
-        setStudySchedule(parsed.schedule);
-        setStudyLocation(parsed.location);
-        setContent(parsed.description);
+        // 신규 학습게시판: content 는 plain text, 태그는 별도 컬럼.
+        // legacy 글(JSON content) 은 parseStudyContent 가 description 만 안전하게 추출 → 자연스럽게 plain 으로 보임.
+        // 단, 태그 컬럼이 모두 null 이라 새 양식에 맞춰 다시 선택해야 저장 가능.
+        const looksLegacy = post.content.trim().startsWith("{");
+        if (looksLegacy) {
+          const parsed = parseStudyContent(post.content);
+          setContent(parsed.description);
+        } else {
+          setContent(post.content);
+        }
+        if (post.grade) setStudyGrade(post.grade);
+        if (post.subject_tag) setStudySubjectTag(post.subject_tag);
+        if (post.post_category) setStudyPostCategory(post.post_category);
       } else if (post.board_type === "alumni") {
         const parsed = parseAlumniContent(post.content);
         setAlumniCategory(parsed.category);
@@ -408,16 +416,17 @@ function WriteInner() {
       }
     }
     if (isStudy) {
-      if (!Number.isFinite(studyMaxMembers) || studyMaxMembers < 1) {
-        setError("모집 인원은 1명 이상이어야 합니다.");
+      // 신규 학습게시판은 학년·교과·글 종류 3 개 모두 필수.
+      if (!studyGrade) {
+        setError("학년을 선택해주세요.");
         return;
       }
-      if (!studySchedule.trim()) {
-        setError("스터디 시간대를 입력해주세요.");
+      if (!studySubjectTag) {
+        setError("교과를 선택해주세요.");
         return;
       }
-      if (!studyLocation.trim()) {
-        setError("스터디 장소를 입력해주세요.");
+      if (!studyPostCategory) {
+        setError("글 종류를 선택해주세요.");
         return;
       }
     }
@@ -476,13 +485,8 @@ function WriteInner() {
           description: content,
         })
       : isStudy
-      ? stringifyStudyContent({
-          subject: studySubject,
-          maxMembers: studyMaxMembers,
-          schedule: studySchedule,
-          location: studyLocation,
-          description: content,
-        })
+      // 신규 학습게시판은 본문을 plain text 로 저장. 학년/교과/글 종류는 별도 컬럼으로.
+      ? content.trim()
       : isAlumni
       ? stringifyAlumniContent({
           category: alumniCategory,
@@ -556,6 +560,14 @@ function WriteInner() {
         imageUrl,
         fileUrl,
         fileName,
+        // 학습게시판만 태그 컬럼 포함, 그 외에는 undefined → 변경 없음.
+        ...(isStudy
+          ? {
+              grade: (studyGrade || null) as StudyGrade | null,
+              subjectTag: (studySubjectTag || null) as StudySubjectTag | null,
+              postCategory: (studyPostCategory || null) as StudyPostCategory | null,
+            }
+          : {}),
       });
       setSubmitting(false);
       if (e) {
@@ -572,6 +584,12 @@ function WriteInner() {
         imageUrl,
         fileUrl,
         fileName,
+        // 학습게시판은 입력값 그대로, 다른 board 는 undefined → DB 단에서 NULL.
+        grade: isStudy ? ((studyGrade || null) as StudyGrade | null) : undefined,
+        subjectTag: isStudy ? ((studySubjectTag || null) as StudySubjectTag | null) : undefined,
+        postCategory: isStudy
+          ? ((studyPostCategory || null) as StudyPostCategory | null)
+          : undefined,
       });
       setSubmitting(false);
       if (result.error || !result.id) {
@@ -781,80 +799,39 @@ function WriteInner() {
         )}
 
         {isStudy && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
-                과목
-              </label>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {STUDY_SUBJECTS.map((s) => {
-                  const active = studySubject === s.value;
-                  return (
-                    <button
-                      key={s.value}
-                      type="button"
-                      onClick={() => setStudySubject(s.value)}
-                      disabled={submitting}
-                      className={cn(
-                        "rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50",
-                        active
-                          ? "border-violet-500 bg-violet-500/15 text-violet-700 dark:text-violet-200"
-                          : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
-                      )}
-                    >
-                      {s.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div>
-              <label className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
-                <Users className="h-3 w-3" />
-                모집 인원
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={99}
-                value={studyMaxMembers}
-                onChange={(e) =>
-                  setStudyMaxMembers(Math.max(1, Math.min(99, Number(e.target.value) || 1)))
-                }
-                disabled={submitting}
-                className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
-                <Clock className="h-3 w-3" />
-                시간대
-              </label>
-              <input
-                type="text"
-                value={studySchedule}
-                onChange={(e) => setStudySchedule(e.target.value)}
-                placeholder="예) 매주 월/수 18-20시"
-                maxLength={60}
-                disabled={submitting}
-                className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
-                <MapPin className="h-3 w-3" />
-                장소
-              </label>
-              <input
-                type="text"
-                value={studyLocation}
-                onChange={(e) => setStudyLocation(e.target.value)}
-                placeholder="예) 도서관 3층 그룹실"
-                maxLength={60}
-                disabled={submitting}
-                className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
-              />
-            </div>
+          // 신규 학습게시판: 학년 / 교과 / 글 종류 3 개 모두 필수.
+          // 미선택은 "" 으로 보관, 제출 직전 검증에서 한국어 안내 메시지 노출.
+          <div className="grid gap-3 sm:grid-cols-3">
+            <StudyTagPicker
+              label="학년 (필수)"
+              value={studyGrade}
+              onChange={(v) => setStudyGrade(v as StudyGrade | "")}
+              options={(["1", "2", "3"] as StudyGrade[]).map((g) => ({
+                value: g,
+                label: STUDY_GRADE_LABEL[g],
+              }))}
+              disabled={submitting}
+            />
+            <StudyTagPicker
+              label="교과 (필수)"
+              value={studySubjectTag}
+              onChange={(v) => setStudySubjectTag(v as StudySubjectTag | "")}
+              options={(
+                ["korean", "english", "math", "social", "science", "etc"] as StudySubjectTag[]
+              ).map((s) => ({ value: s, label: STUDY_SUBJECT_TAG_LABEL[s] }))}
+              disabled={submitting}
+              wide
+            />
+            <StudyTagPicker
+              label="글 종류 (필수)"
+              value={studyPostCategory}
+              onChange={(v) => setStudyPostCategory(v as StudyPostCategory | "")}
+              options={(["question", "tip", "share"] as StudyPostCategory[]).map((c) => ({
+                value: c,
+                label: STUDY_POST_CATEGORY_LABEL[c],
+              }))}
+              disabled={submitting}
+            />
           </div>
         )}
 
@@ -1310,5 +1287,53 @@ function WriteInner() {
         </div>
       </div>
     </motion.div>
+  );
+}
+
+// ── 학습게시판 글쓰기 — 학년/교과/글 종류 picker ─────────────
+// "선택 안 함" 값은 ""(빈 문자열). 제출 검증에서 빈 값이면 안내 메시지 표시.
+function StudyTagPicker<V extends string>({
+  label,
+  value,
+  onChange,
+  options,
+  disabled,
+  wide,
+}: {
+  label: string;
+  value: V | "";
+  onChange: (v: V | "") => void;
+  options: { value: V; label: string }[];
+  disabled?: boolean;
+  /** 옵션이 많을 때 sm:col-span-2 부여 (교과 6 개 등) */
+  wide?: boolean;
+}) {
+  return (
+    <div className={wide ? "sm:col-span-2" : undefined}>
+      <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+        {label}
+      </label>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        {options.map((opt) => {
+          const active = opt.value === value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => onChange(active ? ("" as V | "") : opt.value)}
+              disabled={disabled}
+              className={cn(
+                "rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50",
+                active
+                  ? "border-violet-500 bg-violet-500/15 text-violet-700 dark:text-violet-200"
+                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+              )}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }

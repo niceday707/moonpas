@@ -29,7 +29,6 @@ import {
   Package,
   PlayCircle,
   FileText,
-  Clock,
   Users,
   Newspaper,
   GraduationCap,
@@ -46,7 +45,7 @@ import { CouncilIntro } from "@/components/board/CouncilIntro";
 import { NewsIntro } from "@/components/board/NewsIntro";
 import { ResourcesIntro } from "@/components/board/ResourcesIntro";
 import { SeniorIntro } from "@/components/board/SeniorIntro";
-import { StudyIntro } from "@/components/board/StudyIntro";
+// StudyIntro 는 신규 학습게시판 도입으로 제거 (구 스터디 모집 안내) — 잔존 import 제거.
 import { YoutubeIntro } from "@/components/board/YoutubeIntro";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
 import { cn } from "@/lib/utils";
@@ -57,7 +56,6 @@ import {
   QA_SUBJECTS,
   QA_SUBJECT_STYLE,
   RESOURCE_CATEGORY_STYLE,
-  STUDY_SUBJECT_STYLE,
   YOUTUBE_CATEGORY_STYLE,
   getAlumniCategoryLabel,
   getCareerTrackLabel,
@@ -65,7 +63,6 @@ import {
   getLikedPostIds,
   getQaSubjectLabel,
   getResourceCategoryLabel,
-  getStudySubjectLabel,
   getYoutubeCategoryLabel,
   listPosts,
   toggleLike,
@@ -76,9 +73,13 @@ import {
   parseQaContent,
   parseResourceContent,
   parseSeniorContent,
-  parseStudyContent,
   parseYoutubeContent,
   youtubeThumbUrl,
+  STUDY_GRADE_LABEL,
+  STUDY_POST_CATEGORY_LABEL,
+  STUDY_POST_CATEGORY_STYLE,
+  STUDY_SUBJECT_TAG_LABEL,
+  STUDY_SUBJECT_TAG_STYLE,
   type AlumniCategory,
   type BoardType,
   type CareerTrack,
@@ -87,7 +88,9 @@ import {
   type PostStatus,
   type QaSubject,
   type ResourceCategory,
-  type StudySubject,
+  type StudyGrade,
+  type StudyPostCategory,
+  type StudySubjectTag,
   type YoutubeCategory,
 } from "@/lib/board";
 import { ComingSoon } from "@/components/ui/ComingSoon";
@@ -99,12 +102,8 @@ import { extractPostPreview } from "@/lib/parsePostContent";
 const VALID_BOARDS = Object.keys(BOARD_LABEL) as BoardType[];
 
 // 준비 중 게시판 — TopBar 메뉴는 노출하되 클릭 시 ComingSoon 안내만 표시.
-// study 는 기존 board_type 이지만 학습게시판으로 재출시 예정이라 임시로 placeholder 처리.
+// study 는 023 마이그레이션 이후 정식 학습게시판으로 활성화됨 (COMING_SOON 에서 제거).
 const COMING_SOON_BOARDS: Record<string, { title: string; subtitle?: string }> = {
-  study: {
-    title: "학습게시판 📚",
-    subtitle: "함께 공부할 수 있는 학습게시판을 새롭게 준비하고 있어요.",
-  },
   who_am_i: {
     title: "누구일까요? 🕵️‍♂️",
     subtitle: "친구들과 추리로 즐기는 코너를 곧 오픈해요!",
@@ -315,8 +314,8 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
   const isNews = boardType === "news";
   const isAlumni = boardType === "alumni";
   const isSenior = boardType === "senior";
-  // 모집중/마감 필터를 지원하는 게시판 — lost/market 외에 study 도 active/resolved 상태 사용
-  const supportsStatusFilter = isLost || isMarket || isStudy;
+  // 모집중/마감 필터를 지원하는 게시판 — 분실물·나눔장터만 (구 study 모집은 폐기).
+  const supportsStatusFilter = isLost || isMarket;
 
   const { user, profile } = useSupabaseProfile();
   const role = (profile?.role ?? "") as string;
@@ -335,7 +334,10 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
   const [alumniCategoryFilter, setAlumniCategoryFilter] = useState<"" | AlumniCategory>("");
   const [seniorTrackFilter, setSeniorTrackFilter] = useState<CareerTrack>("science");
   const [youtubeCategoryFilter, setYoutubeCategoryFilter] = useState<"" | YoutubeCategory>("");
-  const [studySubjectFilter, setStudySubjectFilter] = useState<"" | StudySubject>("");
+  // 신규 학습게시판 — 학년 / 교과 태그 / 글 종류 ("" = 전체).
+  const [studyGradeFilter, setStudyGradeFilter] = useState<"" | StudyGrade>("");
+  const [studySubjectTagFilter, setStudySubjectTagFilter] = useState<"" | StudySubjectTag>("");
+  const [studyPostCategoryFilter, setStudyPostCategoryFilter] = useState<"" | StudyPostCategory>("");
 
   const [page, setPage] = useState(1);
   const [posts, setPosts] = useState<PostRow[]>([]);
@@ -361,7 +363,6 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     alumniCategoryFilter,
     seniorTrackFilter,
     youtubeCategoryFilter,
-    studySubjectFilter,
     boardType,
   ]);
 
@@ -383,14 +384,16 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
       contentLike = `%"track":"${seniorTrackFilter}"%`;
     } else if (isYoutube && youtubeCategoryFilter) {
       contentLike = `%"category":"${youtubeCategoryFilter}"%`;
-    } else if (isStudy && studySubjectFilter) {
-      contentLike = `%"subject":"${studySubjectFilter}"%`;
     }
 
     listPosts(boardType, page, {
       pinnedFirst: isNotice,
       status: supportsStatusFilter && statusFilter ? statusFilter : null,
       contentLike,
+      // 학습게시판 전용 — 다른 board 에서는 ""(전체) 라 필터 적용 안 됨.
+      grade: isStudy && studyGradeFilter ? studyGradeFilter : null,
+      subjectTag: isStudy && studySubjectTagFilter ? studySubjectTagFilter : null,
+      postCategory: isStudy && studyPostCategoryFilter ? studyPostCategoryFilter : null,
     }).then((res) => {
       if (!active) return;
       setPosts(res.posts);
@@ -410,6 +413,9 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     isSenior,
     isYoutube,
     isStudy,
+    studyGradeFilter,
+    studySubjectTagFilter,
+    studyPostCategoryFilter,
     supportsStatusFilter,
     statusFilter,
     qaSubjectFilter,
@@ -417,7 +423,6 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     alumniCategoryFilter,
     seniorTrackFilter,
     youtubeCategoryFilter,
-    studySubjectFilter,
   ]);
 
   // 챌린지 보드 진입 시 통계 fetch
@@ -508,8 +513,8 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     isSenior ||
     isYoutube ||
     isResources ||
-    isStudy ||
     isNews;
+    // 학습게시판은 자체 안내 배너 + 3 행 필터를 별도 슬롯에 렌더 — hasIntro 계산에선 제외.
 
   return (
     <motion.div
@@ -541,7 +546,14 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
         <ResourcesIntro selected={resourceFilter} onSelect={setResourceFilter} />
       )}
       {isStudy && (
-        <StudyIntro selected={studySubjectFilter} onSelect={setStudySubjectFilter} />
+        <StudyBoardHeader
+          gradeFilter={studyGradeFilter}
+          subjectFilter={studySubjectTagFilter}
+          categoryFilter={studyPostCategoryFilter}
+          onGradeChange={setStudyGradeFilter}
+          onSubjectChange={setStudySubjectTagFilter}
+          onCategoryChange={setStudyPostCategoryFilter}
+        />
       )}
       {isNews && <NewsIntro />}
 
@@ -676,7 +688,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
         <EmptyState
           boardType={boardType}
           canWrite={canWrite}
-          filtered={(supportsStatusFilter && !!statusFilter) || !!youtubeCategoryFilter || !!studySubjectFilter || !!resourceFilter}
+          filtered={(supportsStatusFilter && !!statusFilter) || !!youtubeCategoryFilter || !!resourceFilter || !!studyGradeFilter || !!studySubjectTagFilter || !!studyPostCategoryFilter}
         />
       ) : isLost ? (
         <LostGrid posts={posts} />
@@ -703,7 +715,8 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
       ) : isResources ? (
         <ResourceList posts={posts} />
       ) : isStudy ? (
-        <StudyGrid posts={posts} />
+        // 학습게시판은 표준 리스트 + 태그 뱃지 (DefaultList 가 post.grade/subject_tag/post_category 자동 표시)
+        <DefaultList posts={posts} boardType={boardType} highlightPinned={false} />
       ) : isNews ? (
         <NewsMagazine posts={posts} />
       ) : isAlumni ? (
@@ -738,6 +751,142 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
         </div>
       )}
     </motion.div>
+  );
+}
+
+// ── 학습게시판 안내 배너 + 3 행 필터 ─────────────────────────
+// 카테고리 헤더(목록 상단)에 한 번만 렌더. 각 행은 [전체] + 옵션 칩 들로 구성.
+const STUDY_GRADE_OPTIONS: { value: "" | StudyGrade; label: string }[] = [
+  { value: "", label: "전체" },
+  { value: "1", label: "1학년" },
+  { value: "2", label: "2학년" },
+  { value: "3", label: "3학년" },
+];
+const STUDY_SUBJECT_OPTIONS: { value: "" | StudySubjectTag; label: string }[] = [
+  { value: "", label: "전체" },
+  { value: "korean", label: "국어" },
+  { value: "english", label: "영어" },
+  { value: "math", label: "수학" },
+  { value: "social", label: "사회" },
+  { value: "science", label: "과학" },
+  { value: "etc", label: "기타" },
+];
+const STUDY_CATEGORY_OPTIONS: { value: "" | StudyPostCategory; label: string }[] = [
+  { value: "", label: "전체" },
+  { value: "question", label: "질문" },
+  { value: "tip", label: "꿀팁" },
+  { value: "share", label: "자료공유" },
+];
+
+function StudyBoardHeader({
+  gradeFilter,
+  subjectFilter,
+  categoryFilter,
+  onGradeChange,
+  onSubjectChange,
+  onCategoryChange,
+}: {
+  gradeFilter: "" | StudyGrade;
+  subjectFilter: "" | StudySubjectTag;
+  categoryFilter: "" | StudyPostCategory;
+  onGradeChange: (v: "" | StudyGrade) => void;
+  onSubjectChange: (v: "" | StudySubjectTag) => void;
+  onCategoryChange: (v: "" | StudyPostCategory) => void;
+}) {
+  return (
+    <div className="mb-4 space-y-3">
+      {/* 안내 배너 — 항상 표시, 닫기 버튼 없음 */}
+      <div className="rounded-2xl bg-violet-50/80 px-4 py-3 text-[12.5px] leading-relaxed text-violet-900 ring-1 ring-inset ring-violet-200/70 dark:bg-violet-500/[0.08] dark:text-violet-100/90 dark:ring-violet-400/15">
+        📚 혼자 고민하지 마세요! 질문하면 친구들이 답해주고, 꿀팁으로 서로 도움 주고,
+        자료공유로 좋은 자료를 함께 나눠요 🤝
+      </div>
+
+      {/* 3 행 필터 — 모바일에서는 가로 스크롤 */}
+      <div className="space-y-2">
+        <FilterRow
+          options={STUDY_GRADE_OPTIONS}
+          value={gradeFilter}
+          onChange={onGradeChange}
+        />
+        <FilterRow
+          options={STUDY_SUBJECT_OPTIONS}
+          value={subjectFilter}
+          onChange={onSubjectChange}
+        />
+        <FilterRow
+          options={STUDY_CATEGORY_OPTIONS}
+          value={categoryFilter}
+          onChange={onCategoryChange}
+        />
+      </div>
+    </div>
+  );
+}
+
+function FilterRow<V extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: V; label: string }[];
+  value: V;
+  onChange: (v: V) => void;
+}) {
+  return (
+    <div className="-mx-1 flex flex-nowrap items-center gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {options.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <button
+            key={opt.value || "_all"}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              "shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+              active
+                ? "bg-violet-600 text-white shadow-[0_2px_8px_rgba(124,58,237,0.35)]"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.12]",
+            )}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// 학습게시판 글 1 개의 [학년] [교과] [종류] 뱃지 묶음 — DefaultList 에서 호출.
+function StudyTagBadges({ post }: { post: PostRow }) {
+  if (!post.grade && !post.subject_tag && !post.post_category) return null;
+  return (
+    <span className="mr-1 inline-flex shrink-0 flex-wrap items-center gap-1">
+      {post.grade && (
+        <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-700 dark:bg-white/10 dark:text-gray-200">
+          {STUDY_GRADE_LABEL[post.grade]}
+        </span>
+      )}
+      {post.subject_tag && (
+        <span
+          className={cn(
+            "rounded px-1.5 py-0.5 text-[10px] font-bold",
+            STUDY_SUBJECT_TAG_STYLE[post.subject_tag],
+          )}
+        >
+          {STUDY_SUBJECT_TAG_LABEL[post.subject_tag]}
+        </span>
+      )}
+      {post.post_category && (
+        <span
+          className={cn(
+            "rounded px-1.5 py-0.5 text-[10px] font-bold",
+            STUDY_POST_CATEGORY_STYLE[post.post_category],
+          )}
+        >
+          {STUDY_POST_CATEGORY_LABEL[post.post_category]}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -785,6 +934,8 @@ function DefaultList({
                         중요
                       </span>
                     )}
+                    {/* 학습게시판 태그 뱃지 — 그 외 board 에서는 모두 null 이라 자동으로 미렌더 */}
+                    <StudyTagBadges post={post} />
                     <span className="truncate">{post.title}</span>
                     {fresh && (
                       <span className="shrink-0 rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[9px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
@@ -1773,118 +1924,9 @@ function ResourceRow({ post }: { post: PostRow }) {
   );
 }
 
-// ── 스터디 — 모집 카드 그리드 ─────────────────────────────
-function StudyGrid({ posts }: { posts: PostRow[] }) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {posts.map((post) => (
-        <StudyCard key={post.id} post={post} />
-      ))}
-    </div>
-  );
-}
-
-function StudyCard({ post }: { post: PostRow }) {
-  const info = useMemo(() => parseStudyContent(post.content), [post.content]);
-  const fresh = isNewPost(post.created_at);
-  const closed = post.status === "resolved";
-  // 댓글 수 = 모집된 인원 수 비슷한 의미로 활용 (작성자 + 댓글 단 사람)
-  // 단순화: comment_count + 1 (작성자) 를 가입 의사 표현 인원으로 가정. 상한은 maxMembers.
-  const joined = Math.min(info.maxMembers, post.comment_count + 1);
-  const full = !closed && joined >= info.maxMembers;
-
-  return (
-    <Link
-      href={`/board/study/${post.id}`}
-      className={cn(
-        "group relative flex h-full flex-col rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(16,185,129,0.18)] dark:bg-[#16162a]",
-        closed
-          ? "border-gray-200 opacity-60 dark:border-white/[0.05]"
-          : "border-gray-200 dark:border-white/[0.07]",
-      )}
-    >
-      {/* 카드 상단: 과목 뱃지 */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span
-          className={cn(
-            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
-            STUDY_SUBJECT_STYLE[info.subject],
-          )}
-        >
-          {getStudySubjectLabel(info.subject)}
-        </span>
-        {fresh && !closed && (
-          <span className="inline-flex items-center rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">
-            NEW
-          </span>
-        )}
-        <span className="ml-auto text-[10px] tabular-nums text-gray-400">
-          {formatDate(post.created_at)}
-        </span>
-      </div>
-
-      <p className="mt-2 line-clamp-1 text-base font-extrabold text-gray-900 dark:text-white">
-        {post.title}
-      </p>
-
-      {/* 정보 행: 인원 / 스케줄 / 장소 */}
-      <div className="mt-2 grid gap-1 text-[11px] text-gray-500 dark:text-gray-400">
-        <span className="flex items-center gap-1.5">
-          <Users className="h-3.5 w-3.5 text-emerald-500" />
-          <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">
-            {joined}/{info.maxMembers}명
-          </span>
-          {full && (
-            <span className="ml-1 rounded-md bg-rose-500/15 px-1.5 py-0.5 text-[9px] font-bold text-rose-600 ring-1 ring-inset ring-rose-500/30 dark:text-rose-300">
-              정원 마감
-            </span>
-          )}
-        </span>
-        {info.schedule && (
-          <span className="flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5 text-emerald-500" />
-            <span className="line-clamp-1">{info.schedule}</span>
-          </span>
-        )}
-        {info.location && (
-          <span className="flex items-center gap-1.5">
-            <MapPin className="h-3.5 w-3.5 text-emerald-500" />
-            <span className="line-clamp-1">{info.location}</span>
-          </span>
-        )}
-      </div>
-
-      {/* 하단: 작성자 + 상태 뱃지 */}
-      <div className="mt-auto flex items-center justify-between pt-3 text-[11px] text-gray-500">
-        <span className="flex items-center gap-1.5">
-          <span className="font-medium text-gray-700 dark:text-gray-300">
-            {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
-          </span>
-          {post.author && (
-            <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
-          )}
-        </span>
-        <span
-          className={cn(
-            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
-            closed
-              ? "bg-gray-500/15 text-gray-500 ring-gray-500/30 dark:text-gray-300"
-              : "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300",
-          )}
-        >
-          {closed ? "⬜ 마감" : "🟢 모집중"}
-        </span>
-      </div>
-
-      {/* 마감 오버레이 — 카드 위 대각선 워터마크 */}
-      {closed && (
-        <span className="pointer-events-none absolute right-3 top-3 rotate-6 rounded-md bg-gray-900/85 px-2 py-1 text-[10px] font-extrabold text-white shadow-lg ring-1 ring-white/10">
-          마감
-        </span>
-      )}
-    </Link>
-  );
-}
+// ── 구 스터디 모집 카드 그리드 — 신규 학습게시판 도입으로 제거 ─────
+// 23 마이그레이션 이후 study 게시판은 DefaultList + 학습 태그 뱃지로 표시.
+// 잔존 legacy 7 글은 동일하게 DefaultList 에서 제목만 노출 (태그 컬럼 NULL).
 
 // ── 문태뉴스 — 매거진 레이아웃 (히어로 + 가로형 카드) ────────
 function NewsMagazine({ posts }: { posts: PostRow[] }) {

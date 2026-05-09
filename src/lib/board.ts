@@ -61,6 +61,48 @@ export const BOARD_LABEL: Record<BoardType, string> = {
 // posts row + 작성자 join 결과
 export type PostStatus = "active" | "resolved";
 
+// ── 학습게시판(board_type='study') 태그 ───────────────────
+// DB CHECK 와 동일한 화이트리스트. UI 라벨은 STUDY_*_LABEL 맵 참고.
+export type StudyGrade = "1" | "2" | "3";
+export type StudySubjectTag = "korean" | "english" | "math" | "social" | "science" | "etc";
+export type StudyPostCategory = "question" | "tip" | "share";
+
+export const STUDY_GRADE_LABEL: Record<StudyGrade, string> = {
+  "1": "1학년",
+  "2": "2학년",
+  "3": "3학년",
+};
+export const STUDY_SUBJECT_TAG_LABEL: Record<StudySubjectTag, string> = {
+  korean: "국어",
+  english: "영어",
+  math: "수학",
+  social: "사회",
+  science: "과학",
+  etc: "기타",
+};
+export const STUDY_POST_CATEGORY_LABEL: Record<StudyPostCategory, string> = {
+  question: "질문",
+  tip: "꿀팁",
+  share: "자료공유",
+};
+
+/** 교과별 뱃지 색상 — 카드/필터 칩 공용 (Tailwind 클래스). */
+export const STUDY_SUBJECT_TAG_STYLE: Record<StudySubjectTag, string> = {
+  korean:  "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300",
+  english: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+  math:    "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
+  social:  "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+  science: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+  etc:     "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300",
+};
+
+/** 글 종류 뱃지 색상 — 질문=파란, 꿀팁=골드, 자료공유=초록. */
+export const STUDY_POST_CATEGORY_STYLE: Record<StudyPostCategory, string> = {
+  question: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+  tip:      "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200",
+  share:    "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+};
+
 export type PostRow = {
   id: string;
   /** anonymous 게시판은 빈 문자열로 마스킹 — 학번/이름/UUID 모두 노출 금지 */
@@ -89,6 +131,10 @@ export type PostRow = {
   comment_count: number;
   /** 본인 글 여부 — anonymous 게시판에서 author_id 가 마스킹돼도 isOwner 판별에 사용 */
   is_mine: boolean;
+  // 학습게시판 전용 — 그 외 board_type 에서는 항상 null.
+  grade: StudyGrade | null;
+  subject_tag: StudySubjectTag | null;
+  post_category: StudyPostCategory | null;
 };
 
 export type CommentRow = {
@@ -134,6 +180,7 @@ export type CommentRow = {
 const POST_SELECT = `
   id, author_id, board_type, title, content, image_url, file_url, file_name,
   view_count, like_count, is_pinned, status, vote_a, vote_b, created_at, updated_at,
+  grade, subject_tag, post_category,
   author:profiles!author_id ( id, nickname, role, avatar_url ),
   comments_aggregate:comments(count)
 `;
@@ -181,6 +228,9 @@ function normalizePost(raw: RawPost, currentUserId: string | null): PostRow {
     author: isAnon ? null : raw.author,
     comment_count: count,
     is_mine: isMine,
+    grade: (raw.grade as StudyGrade | null) ?? null,
+    subject_tag: (raw.subject_tag as StudySubjectTag | null) ?? null,
+    post_category: (raw.post_category as StudyPostCategory | null) ?? null,
   };
 }
 
@@ -322,6 +372,10 @@ export async function listPosts(
     contentLike?: string | null;
     /** 정렬 기준 — 기본 created_at DESC */
     sortBy?: "created_at" | "like_count";
+    // 학습게시판 전용 — null/undefined 면 필터 적용 안 함 ("전체" 의미).
+    grade?: StudyGrade | null;
+    subjectTag?: StudySubjectTag | null;
+    postCategory?: StudyPostCategory | null;
   },
 ): Promise<{ posts: PostRow[]; total: number }> {
   const from = (page - 1) * POSTS_PER_PAGE;
@@ -338,6 +392,16 @@ export async function listPosts(
 
   if (options?.contentLike) {
     query = query.ilike("content", options.contentLike);
+  }
+
+  if (options?.grade) {
+    query = query.eq("grade", options.grade);
+  }
+  if (options?.subjectTag) {
+    query = query.eq("subject_tag", options.subjectTag);
+  }
+  if (options?.postCategory) {
+    query = query.eq("post_category", options.postCategory);
   }
 
   if (options?.pinnedFirst) {
@@ -461,6 +525,10 @@ export async function createPost(input: {
   imageUrl?: string | null;
   fileUrl?: string | null;
   fileName?: string | null;
+  // 학습게시판(board_type='study') 전용 — 다른 board 에서는 무시.
+  grade?: StudyGrade | null;
+  subjectTag?: StudySubjectTag | null;
+  postCategory?: StudyPostCategory | null;
 }): Promise<{
   id: string | null;
   error: string | null;
@@ -481,6 +549,8 @@ export async function createPost(input: {
     hasFile: !!input.fileUrl,
   });
 
+  // 학습게시판 외에는 태그 컬럼을 반드시 NULL 로 INSERT — 잘못된 board 에서 태그가 새지 않도록 가드.
+  const isStudyBoard = input.boardType === "study";
   const { data, error } = await supabase
     .from("posts")
     .insert({
@@ -491,6 +561,9 @@ export async function createPost(input: {
       image_url: input.imageUrl ?? null,
       file_url: input.fileUrl ?? null,
       file_name: input.fileName ?? null,
+      grade: isStudyBoard ? (input.grade ?? null) : null,
+      subject_tag: isStudyBoard ? (input.subjectTag ?? null) : null,
+      post_category: isStudyBoard ? (input.postCategory ?? null) : null,
     })
     .select("id")
     .single();
@@ -536,6 +609,10 @@ export async function updatePost(
     imageUrl?: string | null;
     fileUrl?: string | null;
     fileName?: string | null;
+    // 학습게시판 전용 — 다른 board 의 수정에서는 그대로 undefined 로 두면 변경되지 않음.
+    grade?: StudyGrade | null;
+    subjectTag?: StudySubjectTag | null;
+    postCategory?: StudyPostCategory | null;
   },
 ): Promise<{ error: string | null }> {
   const update: Record<string, unknown> = {
@@ -547,6 +624,9 @@ export async function updatePost(
   if (patch.imageUrl !== undefined) update.image_url = patch.imageUrl;
   if (patch.fileUrl !== undefined) update.file_url = patch.fileUrl;
   if (patch.fileName !== undefined) update.file_name = patch.fileName;
+  if (patch.grade !== undefined) update.grade = patch.grade;
+  if (patch.subjectTag !== undefined) update.subject_tag = patch.subjectTag;
+  if (patch.postCategory !== undefined) update.post_category = patch.postCategory;
 
   const { error } = await supabase.from("posts").update(update).eq("id", postId);
 
@@ -1585,6 +1665,10 @@ function anonPostToPostRow(r: AnonPostRpc): PostRow {
     author: null,
     comment_count: r.comment_count,
     is_mine: r.is_mine,
+    // 익명 게시판은 학습게시판이 아니므로 학습 태그 컬럼은 항상 null.
+    grade: null,
+    subject_tag: null,
+    post_category: null,
   };
 }
 

@@ -639,7 +639,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
 
       {/* 졸업생 카테고리 필터는 AlumniIntro 카드에서 직접 처리 */}
 
-      {/* 상태 필터 (lost / market / study) */}
+      {/* 상태 필터 (lost / market) — 학습게시판은 모집 개념이 없어 status 필터 미사용 */}
       {supportsStatusFilter && (
         <div className="mb-4 flex flex-wrap gap-1.5">
           {(
@@ -647,15 +647,11 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
               { value: "", label: "전체" },
               {
                 value: "active",
-                label: isLost
-                  ? "찾는 중 🔴"
-                  : isStudy
-                  ? "모집중 🟢"
-                  : "나눔중 🟢",
+                label: isLost ? "찾는 중 🔴" : "나눔중 🟢",
               },
               {
                 value: "resolved",
-                label: isLost ? "찾았어요 🟢" : isStudy ? "마감" : "나눔완료",
+                label: isLost ? "찾았어요 🟢" : "나눔완료",
               },
             ] as Array<{ value: "" | PostStatus; label: string }>
           ).map((opt) => {
@@ -2316,8 +2312,8 @@ function EmptyState({
     },
     study: {
       Icon: Users,
-      message: "모집 중인 스터디가 없습니다",
-      hint: canWrite ? "첫 번째 스터디를 모집해보세요!" : undefined,
+      message: "아직 등록된 글이 없습니다",
+      hint: canWrite ? "질문·꿀팁·자료공유 글을 첫 번째로 올려보세요!" : undefined,
     },
     news: {
       Icon: Newspaper,

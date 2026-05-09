@@ -9,7 +9,6 @@ import {
   ArrowLeft,
   CalendarDays,
   CheckCircle2,
-  Clock,
   CornerDownRight,
   Download,
   Eye,
@@ -28,7 +27,6 @@ import {
   School,
   Share2,
   Trash2,
-  Users,
   Vote,
 } from "lucide-react";
 import {
@@ -46,14 +44,17 @@ import {
   MARKET_CONDITION_LABEL,
   QA_SUBJECT_STYLE,
   RESOURCE_CATEGORY_STYLE,
-  STUDY_SUBJECT_STYLE,
+  STUDY_GRADE_LABEL,
+  STUDY_POST_CATEGORY_LABEL,
+  STUDY_POST_CATEGORY_STYLE,
+  STUDY_SUBJECT_TAG_LABEL,
+  STUDY_SUBJECT_TAG_STYLE,
   deleteComment,
   deletePost,
   getPost,
   getQaSubjectLabel,
   getResourceCategoryLabel,
   getLikedPostIds,
-  getStudySubjectLabel,
   incrementViewCount,
   listComments,
   parseAlumniContent,
@@ -254,9 +255,6 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
     ? parseSeniorContent(post.content)
     : null;
   const answered = isQa && comments.length > 0;
-  const studyJoined = studyInfo
-    ? Math.min(studyInfo.maxMembers, comments.length + 1)
-    : 0;
   const totalVotes = post.vote_a + post.vote_b;
   const ratioA = totalVotes === 0 ? 50 : Math.round((post.vote_a / totalVotes) * 100);
   const ratioB = totalVotes === 0 ? 50 : 100 - ratioA;
@@ -468,27 +466,30 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
               {getResourceCategoryLabel(resourceInfo.category)}
             </span>
           )}
-          {isStudy && studyInfo && (
-            <>
-              <span
-                className={cn(
-                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
-                  STUDY_SUBJECT_STYLE[studyInfo.subject],
-                )}
-              >
-                {getStudySubjectLabel(studyInfo.subject)}
-              </span>
-              <span
-                className={cn(
-                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset",
-                  post.status === "resolved"
-                    ? "bg-gray-500/15 text-gray-500 ring-gray-500/30 dark:text-gray-300"
-                    : "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300",
-                )}
-              >
-                {post.status === "resolved" ? "마감" : "모집중"}
-              </span>
-            </>
+          {isStudy && post.grade && (
+            <span className="inline-flex items-center rounded-full bg-gray-500/15 px-2 py-0.5 text-[10px] font-bold text-gray-700 ring-1 ring-inset ring-gray-500/30 dark:text-gray-200">
+              {STUDY_GRADE_LABEL[post.grade]}
+            </span>
+          )}
+          {isStudy && post.subject_tag && (
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset ring-transparent",
+                STUDY_SUBJECT_TAG_STYLE[post.subject_tag],
+              )}
+            >
+              {STUDY_SUBJECT_TAG_LABEL[post.subject_tag]}
+            </span>
+          )}
+          {isStudy && post.post_category && (
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset ring-transparent",
+                STUDY_POST_CATEGORY_STYLE[post.post_category],
+              )}
+            >
+              {STUDY_POST_CATEGORY_LABEL[post.post_category]}
+            </span>
           )}
           {isAlumni && alumniInfo && (
             <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600 ring-1 ring-inset ring-amber-500/30 dark:text-amber-300">
@@ -605,26 +606,6 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
                 {post.status === "resolved" ? "다시 나눔중으로" : "나눔완료로 변경"}
               </button>
             )}
-            {isOwner && isStudy && (
-              <button
-                type="button"
-                onClick={handleToggleStatus}
-                disabled={togglingStatus}
-                className={cn(
-                  "flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition disabled:cursor-not-allowed disabled:opacity-50",
-                  post.status === "resolved"
-                    ? "border-emerald-300 text-emerald-600 hover:bg-emerald-50 dark:border-emerald-500/40 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
-                    : "border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/[0.05]",
-                )}
-              >
-                {togglingStatus ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="h-3 w-3" />
-                )}
-                {post.status === "resolved" ? "다시 모집중으로" : "마감하기"}
-              </button>
-            )}
             {isOwner && (
               <>
                 <Link
@@ -712,49 +693,6 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
           </div>
         )}
 
-        {/* 스터디 — 모집 정보 패널 */}
-        {isStudy && studyInfo && (
-          <div className="mt-4 grid gap-2 rounded-lg border border-gray-100 bg-gray-50/70 px-4 py-3 text-xs sm:grid-cols-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 shrink-0 text-violet-500" />
-              <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-                  모집 인원
-                </p>
-                <p className="mt-0.5 truncate text-sm text-gray-800 dark:text-gray-200 tabular-nums">
-                  {studyJoined}/{studyInfo.maxMembers}명
-                </p>
-              </div>
-            </div>
-            {studyInfo.schedule && (
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 shrink-0 text-violet-500" />
-                <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-                    시간대
-                  </p>
-                  <p className="mt-0.5 truncate text-sm text-gray-800 dark:text-gray-200">
-                    {studyInfo.schedule}
-                  </p>
-                </div>
-              </div>
-            )}
-            {studyInfo.location && (
-              <div className="flex items-center gap-2">
-                <MapPin className="h-4 w-4 shrink-0 text-violet-500" />
-                <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-                    장소
-                  </p>
-                  <p className="mt-0.5 truncate text-sm text-gray-800 dark:text-gray-200">
-                    {studyInfo.location}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* 선배의 한마디 — 대학/학과/요약 패널 */}
         {isSenior && seniorInfo && (
           <div className="mt-4 rounded-xl border border-gray-100 bg-gradient-to-br from-violet-50 to-cyan-50 p-4 dark:border-white/[0.06] dark:from-violet-500/[0.05] dark:to-cyan-500/[0.05]">
@@ -794,8 +732,9 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
             ? youtubeInfo.description
             : isResources && resourceInfo
             ? resourceInfo.description
-            : isStudy && studyInfo
-            ? studyInfo.description
+            : isStudy
+            // 학습게시판: 신규는 plain text, legacy(JSON content) 는 parseStudyContent 가 description 추출
+            ? (studyInfo ? studyInfo.description : extractPostBody(post.content, post.board_type))
             : isAlumni && alumniInfo
             ? alumniInfo.description
             : isSenior && seniorInfo

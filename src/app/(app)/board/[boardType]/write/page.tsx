@@ -806,7 +806,8 @@ function WriteInner() {
               label="학년 (필수)"
               value={studyGrade}
               onChange={(v) => setStudyGrade(v as StudyGrade | "")}
-              options={(["1", "2", "3"] as StudyGrade[]).map((g) => ({
+              // "전체" = 학년 무관 글 (예: 수능 일반 질문). 목록 필터의 "전체"(모두 보기)와는 의미가 다름.
+              options={(["all", "1", "2", "3"] as StudyGrade[]).map((g) => ({
                 value: g,
                 label: STUDY_GRADE_LABEL[g],
               }))}
@@ -1148,7 +1149,7 @@ function WriteInner() {
               : isResources
               ? "자료 설명"
               : isStudy
-              ? "스터디 소개"
+              ? "내용"
               : isAlumni
               ? "후배에게 한마디"
               : isSenior
@@ -1172,7 +1173,7 @@ function WriteInner() {
                 : isResources
                 ? "자료의 출처, 분량, 활용 팁을 적어주세요."
                 : isStudy
-                ? "어떤 사람과 어떻게 공부할지 자유롭게 적어주세요."
+                ? "질문·꿀팁·자료공유 내용을 자유롭게 적어주세요."
                 : isAlumni
                 ? "재학생들에게 들려주고 싶은 이야기를 자유롭게 적어주세요."
                 : isSenior

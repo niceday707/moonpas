@@ -46,7 +46,7 @@ export const BOARD_LABEL: Record<BoardType, string> = {
   qa: "Q&A",
   youtube: "문튜브",
   resources: "자료실",
-  study: "스터디",
+  study: "학습게시판",
   news: "뉴스",
   alumni: "졸업생",
   senior: "선배의 한마디",
@@ -63,11 +63,13 @@ export type PostStatus = "active" | "resolved";
 
 // ── 학습게시판(board_type='study') 태그 ───────────────────
 // DB CHECK 와 동일한 화이트리스트. UI 라벨은 STUDY_*_LABEL 맵 참고.
-export type StudyGrade = "1" | "2" | "3";
+// 'all' = 학년 무관 글 (예: 수능 일반 질문). 023 마이그레이션의 grade CHECK 도 'all' 추가.
+export type StudyGrade = "all" | "1" | "2" | "3";
 export type StudySubjectTag = "korean" | "english" | "math" | "social" | "science" | "etc";
 export type StudyPostCategory = "question" | "tip" | "share";
 
 export const STUDY_GRADE_LABEL: Record<StudyGrade, string> = {
+  all: "전체",
   "1": "1학년",
   "2": "2학년",
   "3": "3학년",

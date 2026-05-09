@@ -1,7 +1,7 @@
 -- 023_study_board_tags.sql
 --
 -- 학습게시판(board_type='study') 전용 태그 컬럼 3종.
---   · grade         : 학년 ('1' / '2' / '3' / NULL)
+--   · grade         : 학년 ('all' / '1' / '2' / '3' / NULL) — 'all' = 학년 무관 글 (예: 수능 일반 질문)
 --   · subject_tag   : 교과 ('korean' / 'english' / 'math' / 'social' / 'science' / 'etc' / NULL)
 --   · post_category : 글 종류 ('question' / 'tip' / 'share' / NULL)
 --
@@ -21,7 +21,7 @@ ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS post_category VARCHAR(10);
 ALTER TABLE public.posts DROP CONSTRAINT IF EXISTS posts_grade_chk;
 ALTER TABLE public.posts
   ADD CONSTRAINT posts_grade_chk
-  CHECK (grade IS NULL OR grade IN ('1', '2', '3'));
+  CHECK (grade IS NULL OR grade IN ('all', '1', '2', '3'));
 
 ALTER TABLE public.posts DROP CONSTRAINT IF EXISTS posts_subject_tag_chk;
 ALTER TABLE public.posts

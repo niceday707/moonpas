@@ -848,36 +848,34 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
           </div>
         )}
 
-        {/* 자유게시판 — 좋아요 토글 버튼 */}
-        {isFree && (
-          <div className="mt-5 flex items-center justify-center">
-            <button
-              type="button"
-              onClick={handleLike}
-              disabled={liking}
-              aria-pressed={liked}
-              aria-label={liked ? "좋아요 취소" : "좋아요"}
-              className={cn(
-                "flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
-                liked
-                  ? "border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300"
-                  : "border-gray-200 bg-white text-gray-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300",
-              )}
-            >
-              {liking ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Heart
-                  className={cn("h-4 w-4", liked && "fill-current")}
-                  strokeWidth={2.2}
-                />
-              )}
-              <span className="tabular-nums">
-                {liked ? "좋아요 취소" : "좋아요"} · {post.like_count.toLocaleString()}
-              </span>
-            </button>
-          </div>
-        )}
+        {/* 좋아요 토글 버튼 — 모든 게시판 */}
+        <div className="mt-5 flex items-center justify-center">
+          <button
+            type="button"
+            onClick={handleLike}
+            disabled={liking}
+            aria-pressed={liked}
+            aria-label={liked ? "좋아요 취소" : "좋아요"}
+            className={cn(
+              "flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
+              liked
+                ? "border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300"
+                : "border-gray-200 bg-white text-gray-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300",
+            )}
+          >
+            {liking ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Heart
+                className={cn("h-4 w-4", liked && "fill-current")}
+                strokeWidth={2.2}
+              />
+            )}
+            <span className="tabular-nums">
+              {liked ? "좋아요 취소" : "좋아요"} · {post.like_count.toLocaleString()}
+            </span>
+          </button>
+        </div>
 
         {/* PDF 다운로드 */}
         {post.file_url && (

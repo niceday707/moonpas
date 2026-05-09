@@ -109,12 +109,25 @@ export function TopBar() {
   const pathname = usePathname();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [counts, setCounts] = useState<Partial<Record<BoardType, number>>>({});
   const [todayCount, setTodayCount] = useState(0);
   const [todayVisitors, setTodayVisitors] = useState<number | null>(null);
   const { unreadCount } = useNotifications();
+
+  // localStorage 에서 열림 카테고리 복원 (마운트 1회)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("menu-open-categories");
+      if (saved) {
+        const arr = JSON.parse(saved) as string[];
+        setExpanded(new Set(arr));
+      }
+    } catch {
+      // 파싱 실패 무시
+    }
+  }, []);
 
   // Supabase posts 테이블에서 board_type 별 카운트 + 오늘 작성된 글 수 (마운트 1회)
   useEffect(() => {
@@ -170,7 +183,24 @@ export function TopBar() {
 
   const closeMenu = () => {
     setMenuOpen(false);
-    setExpanded(null);
+    // expanded 상태는 유지 — 다시 열었을 때 복원
+  };
+
+  const toggleCategory = (label: string) => {
+    setExpanded((cur) => {
+      const next = new Set(cur);
+      if (next.has(label)) {
+        next.delete(label);
+      } else {
+        next.add(label);
+      }
+      try {
+        localStorage.setItem("menu-open-categories", JSON.stringify([...next]));
+      } catch {
+        // 스토리지 쓰기 실패 무시
+      }
+      return next;
+    });
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -398,16 +428,12 @@ export function TopBar() {
 
                   {/* 메가 메뉴 그룹 */}
                   {MEGA_NAV.map((nav) => {
-                    const isExpanded = expanded === nav.label;
+                    const isExpanded = expanded.has(nav.label);
                     return (
                       <div key={nav.label} className="border-t border-gray-100 dark:border-white/[0.05]">
                         <button
                           type="button"
-                          onClick={() =>
-                            setExpanded((cur) =>
-                              cur === nav.label ? null : nav.label,
-                            )
-                          }
+                          onClick={() => toggleCategory(nav.label)}
                           className="flex min-h-[52px] w-full items-center justify-between px-5 py-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/[0.03]"
                         >
                           {nav.label}

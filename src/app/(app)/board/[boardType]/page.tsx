@@ -106,7 +106,7 @@ const COMING_SOON_BOARDS: Record<string, { title: string; subtitle?: string }> =
     subtitle: "함께 공부할 수 있는 학습게시판을 새롭게 준비하고 있어요.",
   },
   who_am_i: {
-    title: "누구일까요? 🎭",
+    title: "누구일까요? 🕵️‍♂️",
     subtitle: "친구들과 추리로 즐기는 코너를 곧 오픈해요!",
   },
   campus_story: {

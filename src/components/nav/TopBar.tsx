@@ -27,32 +27,35 @@ function isBoardItem(item: NavItem): item is BoardNavItem {
   return "boardType" in item;
 }
 
+// 라벨 정책: 카테고리 헤더에는 포인트 이모지를 1개씩, 메뉴 항목에는
+// 학습게시판/문태에타/누구일까요/오늘의 생일 4 개에만 이모지 유지.
+// 나머지는 텍스트만으로 깔끔하게 — 불필요한 이모지 추가 금지.
 const MEGA_NAV: NavGroup[] = [
   {
-    label: "커뮤니티",
+    label: "커뮤니티 🫧",
     items: [
       // 학습게시판: 기존 study board_type 재활용 (스터디 게시글은 별도 SQL 마이그레이션 예정).
       { boardType: "study", label: "학습게시판 📚" },
       { boardType: "challenge", label: "챌린지" },
-      { boardType: "anonymous", label: "문태에타 🔥" },
+      { boardType: "anonymous", label: "문태에타 🌙" },
       { boardType: "free", label: "자유게시판" },
       { boardType: "market", label: "나눔장터" },
       { boardType: "lost", label: "분실물센터" },
     ],
   },
   {
-    label: "문태 이벤트 🎉",
+    label: "문태 이벤트 ✨",
     items: [
       { boardType: "event_quiz", label: "오늘의 퀴즈" },
       // who_am_i: 신규 board_type, 준비 중 안내 페이지로 분기.
-      { boardType: "who_am_i" as BoardType, label: "누구일까요? 🎭" },
+      { boardType: "who_am_i" as BoardType, label: "누구일까요? 🕵️‍♂️" },
       { boardType: "event_praise", label: "칭찬합시다" },
       { boardType: "event_member", label: "회원 참여방" },
       { href: "/birthday", label: "오늘의 생일 🎂" },
     ],
   },
   {
-    label: "재학생",
+    label: "재학생 🎧",
     items: [
       { href: "/timetable", label: "시간표" },
       { boardType: "youtube", label: "문튜브" },
@@ -64,7 +67,7 @@ const MEGA_NAV: NavGroup[] = [
     ],
   },
   {
-    label: "문태교우",
+    label: "문태교우 🪐",
     items: [
       // campus_story / insight: 신규 board_type, 준비 중 안내 페이지로 분기.
       { boardType: "campus_story" as BoardType, label: "캠퍼스 스토리" },
@@ -74,7 +77,7 @@ const MEGA_NAV: NavGroup[] = [
     ],
   },
   {
-    label: "학교알림",
+    label: "학교알림 🔔",
     items: [
       // 학교 홈페이지 공지 3종 — /notices/{source} 내부 페이지가 크롤링 결과를 보여준다.
       { href: "/notices/school", label: "학교공지" },

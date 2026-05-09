@@ -91,6 +91,7 @@ import {
   type YoutubeCategory,
 } from "@/lib/board";
 import { displayAuthorNameFor } from "@/lib/author-display";
+import { extractPostPreview } from "@/lib/parsePostContent";
 
 const VALID_BOARDS = Object.keys(BOARD_LABEL) as BoardType[];
 
@@ -117,9 +118,16 @@ function relativeTime(iso: string): string {
   return formatDate(iso);
 }
 
-/** 자유게시판 카드 — 본문 미리보기에서 hashtag/url 같은 잡음 제거 없이 단순 truncate */
-function previewText(content: string, max = 120): string {
-  return content.replace(/\s+/g, " ").trim().slice(0, max);
+/**
+ * 미리보기 텍스트 — 게시판별 JSON 본문은 parsePostContent 가 표시 텍스트만 추출.
+ * (free/news 처럼 plain text 보드여도 방어적으로 같은 경로를 사용)
+ */
+function previewText(
+  content: string,
+  boardType: BoardType,
+  max = 120,
+): string {
+  return extractPostPreview(content, { boardType, max });
 }
 
 export default function BoardListPage() {
@@ -1304,7 +1312,7 @@ function FreeCard({
 }) {
   const popular = post.like_count >= POPULAR_LIKES_THRESHOLD;
   const fresh = isNewPost(post.created_at);
-  const preview = previewText(post.content, 140);
+  const preview = previewText(post.content, post.board_type, 140);
 
   return (
     <li>
@@ -1855,7 +1863,7 @@ function NewsMagazine({ posts }: { posts: PostRow[] }) {
 
 function NewsHero({ post }: { post: PostRow }) {
   const fresh = isNewPost(post.created_at);
-  const preview = previewText(post.content, 180);
+  const preview = previewText(post.content, post.board_type, 180);
   return (
     <Link
       href={`/board/news/${post.id}`}
@@ -1928,7 +1936,7 @@ function NewsHero({ post }: { post: PostRow }) {
 
 function NewsRow({ post }: { post: PostRow }) {
   const fresh = isNewPost(post.created_at);
-  const preview = previewText(post.content, 120);
+  const preview = previewText(post.content, post.board_type, 120);
   return (
     <li>
       <Link
@@ -2024,7 +2032,8 @@ const ALUMNI_CATEGORY_STYLE: Record<string, string> = {
 function AlumniRow({ post }: { post: PostRow }) {
   const info = useMemo(() => parseAlumniContent(post.content), [post.content]);
   const fresh = isNewPost(post.created_at);
-  const preview = previewText(info.description, 140);
+  // info.description 은 이미 plain text — boardType 은 alumni 로 명시 (시그니처 일치용)
+  const preview = previewText(info.description, "alumni", 140);
   const isAlumniRole = post.author?.role === "alumni";
   const catStyle =
     ALUMNI_CATEGORY_STYLE[info.category] ?? ALUMNI_CATEGORY_STYLE["college-life"];

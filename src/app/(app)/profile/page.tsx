@@ -29,6 +29,7 @@ import {
   type UserCommentRow,
   type UserStats,
 } from "@/lib/board";
+import { extractPostPreview } from "@/lib/parsePostContent";
 import {
   pickDisplayName,
   saveAvatarUrl,
@@ -443,11 +444,6 @@ function formatRelative(iso: string): string {
   ).padStart(2, "0")}`;
 }
 
-function previewText(content: string, max = 140): string {
-  // 게시판별 JSON 본문도 있을 수 있어, 단순 문자열 truncate 만 수행.
-  return content.replace(/\s+/g, " ").trim().slice(0, max);
-}
-
 function MyPostList({ posts }: { posts: PostRow[] | null }) {
   if (posts === null) return <SkeletonList />;
   if (posts.length === 0) return <EmptyState text="아직 쓴 글이 없어요" />;
@@ -469,7 +465,11 @@ function MyPostList({ posts }: { posts: PostRow[] | null }) {
               {p.title}
             </p>
             <p className="mt-1 line-clamp-2 text-xs text-foreground/60">
-              {previewText(p.content, 140)}
+              {/* 게시판별 JSON 본문은 extractPostPreview 가 표시 텍스트만 추출 */}
+              {extractPostPreview(p.content, {
+                boardType: p.board_type,
+                max: 140,
+              })}
             </p>
             <div className="mt-2 flex items-center gap-3 text-[11px] text-foreground/55">
               <span className="inline-flex items-center gap-1">

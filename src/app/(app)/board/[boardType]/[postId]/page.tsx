@@ -85,6 +85,7 @@ import {
   displayAuthorNameFor,
   shouldShowAuthorBadgeFor,
 } from "@/lib/author-display";
+import { extractPostBody } from "@/lib/parsePostContent";
 import {
   getVote,
   recordVote,
@@ -787,7 +788,9 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
             ? alumniInfo.description
             : isSenior && seniorInfo
             ? seniorInfo.review
-            : post.content}
+            : /* 그 외 보드(자유/공지/뉴스/챌린지 등)는 plain text 가 정상 — 혹시
+                 과거에 JSON 으로 저장된 행이 있더라도 raw JSON 노출되지 않게 추출 */
+              extractPostBody(post.content, post.board_type)}
         </div>
 
         {/* 이슈 토론 — 투표 UI */}

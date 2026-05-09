@@ -21,7 +21,19 @@ import { Badge } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { cn } from "@/lib/utils";
 
-export type ReplyTarget = { id: string; label: string };
+/**
+ * 답글 대상.
+ *   id            : DB 에 저장될 parent_id — 항상 "최상위 댓글의 id" 여야 한다.
+ *                   답글의 답글이라도 호출 측이 root 로 평탄화해서 넘겨준다.
+ *   label         : 입력창에 자동 삽입될 "@라벨 " 의 라벨. 대상 닉네임/익명N 모두 가능.
+ *   mentionUserId : "@닉네임" 으로 호명된 실제 사용자의 id (구조화 포인터, 선택).
+ *                   익명 게시판은 항상 null.
+ */
+export type ReplyTarget = {
+  id: string;
+  label: string;
+  mentionUserId?: string | null;
+};
 
 type Props = {
   postId: string;
@@ -64,7 +76,10 @@ export function CommentComposer({
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [caret, setCaret] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const lastReplyId = useRef<string | null>(null);
+  // 인스타 스타일 평탄화 답글에서는 여러 답글이 같은 parent_id(=root) 를 공유하므로,
+  // id 가 아닌 (id + label + mentionUserId) 합성 키로 prefix 재삽입 여부를 판단해야
+  // 같은 루트 안 다른 답글 버튼을 눌렀을 때 "@닉네임 " 이 갱신된다.
+  const lastReplyKey = useRef<string | null>(null);
 
   // ── 멘션 검색 상태 ────────────────────────────────────────
   const [mentionResults, setMentionResults] = useState<MentionUser[]>([]);
@@ -103,11 +118,12 @@ export function CommentComposer({
   // ── 답글 타겟 변경 → "@닉네임 " 프리픽스 자동 입력 + 포커스 ──
   useEffect(() => {
     if (!replyTo) {
-      lastReplyId.current = null;
+      lastReplyKey.current = null;
       return;
     }
-    if (lastReplyId.current === replyTo.id) return;
-    lastReplyId.current = replyTo.id;
+    const key = `${replyTo.id}::${replyTo.label}::${replyTo.mentionUserId ?? ""}`;
+    if (lastReplyKey.current === key) return;
+    lastReplyKey.current = key;
     const prefix = `@${replyTo.label} `;
     setText((curr) => {
       const stripped = curr.replace(/^@\S+\s+/, "");
@@ -199,6 +215,7 @@ export function CommentComposer({
       postId,
       content: t,
       parentId: replyTo?.id ?? null,
+      mentionUserId: replyTo?.mentionUserId ?? null,
     });
     setBusy(false);
     if (error) {

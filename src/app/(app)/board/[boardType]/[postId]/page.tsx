@@ -944,7 +944,54 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
   );
 }
 
-// 댓글 + 대댓글 트리. 답글 1단계까지만 허용. 입력은 페이지 하단 고정 컴포저에서 처리.
+/**
+ * 댓글 트리 평탄화.
+ *   - parent_id 가 NULL → 루트 댓글
+ *   - parent_id 가 다른 댓글 → 답글. 답글의 답글(레거시 데이터)도 root 까지 거슬러 올라감.
+ *   - 결과: rootId(루트 댓글) → 모든 후손 답글의 평탄 배열 (시간순)
+ */
+function buildCommentTree(comments: CommentRow[]) {
+  const byId = new Map<string, CommentRow>();
+  for (const c of comments) byId.set(c.id, c);
+
+  const findRoot = (id: string): string => {
+    let cur = id;
+    const seen = new Set<string>();
+    while (true) {
+      if (seen.has(cur)) return cur; // 사이클 방지
+      seen.add(cur);
+      const c = byId.get(cur);
+      if (!c || !c.parent_id) return cur;
+      cur = c.parent_id;
+    }
+  };
+
+  const roots: CommentRow[] = [];
+  const repliesByRoot = new Map<string, CommentRow[]>();
+  for (const c of comments) {
+    if (!c.parent_id) {
+      roots.push(c);
+      continue;
+    }
+    const rootId = findRoot(c.parent_id);
+    const arr = repliesByRoot.get(rootId) ?? [];
+    arr.push(c);
+    repliesByRoot.set(rootId, arr);
+  }
+  // 동일 root 내 답글은 created_at 순 (listComments 가 ASC 로 가져오지만 안전하게 재정렬)
+  for (const arr of repliesByRoot.values()) {
+    arr.sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+  }
+  return { roots, repliesByRoot };
+}
+
+/**
+ * 인스타그램 스타일 댓글 트리.
+ *   - 답글은 들여쓰기 1단계로 평탄하게 시간순 정렬
+ *   - 모든 댓글(루트 + 답글)에 "답글" 버튼 노출
+ *   - 답글의 답글 등록 시 parent_id 는 항상 root 의 id
+ *   - 답글이 3개 초과면 기본 2개만 보이고 "답글 N개 더 보기" 토글
+ */
 function CommentsSection({
   comments,
   currentUserId,
@@ -964,15 +1011,7 @@ function CommentsSection({
   onReply: (target: ReplyTarget) => void;
   endRef: React.RefObject<HTMLDivElement>;
 }) {
-  // parent_id 기준으로 분리
-  const topLevel = comments.filter((c) => !c.parent_id);
-  const repliesByParent = new Map<string, CommentRow[]>();
-  for (const c of comments) {
-    if (!c.parent_id) continue;
-    const arr = repliesByParent.get(c.parent_id) ?? [];
-    arr.push(c);
-    repliesByParent.set(c.parent_id, arr);
-  }
+  const { roots, repliesByRoot } = buildCommentTree(comments);
 
   return (
     <section className="mt-5 rounded-xl border border-gray-200 bg-white p-4 dark:border-white/[0.07] dark:bg-[#16162a]">
@@ -980,7 +1019,7 @@ function CommentsSection({
         {isQa ? `답변 ${comments.length}` : `댓글 ${comments.length}`}
       </h2>
 
-      {topLevel.length === 0 ? (
+      {roots.length === 0 ? (
         <p className="mt-3 text-xs text-gray-400">
           {isQa
             ? "아직 답변이 없어요. 아는 분이 첫 답변을 남겨보세요!"
@@ -988,41 +1027,41 @@ function CommentsSection({
         </p>
       ) : (
         <ul className="mt-3 divide-y divide-gray-100 dark:divide-white/[0.04]">
-          {topLevel.map((c) => {
-            const replies = repliesByParent.get(c.id) ?? [];
-            const isActiveTarget = replyTargetId === c.id;
-            const replyLabel = displayAuthorNameFor({
+          {roots.map((root) => {
+            const replies = repliesByRoot.get(root.id) ?? [];
+            const rootLabel = displayAuthorNameFor({
               boardType,
-              author: c.author,
+              author: root.author,
             });
             return (
-              <li key={c.id} className="py-3">
+              <li key={root.id} className="py-3">
                 <CommentItem
-                  comment={c}
+                  comment={root}
                   boardType={boardType}
                   currentUserId={currentUserId}
                   onDeleted={onChanged}
                   replyButton={{
                     count: replies.length,
-                    active: isActiveTarget,
-                    onClick: () => onReply({ id: c.id, label: replyLabel }),
+                    active: replyTargetId === root.id,
+                    onClick: () =>
+                      onReply({
+                        id: root.id, // 루트의 id 가 곧 parent_id 로 저장됨
+                        label: rootLabel,
+                        mentionUserId: root.author?.id ?? null,
+                      }),
                   }}
                 />
 
-                {/* 대댓글 — 들여쓰기 + 좌측 보라 세로줄 */}
+                {/* 답글 영역 — 들여쓰기 1단계로 평탄. 시간순. 3개 초과면 접기 */}
                 {replies.length > 0 && (
-                  <div className="mt-2 ml-4 border-l-2 border-violet-500/40 pl-3 md:ml-6 md:pl-4">
-                    {replies.map((r) => (
-                      <CommentItem
-                        key={r.id}
-                        comment={r}
-                        boardType={boardType}
-                        currentUserId={currentUserId}
-                        onDeleted={onChanged}
-                        isReply
-                      />
-                    ))}
-                  </div>
+                  <RepliesList
+                    replies={replies}
+                    rootId={root.id}
+                    boardType={boardType}
+                    currentUserId={currentUserId}
+                    onChanged={onChanged}
+                    onReply={onReply}
+                  />
                 )}
               </li>
             );
@@ -1033,6 +1072,81 @@ function CommentsSection({
       {/* 자동 스크롤용 sentinel — 새 댓글 등록 시 이 지점으로 스크롤 */}
       <div ref={endRef} aria-hidden style={{ scrollMarginBottom: "9rem" }} />
     </section>
+  );
+}
+
+/** 한 루트 댓글의 답글 리스트 — 3개 초과 시 기본 2개만 보이고 토글로 펼침. */
+function RepliesList({
+  replies,
+  rootId,
+  boardType,
+  currentUserId,
+  onChanged,
+  onReply,
+}: {
+  replies: CommentRow[];
+  rootId: string;
+  boardType: BoardType;
+  currentUserId: string | null;
+  onChanged: () => Promise<void>;
+  onReply: (target: ReplyTarget) => void;
+}) {
+  const COLLAPSE_THRESHOLD = 3; // 이 개수 초과면 접기 사용
+  const COLLAPSED_VISIBLE = 2; // 접혔을 때 보이는 개수
+  const [expanded, setExpanded] = useState(false);
+  const overflow = replies.length > COLLAPSE_THRESHOLD;
+  const visible =
+    overflow && !expanded ? replies.slice(-COLLAPSED_VISIBLE) : replies;
+  const hiddenCount = replies.length - visible.length;
+
+  return (
+    <div className="mt-2 ml-4 border-l-2 border-violet-500/40 pl-3 md:ml-6 md:pl-4">
+      {overflow && !expanded && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="mb-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold text-violet-600 transition-colors hover:bg-violet-500/10 dark:text-violet-300"
+        >
+          <CornerDownRight className="h-3 w-3" />
+          답글 {hiddenCount}개 더 보기
+        </button>
+      )}
+      {visible.map((r) => {
+        const replyLabel = displayAuthorNameFor({
+          boardType,
+          author: r.author,
+        });
+        return (
+          <CommentItem
+            key={r.id}
+            comment={r}
+            boardType={boardType}
+            currentUserId={currentUserId}
+            onDeleted={onChanged}
+            isReply
+            replyButton={{
+              count: 0, // 답글의 답글 수는 노출하지 않음 (모두 같은 root 아래에 평탄화)
+              active: false,
+              onClick: () =>
+                onReply({
+                  id: rootId, // 핵심 — root 의 id 가 parent_id 로 저장
+                  label: replyLabel,
+                  mentionUserId: r.author?.id ?? null,
+                }),
+            }}
+          />
+        );
+      })}
+      {overflow && expanded && (
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold text-gray-500 transition-colors hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+        >
+          답글 접기
+        </button>
+      )}
+    </div>
   );
 }
 

@@ -133,18 +133,27 @@ function CommentCard({
   comment,
   anonMap,
   isReply,
+  rootId,
   onReply,
   onDelete,
 }: {
   comment: CommentRow;
   anonMap: Map<string, number>;
   isReply?: boolean;
-  onReply?: (id: string, label: string) => void;
+  /**
+   * 이 댓글이 속한 root 댓글의 id.
+   * 답글의 답글을 등록할 때도 parent_id 는 root 의 id 를 사용해야 하므로 별도 전달.
+   */
+  rootId: string;
+  onReply?: (rootId: string, label: string) => void;
   onDelete: (id: string) => void;
 }) {
   const label = getAnonLabel(comment, anonMap);
   const isPostAuthor = comment.is_post_author;
   const isOwn = comment.is_mine;
+
+  // 본문 앞쪽의 "@익명N " 멘션 토큰을 violet 으로 강조 (인스타 스타일)
+  const mentionMatch = comment.content.match(/^(@\S+)\s+([\s\S]*)$/);
 
   return (
     <motion.div
@@ -173,12 +182,21 @@ function CommentCard({
             )}
             <span className="text-[11px] text-white/30 ml-auto">{relativeTime(comment.created_at)}</span>
           </div>
-          <p className="text-sm leading-relaxed text-white/75 whitespace-pre-line">{comment.content}</p>
+          <p className="text-sm leading-relaxed text-white/75 whitespace-pre-line">
+            {mentionMatch ? (
+              <>
+                <span className="font-bold text-violet-300">{mentionMatch[1]}</span>{" "}
+                {mentionMatch[2]}
+              </>
+            ) : (
+              comment.content
+            )}
+          </p>
           <div className="mt-1.5 flex items-center gap-3">
             {onReply && (
               <button
                 type="button"
-                onClick={() => onReply(comment.id, label)}
+                onClick={() => onReply(rootId, label)}
                 className="flex items-center gap-1 text-[11px] text-white/30 hover:text-violet-400 transition-colors"
               >
                 <CornerDownRight className="h-3 w-3" />
@@ -199,6 +217,65 @@ function CommentCard({
         </div>
       </div>
     </motion.div>
+  );
+}
+
+// ── 답글 리스트(평탄화) — 3개 초과 시 접기 토글 ──────────
+function AnonRepliesList({
+  replies,
+  rootId,
+  anonMap,
+  onReply,
+  onDelete,
+}: {
+  replies: CommentRow[];
+  rootId: string;
+  anonMap: Map<string, number>;
+  onReply: (rootId: string, label: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const COLLAPSE_THRESHOLD = 3;
+  const COLLAPSED_VISIBLE = 2;
+  const [expanded, setExpanded] = useState(false);
+  if (replies.length === 0) return null;
+  const overflow = replies.length > COLLAPSE_THRESHOLD;
+  const visible =
+    overflow && !expanded ? replies.slice(-COLLAPSED_VISIBLE) : replies;
+  const hiddenCount = replies.length - visible.length;
+
+  return (
+    <div>
+      {overflow && !expanded && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="ml-6 mb-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold text-violet-300 transition-colors hover:bg-violet-500/10"
+        >
+          <CornerDownRight className="h-3 w-3" />
+          답글 {hiddenCount}개 더 보기
+        </button>
+      )}
+      {visible.map((reply) => (
+        <CommentCard
+          key={reply.id}
+          comment={reply}
+          anonMap={anonMap}
+          rootId={rootId}
+          isReply
+          onReply={onReply}
+          onDelete={onDelete}
+        />
+      ))}
+      {overflow && expanded && (
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="ml-6 mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold text-white/40 transition-colors hover:bg-white/[0.06]"
+        >
+          답글 접기
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -380,20 +457,41 @@ export default function AnonPostPage() {
     setComments(fresh);
   };
 
-  // 답글 클릭 — 페이지 레벨 replyTo 만 갱신, 포커스/스크롤은 CommentComposer 가 처리
-  const handleReply = useCallback((id: string, label: string) => {
-    setReplyTo({ id, label });
-  }, []);
+  // 답글 클릭 — 답글의 답글이라도 parent_id 는 항상 root 댓글의 id 를 가리키도록 평탄화.
+  // 익명 게시판은 mention_user_id 미사용 (작성자 식별 정보 노출 금지).
+  const handleReply = useCallback(
+    (rootId: string, label: string) => {
+      setReplyTo({ id: rootId, label, mentionUserId: null });
+    },
+    [],
+  );
 
-  // 댓글을 부모/자식으로 분리
+  // 댓글 트리 평탄화 — 답글의 답글(레거시 데이터)도 root 까지 거슬러 올라가 묶음.
+  const commentById = new Map<string, CommentRow>();
+  for (const c of comments) commentById.set(c.id, c);
+  const findRoot = (id: string): string => {
+    let cur = id;
+    const seen = new Set<string>();
+    while (true) {
+      if (seen.has(cur)) return cur;
+      seen.add(cur);
+      const cc = commentById.get(cur);
+      if (!cc || !cc.parent_id) return cur;
+      cur = cc.parent_id;
+    }
+  };
+
   const topComments = comments.filter((c) => !c.parent_id);
   const repliesMap = new Map<string, CommentRow[]>();
   for (const c of comments) {
-    if (c.parent_id) {
-      const arr = repliesMap.get(c.parent_id) ?? [];
-      arr.push(c);
-      repliesMap.set(c.parent_id, arr);
-    }
+    if (!c.parent_id) continue;
+    const rootId = findRoot(c.parent_id);
+    const arr = repliesMap.get(rootId) ?? [];
+    arr.push(c);
+    repliesMap.set(rootId, arr);
+  }
+  for (const arr of repliesMap.values()) {
+    arr.sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
   }
 
   if (loading) {
@@ -585,19 +683,18 @@ export default function AnonPostPage() {
                   <CommentCard
                     comment={c}
                     anonMap={anonMap}
+                    rootId={c.id}
                     onReply={handleReply}
                     onDelete={handleDeleteComment}
                   />
-                  {/* 대댓글 */}
-                  {(repliesMap.get(c.id) ?? []).map((reply) => (
-                    <CommentCard
-                      key={reply.id}
-                      comment={reply}
-                      anonMap={anonMap}
-                      isReply
-                      onDelete={handleDeleteComment}
-                    />
-                  ))}
+                  {/* 답글(평탄화) — 모든 답글에 답글 버튼 노출, 3개 초과 시 접기 토글 */}
+                  <AnonRepliesList
+                    replies={repliesMap.get(c.id) ?? []}
+                    rootId={c.id}
+                    anonMap={anonMap}
+                    onReply={handleReply}
+                    onDelete={handleDeleteComment}
+                  />
                 </div>
               ))
             )}

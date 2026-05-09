@@ -111,6 +111,18 @@ export type CommentRow = {
   is_post_author: boolean;
   /** 익명게시판 익명N 번호 부여용 결정적 시드 (post_id + author_id 해시) — 다른 글에선 매칭 불가 */
   anon_seed: string | null;
+  /**
+   * 답글의 답글일 때 "@닉네임" 으로 호명된 사용자의 user_id (선택).
+   * 익명 게시판은 항상 null. 본문의 @멘션 텍스트와 함께 보조 포인터로만 사용.
+   */
+  mention_user_id: string | null;
+  /** mention_user_id 에 해당하는 사용자 (조회 결과). 익명/미설정 시 null. */
+  mention_user: {
+    id: string;
+    nickname: string;
+    role: Role;
+    avatar_url: string | null;
+  } | null;
 };
 
 // PostgREST 임베딩은 FK 컬럼명으로 가리키는 게 가장 안전 (FK constraint 이름이 환경마다 달라질 수 있어서).
@@ -199,7 +211,14 @@ type RawComment = {
   author_id: string;
   content: string;
   created_at: string;
+  mention_user_id: string | null;
   author: {
+    id: string;
+    nickname: string;
+    role: Role;
+    avatar_url: string | null;
+  } | null;
+  mention_user: {
     id: string;
     nickname: string;
     role: Role;
@@ -230,6 +249,9 @@ function normalizeComment(
     is_post_author: isPostAuthor,
     // 다른 글에선 매칭 불가능한 시드 — 같은 글 댓글 내에서만 동일 작성자 그룹화에 사용
     anon_seed: isAnon ? makeAnonSeed(raw.post_id, raw.author_id) : null,
+    // 익명 게시판은 멘션 포인터도 노출하지 않음
+    mention_user_id: isAnon ? null : raw.mention_user_id,
+    mention_user: isAnon ? null : raw.mention_user,
   };
 }
 
@@ -507,13 +529,20 @@ export async function incrementViewCount(postId: string): Promise<void> {
 // ─────────────────────────────────────────────────────────
 
 const COMMENT_SELECT = `
+  id, post_id, parent_id, author_id, content, created_at, mention_user_id,
+  author:profiles!author_id ( id, nickname, role, avatar_url ),
+  mention_user:profiles!mention_user_id ( id, nickname, role, avatar_url )
+`;
+
+// 마이그레이션 012 미적용 환경 폴백용 — mention_user_id 컬럼/임베딩 없이도 동작.
+const COMMENT_SELECT_LEGACY = `
   id, post_id, parent_id, author_id, content, created_at,
   author:profiles!author_id ( id, nickname, role, avatar_url )
 `;
 
 export async function listComments(postId: string): Promise<CommentRow[]> {
   // 글의 board_type / author_id 를 먼저 가져와야 익명 마스킹 규칙을 적용할 수 있다
-  const [{ data: postMeta }, { data, error }, uid] = await Promise.all([
+  const [{ data: postMeta }, primary, uid] = await Promise.all([
     supabase
       .from("posts")
       .select("board_type, author_id")
@@ -527,6 +556,24 @@ export async function listComments(postId: string): Promise<CommentRow[]> {
     getCurrentUserId(),
   ]);
 
+  let data: unknown = primary.data;
+  let error = primary.error;
+  // mention_user_id 컬럼 / FK 미적용 환경에서는 PostgREST 가 에러를 반환 →
+  // 레거시 SELECT 로 한 번 더 시도 (구조화 멘션 정보 없이 동작)
+  if (error) {
+    console.warn(
+      "[listComments] v2 SELECT 실패 — legacy SELECT 폴백",
+      error.message,
+    );
+    const legacy = await supabase
+      .from("comments")
+      .select(COMMENT_SELECT_LEGACY)
+      .eq("post_id", postId)
+      .order("created_at", { ascending: true });
+    data = legacy.data;
+    error = legacy.error;
+  }
+
   if (error) {
     console.error("[listComments] 실패", error);
     return [];
@@ -535,27 +582,73 @@ export async function listComments(postId: string): Promise<CommentRow[]> {
   const boardType = (postMeta?.board_type as BoardType | undefined) ?? "free";
   const postAuthorId = (postMeta?.author_id as string | undefined) ?? "";
 
-  return ((data ?? []) as unknown as RawComment[]).map((c) =>
-    normalizeComment(c, uid, boardType, postAuthorId),
-  );
+  return ((data as Partial<RawComment>[] | null) ?? []).map((raw) => {
+    // 레거시 응답 보강 — 누락 필드 기본값
+    const filled: RawComment = {
+      id: raw.id ?? "",
+      post_id: raw.post_id ?? postId,
+      parent_id: raw.parent_id ?? null,
+      author_id: raw.author_id ?? "",
+      content: raw.content ?? "",
+      created_at: raw.created_at ?? new Date().toISOString(),
+      mention_user_id: raw.mention_user_id ?? null,
+      author: raw.author ?? null,
+      mention_user: raw.mention_user ?? null,
+    };
+    return normalizeComment(filled, uid, boardType, postAuthorId);
+  });
 }
 
 export async function createComment(input: {
   authorId: string;
   postId: string;
   content: string;
+  /**
+   * 답글이면 "최상위 댓글의 id" 를 넘긴다.
+   *   답글의 답글이라도 parent_id 는 항상 root 댓글로 평탄화되도록
+   *   호출 측(CommentComposer/페이지)에서 보장.
+   */
   parentId?: string | null;
+  /** "@닉네임" 으로 호명한 사용자 (대댓글의 답글일 때만). 익명 게시판은 항상 null. */
+  mentionUserId?: string | null;
 }): Promise<{ error: string | null; commentId: string | null }> {
-  const { data, error } = await supabase
+  const payload: Record<string, unknown> = {
+    author_id: input.authorId,
+    post_id: input.postId,
+    content: input.content,
+    parent_id: input.parentId ?? null,
+  };
+  if (input.mentionUserId) {
+    payload.mention_user_id = input.mentionUserId;
+  }
+
+  let { data, error } = await supabase
     .from("comments")
-    .insert({
-      author_id: input.authorId,
-      post_id: input.postId,
-      content: input.content,
-      parent_id: input.parentId ?? null,
-    })
+    .insert(payload)
     .select("id")
     .single();
+
+  // mention_user_id 컬럼이 아직 없는 환경(마이그레이션 012 미적용) 폴백 —
+  // 동일 행을 mention_user_id 없이 다시 INSERT
+  if (error && input.mentionUserId && /mention_user_id/.test(error.message)) {
+    console.warn(
+      "[createComment] mention_user_id 컬럼 미적용 — 폴백 INSERT",
+      error.message,
+    );
+    const fallback = await supabase
+      .from("comments")
+      .insert({
+        author_id: input.authorId,
+        post_id: input.postId,
+        content: input.content,
+        parent_id: input.parentId ?? null,
+      })
+      .select("id")
+      .single();
+    data = fallback.data;
+    error = fallback.error;
+  }
+
   if (error) {
     console.error("[createComment] 실패", error);
     return { error: error.message, commentId: null };

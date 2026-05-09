@@ -17,6 +17,7 @@ import {
   searchMentionableUsers,
   type MentionUser,
 } from "@/lib/mentions";
+import { notifyComment, notifyReply } from "@/lib/notify";
 import { Badge } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { cn } from "@/lib/utils";
@@ -223,16 +224,42 @@ export function CommentComposer({
       return;
     }
 
-    // 멘션이 활성인 글에서만 mentions/notifications 처리
-    if (enableMentions && commentId) {
-      // 부드러운 UX 를 위해 await 하지 않음 (실패해도 댓글 작성은 성공 처리)
-      saveMentionsAndNotify({
-        commentId,
-        postId,
-        authorId: userId,
-        authorNickname: actorNickname?.trim() || "누군가",
-        content: t,
-      });
+    // ── 알림 생성 ─────────────────────────────────────────
+    // 부드러운 UX 를 위해 모두 await 하지 않음 (실패해도 댓글 작성은 성공 처리)
+    if (commentId) {
+      const actor = actorNickname?.trim() || "누군가";
+
+      // 답글이면 부모 댓글 작성자 + mention_user_id 에게 reply 알림,
+      // 일반 댓글이면 글 작성자에게 comment 알림.
+      // (notify.ts 가 익명 게시판/자기 자신/수신자 설정 모두 가드)
+      if (replyTo) {
+        notifyReply({
+          postId,
+          parentCommentId: replyTo.id,
+          mentionUserId: replyTo.mentionUserId ?? null,
+          commentId,
+          actorId: userId,
+          actorNickname: actor,
+        });
+      } else {
+        notifyComment({
+          postId,
+          commentId,
+          actorId: userId,
+          actorNickname: actor,
+        });
+      }
+
+      // 본문에서 추출한 @닉네임 별도 처리 (멘션 알림). 익명 게시판은 비활성.
+      if (enableMentions) {
+        saveMentionsAndNotify({
+          commentId,
+          postId,
+          authorId: userId,
+          authorNickname: actor,
+          content: t,
+        });
+      }
     }
 
     setText("");

@@ -63,6 +63,7 @@ import {
 } from "@/lib/board";
 import { cn } from "@/lib/utils";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
+import { notifyNotice } from "@/lib/notify";
 import {
   formatFileSize,
   uploadFile,
@@ -582,6 +583,17 @@ function WriteInner() {
         setError(`저장 실패: ${parts.join(" / ")}`);
         return;
       }
+
+      // 공지사항 신규 등록 시 전체 사용자 알림 (최대 500명, onNotice 켠 사람만).
+      // 이동을 막지 않도록 await 하지 않음 — notify.ts 내부에서 청크 INSERT.
+      if (boardType === "notice") {
+        notifyNotice({
+          postId: result.id,
+          title: title.trim(),
+          authorId: user.id,
+        });
+      }
+
       router.push(`/board/${boardType}/${result.id}`);
     }
   }

@@ -4,6 +4,7 @@
 // 모든 함수는 클라이언트에서 직접 호출하며, 인증/권한은 RLS 정책으로 처리한다.
 
 import { supabase } from "@/lib/supabase";
+import { notifyLike } from "@/lib/notify";
 import type { Role } from "@/components/ui/Badge";
 
 // 게시판 종류 — board_type 컬럼에 들어가는 키
@@ -1451,7 +1452,8 @@ export async function toggleLike(
     .from("post_likes")
     .insert({ user_id: uid, post_id: postId });
   if (insErr) {
-    // 동일 PK 중복 INSERT (rapid double-click) — 이미 좋아요 상태로 간주
+    // 동일 PK 중복 INSERT (rapid double-click) — 이미 좋아요 상태로 간주.
+    // 이 경우는 신규 좋아요가 아니므로 알림 생성 안 함.
     const { data: row } = await supabase
       .from("posts")
       .select("like_count")
@@ -1463,6 +1465,11 @@ export async function toggleLike(
       like_count: row?.like_count ?? null,
     };
   }
+
+  // 신규 좋아요 INSERT 성공 — 글 작성자에게 알림. UX 가 막히지 않도록 await 하지 않음.
+  // notify.ts 가 자기 자신 / 수신자 설정 / 익명 마스킹 모두 가드.
+  notifyLike({ postId, actorId: uid });
+
   const { data: row } = await supabase
     .from("posts")
     .select("like_count")

@@ -1,7 +1,8 @@
 // /api/school-notices
 //
-//   GET             : 저장된 school_notices 목록 반환 (?source=school|news|letter, ?limit=30)
-//   GET ?sync=true  : 3종 게시판 크롤링 → DB upsert (Vercel Cron + 수동 동기화 모두 사용)
+//   GET                       : 저장된 school_notices 목록 반환 (?source=school|news|letter, ?limit=30)
+//   GET ?sync=true            : 3종 게시판 크롤링 → DB upsert (Vercel Cron + 수동 동기화 모두 사용)
+//   GET ?sync=true&debug=true : 동기화 + 응답에 raw HTML 앞 2000자 + 서버 콘솔 로그
 //
 //   Vercel Cron 은 GET 메서드만 지원하므로 vercel.json 의 crons.path 를
 //   "/api/school-notices?sync=true" 로 두고 동일 핸들러를 사용한다.
@@ -69,9 +70,10 @@ function getWriteClient(): SupabaseClient {
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const sync = url.searchParams.get("sync") === "true";
+  const debug = url.searchParams.get("debug") === "true";
 
   if (sync) {
-    return await syncAndRespond();
+    return await syncAndRespond({ debug });
   }
 
   // 일반 조회
@@ -127,10 +129,13 @@ export async function GET(req: NextRequest) {
 // 공통 동기화 — 3종 크롤링 + upsert
 // ─────────────────────────────────────────────────────────
 
-async function syncAndRespond(): Promise<NextResponse> {
-  // 30초 in-memory dedupe — cron + 수동 호출이 겹치면 두 번째는 즉시 거절
+async function syncAndRespond({
+  debug,
+}: { debug: boolean }): Promise<NextResponse> {
+  // 30초 in-memory dedupe — cron + 수동 호출이 겹치면 두 번째는 즉시 거절.
+  // 단 debug 모드에서는 트러블슈팅 흐름을 막지 않도록 dedupe 우회.
   const now = Date.now();
-  if (now - lastSyncAt < SYNC_DEDUPE_MS) {
+  if (!debug && now - lastSyncAt < SYNC_DEDUPE_MS) {
     return NextResponse.json(
       {
         ok: false,
@@ -156,9 +161,37 @@ async function syncAndRespond(): Promise<NextResponse> {
     );
   }
 
-  const { results, errors } = await crawlAllSources();
+  const { results, errors, rawHtmls } = await crawlAllSources();
 
-  // 크롤링이 모두 실패하면 DB 를 건드리지 않음 → 기존 데이터 유지.
+  // debug 모드 — 서버 로그에 각 source 의 HTML 앞 2000자 출력
+  if (debug) {
+    for (const r of rawHtmls) {
+      console.log(
+        `[/api/school-notices?debug] ${r.source} ${r.url} length=${r.html.length}`,
+      );
+      console.log(r.html.slice(0, 2000));
+      console.log(`--- end of ${r.source} ---`);
+    }
+    if (errors.length > 0) {
+      console.log(
+        `[/api/school-notices?debug] errors: ${JSON.stringify(errors, null, 2)}`,
+      );
+    }
+  }
+
+  // 응답에 항상 errors / 디버그 시 raw_samples 포함시키는 헬퍼
+  const debugPayload = debug
+    ? {
+        raw_samples: rawHtmls.map((r) => ({
+          source: r.source,
+          url: r.url,
+          length: r.html.length,
+          head: r.html.slice(0, 2000),
+        })),
+      }
+    : {};
+
+  // 크롤링이 모두 실패(또는 0건 파싱)하면 DB 미수정 → 기존 데이터 유지.
   if (results.length === 0) {
     return NextResponse.json(
       {
@@ -166,8 +199,9 @@ async function syncAndRespond(): Promise<NextResponse> {
         error: "all_sources_failed",
         errors,
         inserted: 0,
+        ...debugPayload,
       },
-      { status: 502 },
+      { status: 502, headers: { "Cache-Control": "no-store" } },
     );
   }
 
@@ -196,8 +230,9 @@ async function syncAndRespond(): Promise<NextResponse> {
         crawled: results.length,
         inserted: 0,
         errors,
+        ...debugPayload,
       },
-      { status: 500 },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }
 
@@ -207,6 +242,7 @@ async function syncAndRespond(): Promise<NextResponse> {
       crawled: results.length,
       inserted: data?.length ?? 0,
       errors,
+      ...debugPayload,
     },
     {
       status: 200,

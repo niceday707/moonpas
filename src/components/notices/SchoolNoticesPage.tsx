@@ -29,7 +29,7 @@ function formatDate(isoDate: string): string {
   return isoDate.replaceAll("-", ".");
 }
 
-export function SchoolNoticesPage({ source }: { source: SchoolNoticeSource }) {
+export function SchoolNoticesPage({ source, hideSync }: { source: SchoolNoticeSource; hideSync?: boolean }) {
   const meta = SCHOOL_NOTICE_SOURCE_META[source];
   const [items, setItems] = useState<SchoolNoticeRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -108,24 +108,26 @@ export function SchoolNoticesPage({ source }: { source: SchoolNoticeSource }) {
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={handleSync}
-            disabled={syncing}
-            aria-label="새로고침"
-            className={cn(
-              "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition-colors",
-              "hover:bg-gray-50 dark:border-white/[0.1] dark:bg-white/[0.04] dark:text-gray-200 dark:hover:bg-white/[0.07]",
-              syncing && "opacity-60",
-            )}
-          >
-            {syncing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
-            {syncing ? "동기화 중" : "새로고침"}
-          </button>
+          {!hideSync && (
+            <button
+              type="button"
+              onClick={handleSync}
+              disabled={syncing}
+              aria-label="새로고침"
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition-colors",
+                "hover:bg-gray-50 dark:border-white/[0.1] dark:bg-white/[0.04] dark:text-gray-200 dark:hover:bg-white/[0.07]",
+                syncing && "opacity-60",
+              )}
+            >
+              {syncing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              {syncing ? "동기화 중" : "새로고침"}
+            </button>
+          )}
         </div>
       </motion.header>
 

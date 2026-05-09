@@ -133,24 +133,56 @@ export function parseNoticeList(
   const out: ParsedNotice[] = [];
   const seen = new Set<string>();
 
-  // 테이블형과 갤러리형 항목을 통합 선택.
-  // 갤러리 페이지는 <ul class="gall_list"> / <div class="bbs_GallA"> 구조를 쓴다.
-  const TABLE_SEL = "table#myTable tbody tr, .bbs_ListA table tbody tr";
-  const GALLERY_SEL = [
-    ".gall_list li",
-    ".bbs_GallA li",
-    "ul[class*='gall'] li",
-    "div[class*='gall'] li",
-    ".gallery_list li",
-  ].join(", ");
+  // ── 행사갤러리 전용 파서 ──────────────────────────────────
+  // 실제 HTML: <div class="photo_list"><ul><li>
+  //   <a href="javascript:" data-nm="nttSn" data-param="1801054282" title="제목" class="black selectNttInfo">
+  //     <div class="img"><span style="background-image:url(...)"></span></div>
+  //     <p class="txt">
+  //       <span class="lst_tit">제목</span>
+  //       <span class="date">2026.05.07</span>
+  //       <span class="date">조회수 : 10</span>
+  //     </p>
+  //   </a>
+  // </li></ul></div>
+  if (source === "gallery") {
+    $(".photo_list li").each((_, el) => {
+      const $el = $(el);
+      const $a = $el.find("a[data-nm='nttSn']").first();
+      if (!$a.length) return;
 
-  // 타입 호환을 위해 단일 selector 문자열로 결정 후 한 번만 $() 호출
-  const activeSel = $(TABLE_SEL).length
-    ? TABLE_SEL
-    : $(GALLERY_SEL).length
-      ? GALLERY_SEL
-      : "table tbody tr";
-  const $items = $(activeSel);
+      const nttSn = $a.attr("data-param") ?? "";
+      if (!nttSn || !DIGITS_ONLY_RE.test(nttSn)) return;
+      if (seen.has(nttSn)) return;
+
+      // 제목: span.lst_tit > a[title] 순
+      const title =
+        $a.find("span.lst_tit").text().trim() ||
+        ($a.attr("title") ?? "").trim();
+      if (!title) return;
+
+      // 날짜: span.date 중 DATE_RE 에 매칭되는 첫 번째 (조회수 span 건너뜀)
+      let date: string | null = null;
+      $a.find("span.date").each((_i, d) => {
+        if (date) return;
+        const dm = DATE_RE.exec($(d).text());
+        if (dm) {
+          date = `${dm[1]}-${dm[2].padStart(2, "0")}-${dm[3].padStart(2, "0")}`;
+        }
+      });
+      if (!date) {
+        const now = new Date();
+        date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      }
+
+      seen.add(nttSn);
+      out.push({ source, title, date, ntt_sn: nttSn, original_url: buildDetailUrl(source, nttSn) });
+    });
+    return out;
+  }
+
+  // ── 테이블형 파서 (school / news / letter) ────────────────
+  const TABLE_SEL = "table#myTable tbody tr, .bbs_ListA table tbody tr";
+  const $items = $(TABLE_SEL).length ? $(TABLE_SEL) : $("table tbody tr");
 
   $items.each((_, el) => {
     const $el = $(el);
@@ -164,12 +196,10 @@ export function parseNoticeList(
       const dataId = $a.attr("data-id") ?? "";
       if (dataId && DIGITS_ONLY_RE.test(dataId)) {
         nttSn = dataId;
-        // 갤러리형: span.tit / strong.tit 우선
         const $tit = $a.find("span.tit, strong.tit, .tit").first();
         if ($tit.length) {
           title = $tit.text().replace(/\s+/g, " ").trim();
         } else {
-          // 날짜·이미지 요소 제거 후 텍스트 (갤러리 a 안에 날짜 span 이 있는 경우 대비)
           title = $a
             .clone()
             .find("span.date, .date, img, .img_area")
@@ -214,7 +244,6 @@ export function parseNoticeList(
     // 날짜 추출 ─────────────────────────────────────────────
     let date: string | null = null;
 
-    // 1단계: 갤러리형 — span.date / .date / .etc 요소 내 날짜
     $el.find("span.date, .date, .etc, .info").each((_i, d) => {
       if (date) return;
       const txt = $(d).text();
@@ -224,7 +253,6 @@ export function parseNoticeList(
       }
     });
 
-    // 2단계: 테이블형 — td 전체 텍스트에서 날짜 패턴
     if (!date) {
       $el.find("td").each((_i, td) => {
         if (date) return;
@@ -236,7 +264,6 @@ export function parseNoticeList(
       });
     }
 
-    // 3단계: 항목 전체 텍스트에서 날짜 패턴 (갤러리형 폴백)
     if (!date) {
       const txt = $el.text();
       const dm = DATE_RE.exec(txt);
@@ -245,7 +272,6 @@ export function parseNoticeList(
       }
     }
 
-    // 4단계: 날짜가 전혀 없으면 오늘 날짜
     if (!date) {
       const now = new Date();
       date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;

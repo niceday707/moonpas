@@ -2,5 +2,5 @@
 import { SchoolNoticesPage } from "@/components/notices/SchoolNoticesPage";
 
 export default function Page() {
-  return <SchoolNoticesPage source="gallery" />;
+  return <SchoolNoticesPage source="gallery" hideSync />;
 }

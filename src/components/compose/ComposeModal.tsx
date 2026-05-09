@@ -48,10 +48,10 @@ export function ComposeModal() {
             exit={{ y: 80, opacity: 0, scale: 0.98 }}
             transition={{ type: "spring", stiffness: 320, damping: 32 }}
             onClick={(e) => e.stopPropagation()}
-            className="glass relative w-full max-w-xl rounded-t-3xl px-5 pb-6 pt-5 shadow-[0_20px_60px_rgba(0,0,0,0.5)] md:mx-4 md:rounded-3xl md:px-6 md:pb-7 md:pt-6"
+            className="glass relative flex w-full max-w-xl flex-col rounded-t-3xl px-5 pb-6 pt-5 shadow-[0_20px_60px_rgba(0,0,0,0.5)] min-h-[85dvh] md:min-h-0 md:mx-4 md:rounded-3xl md:px-6 md:pb-7 md:pt-6"
             style={{
               paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
-              maxHeight: "90vh",
+              maxHeight: "90dvh",
               overflowY: "auto",
             }}
           >

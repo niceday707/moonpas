@@ -71,7 +71,7 @@ export function Composer({ onSubmitted, onCancel, autoFocus = true }: Props) {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "0px";
-    el.style.height = Math.min(el.scrollHeight, 320) + "px";
+    el.style.height = el.scrollHeight + "px";
   }, [content]);
 
   // autoFocus
@@ -165,12 +165,12 @@ export function Composer({ onSubmitted, onCancel, autoFocus = true }: Props) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="truncate font-semibold">
-              {profile?.nickname ?? "닉네임 미설정"}
+              {channel === "anonymous" ? "익명" : (profile?.nickname ?? "닉네임 미설정")}
             </span>
-            {profile?.role && <Badge role={profile.role} />}
+            {channel !== "anonymous" && profile?.role && <Badge role={profile.role} />}
           </div>
           <p className="text-xs text-foreground/55">
-            {CHANNEL_LABEL[channel]}에 게시돼요
+            {channel === "anonymous" ? "익명으로 게시돼요" : `${CHANNEL_LABEL[channel]}에 게시돼요`}
           </p>
         </div>
         <ChannelSelect value={channel} onChange={setChannel} />
@@ -189,9 +189,9 @@ export function Composer({ onSubmitted, onCancel, autoFocus = true }: Props) {
             setCursor((e.target as HTMLTextAreaElement).selectionStart)
           }
           onKeyDown={handleKeyDown}
-          placeholder="무슨 일이 있었나요? #해시태그도 함께 적어보세요"
+          placeholder="무슨 일이 있었나요? #해시태그 @멘션도 함께 적어보세요"
           rows={4}
-          className="block w-full resize-none rounded-2xl bg-foreground/5 px-4 py-3 text-[15px] leading-relaxed outline-none ring-1 ring-inset ring-white/5 transition placeholder:text-foreground/35 focus:bg-foreground/10 focus:ring-accent/40"
+          className="block min-h-[200px] w-full resize-none rounded-2xl bg-foreground/5 px-4 py-3 text-[15px] leading-relaxed outline-none ring-1 ring-inset ring-white/5 transition placeholder:text-foreground/35 focus:bg-foreground/10 focus:ring-accent/40"
         />
 
         <HashtagAutocomplete

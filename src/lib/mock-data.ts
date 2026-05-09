@@ -6,14 +6,14 @@ import type { Role } from "@/components/ui/Badge";
 
 export type { Role };
 
-export type Channel = "free" | "curriculum" | "admissions" | "alumni" | "notice";
+export type Channel = "anonymous" | "free" | "challenge" | "market" | "lost";
 
 export const CHANNEL_LABEL: Record<Channel, string> = {
+  anonymous: "문태에타",
   free: "자유게시판",
-  curriculum: "교육과정 가이드",
-  admissions: "2028 대입 정보",
-  alumni: "졸업생 방명록",
-  notice: "공지사항",
+  challenge: "챌린지",
+  market: "나눔장터",
+  lost: "분실물센터",
 };
 
 export type Author = {
@@ -157,7 +157,7 @@ let POSTS: Post[] = [
     content:
       "2028 대입 설명회 다음 주 수요일 4시입니다. 강당에서 만나요! 학년·계열 상관없이 누구나 환영입니다. 자료는 미리 채널에 공유해 두었으니 한 번씩 훑어보고 와주세요. #공지 #2028대입",
     hashtags: ["공지", "2028대입"],
-    channel: "notice",
+    channel: "free",
     createdAt: minutesAgo(35),
     likes: 87,
     liked: true,
@@ -180,7 +180,7 @@ let POSTS: Post[] = [
     content:
       "후배들아 화이팅! 대학 와서 보니 고등학교 때 열심히 한 게 다 도움이 돼. 그때는 지겹기만 했던 자습 시간, 지금 돌아보면 그게 진짜 자산이더라. 너무 결과에만 매달리지 말고, 지금 곁에 있는 친구들이랑 보내는 시간도 챙겨. #졸업생응원",
     hashtags: ["졸업생응원"],
-    channel: "alumni",
+    channel: "free",
     createdAt: hoursAgo(2),
     likes: 142,
     liked: true,
@@ -203,7 +203,7 @@ let POSTS: Post[] = [
     content:
       "이번 주 수학 보충 시간에 미적분 II 단원 정리해 줄 거예요. 평소에 헷갈렸던 부분 댓글로 미리 남겨주면 자료에 반영할게요. #수업안내 #수학",
     hashtags: ["수업안내", "수학"],
-    channel: "curriculum",
+    channel: "free",
     createdAt: hoursAgo(5),
     likes: 46,
     liked: false,
@@ -241,7 +241,7 @@ let POSTS: Post[] = [
     content:
       "방명록에 글 남기러 왔어요. 18기 양지훈입니다. 진로 고민 있는 후배들, 댓글이나 DM으로 편하게 물어봐도 좋아요. 디자인·창업 쪽 경험 공유해 줄 수 있어요. #졸업생응원 #진로",
     hashtags: ["졸업생응원", "진로"],
-    channel: "alumni",
+    channel: "free",
     createdAt: daysAgo(2),
     likes: 73,
     liked: false,
@@ -355,7 +355,7 @@ const INCOMING_SAMPLES: Omit<Post, "id" | "createdAt">[] = [
     author: AUTHORS.parkteacher,
     content: "내일 1교시 변경됐어요. 시간표 다시 확인해 주세요. #공지",
     hashtags: ["공지"],
-    channel: "notice",
+    channel: "free",
     likes: 0,
     liked: false,
     commentCount: 0,
@@ -533,6 +533,7 @@ export type CreatePostInput = {
 
 export async function createPost(input: CreatePostInput): Promise<Post> {
   await delay(380);
+  const isAnon = input.channel === "anonymous";
   const newPost: Post = {
     id: `p-${Date.now()}`,
     author: ME,
@@ -543,6 +544,7 @@ export async function createPost(input: CreatePostInput): Promise<Post> {
     likes: 0,
     liked: false,
     commentCount: 0,
+    ...(isAnon ? { anonymous: true, anonymousId: Math.floor(Math.random() * 99) + 1 } : {}),
   };
   POSTS = [newPost, ...POSTS];
   notify();

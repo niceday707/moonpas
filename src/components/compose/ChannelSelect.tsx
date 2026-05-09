@@ -1,13 +1,13 @@
 "use client";
 
-// 채널 선택 드롭다운 — 자유게시판 / 교육과정 / 2028 대입 / 졸업생 방명록 / 공지
+// 채널 선택 드롭다운 — 문태에타 / 자유게시판 / 챌린지 / 나눔장터 / 분실물센터
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Hash } from "lucide-react";
 import { CHANNEL_LABEL, type Channel } from "@/lib/mock-data";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-const ORDER: Channel[] = ["free", "curriculum", "admissions", "alumni", "notice"];
+const ORDER: Channel[] = ["anonymous", "free", "challenge", "market", "lost"];
 
 type Props = {
   value: Channel;

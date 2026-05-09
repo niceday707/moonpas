@@ -65,6 +65,11 @@ import {
   displayAuthorNameFor,
   shouldShowAuthorBadgeFor,
 } from "@/lib/author-display";
+import {
+  SCHOOL_NOTICE_SOURCE_META,
+  type SchoolNoticeSource,
+} from "@/lib/schoolNotices";
+import { cn } from "@/lib/utils";
 
 // ── 상수 ──────────────────────────────────────────────────
 
@@ -329,47 +334,128 @@ function HotPostList({
   );
 }
 
-// ── 최신 공지 리스트 ──────────────────────────────────────
+// ── 최신 공지 리스트 (학교 크롤링 + 문파스공지 합산) ─────
+
+/**
+ * 대시보드 좌측 카드용 통합 공지 항목.
+ *   - kind="moonpas" : board_type='notice' 의 PostRow → /board/notice/{id} 내부 링크
+ *   - kind="school"  : school_notices 행 → 문태고 홈페이지 새 탭
+ */
+type UnifiedNotice =
+  | {
+      kind: "moonpas";
+      id: string;
+      title: string;
+      sortKey: string; // ISO timestamp
+      pinned: boolean;
+      href: string;
+    }
+  | {
+      kind: "school";
+      id: string;
+      source: SchoolNoticeSource;
+      title: string;
+      sortKey: string;
+      href: string; // 외부 원문 URL
+    };
+
+const SOURCE_BADGE: Record<
+  "moonpas" | SchoolNoticeSource,
+  { emoji: string; label: string; cls: string }
+> = {
+  moonpas: {
+    emoji: "📢",
+    label: "문파스공지",
+    cls: "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
+  },
+  school: {
+    emoji: SCHOOL_NOTICE_SOURCE_META.school.emoji,
+    label: SCHOOL_NOTICE_SOURCE_META.school.label,
+    cls: "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+  },
+  news: {
+    emoji: SCHOOL_NOTICE_SOURCE_META.news.emoji,
+    label: SCHOOL_NOTICE_SOURCE_META.news.label,
+    cls: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+  },
+  letter: {
+    emoji: SCHOOL_NOTICE_SOURCE_META.letter.emoji,
+    label: SCHOOL_NOTICE_SOURCE_META.letter.label,
+    cls: "bg-cyan-50 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300",
+  },
+};
 
 function NoticeList({
-  posts,
+  notices,
   loading,
   max = 5,
 }: {
-  posts: PostRow[];
+  notices: UnifiedNotice[];
   loading: boolean;
   max?: number;
 }) {
   if (loading) return <SkeletonRows rows={max} />;
-  if (posts.length === 0) {
+  if (notices.length === 0) {
     return (
       <EmptyHint
         message="아직 공지가 없습니다"
-        href="/board/notice"
-        ctaLabel="공지사항으로 이동"
+        href="/notices/school"
+        ctaLabel="학교공지로 이동"
       />
     );
   }
   return (
     <ul className="divide-y divide-gray-50 dark:divide-white/[0.04]">
-      {posts.slice(0, max).map((n) => (
-        <li key={n.id}>
-          <Link
-            href={`/board/notice/${n.id}`}
-            className="flex items-center justify-between gap-2 px-4 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
-          >
-            <span className="line-clamp-1 flex flex-1 items-center gap-1 text-xs text-gray-700 dark:text-gray-200">
-              {n.is_pinned && (
+      {notices.slice(0, max).map((n) => {
+        const badge =
+          n.kind === "moonpas" ? SOURCE_BADGE.moonpas : SOURCE_BADGE[n.source];
+        const isExternal = n.kind === "school";
+
+        const inner = (
+          <>
+            <span className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-gray-700 dark:text-gray-200">
+              <span
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold",
+                  badge.cls,
+                )}
+              >
+                <span aria-hidden>{badge.emoji}</span>
+                <span>{badge.label}</span>
+              </span>
+              {n.kind === "moonpas" && n.pinned && (
                 <Pin className="h-2.5 w-2.5 shrink-0 text-rose-500" />
               )}
-              {n.title}
+              <span className="line-clamp-1">{n.title}</span>
             </span>
             <span className="shrink-0 text-[10px] tabular-nums text-gray-400">
-              {formatShortDate(n.created_at)}
+              {formatShortDate(n.sortKey)}
             </span>
-          </Link>
-        </li>
-      ))}
+          </>
+        );
+
+        return (
+          <li key={`${n.kind}:${n.id}`}>
+            {isExternal ? (
+              <a
+                href={n.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-4 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
+              >
+                {inner}
+              </a>
+            ) : (
+              <Link
+                href={n.href}
+                className="flex items-center gap-2 px-4 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
+              >
+                {inner}
+              </Link>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -883,12 +969,12 @@ function HotPostsCard({
   );
 }
 
-/** 최신 공지 카드 */
+/** 최신 공지 카드 — 학교 크롤링 3종 + 문파스공지(board_type=notice) 합산 */
 function NoticesCard({
-  posts,
+  notices,
   loading,
 }: {
-  posts: PostRow[];
+  notices: UnifiedNotice[];
   loading: boolean;
 }) {
   return (
@@ -896,10 +982,10 @@ function NoticesCard({
       <SectionHead
         icon={Bell}
         title="최신 공지"
-        href="/board/notice"
+        href="/notices/school"
         iconColor="text-red-500"
       />
-      <NoticeList posts={posts} loading={loading} max={5} />
+      <NoticeList notices={notices} loading={loading} max={5} />
     </Card>
   );
 }
@@ -922,7 +1008,7 @@ export default function DashboardPage() {
   const [hotPosts, setHotPosts] = useState<PostRow[]>([]);
   const [hotLoading, setHotLoading] = useState(true);
 
-  const [noticePosts, setNoticePosts] = useState<PostRow[]>([]);
+  const [unifiedNotices, setUnifiedNotices] = useState<UnifiedNotice[]>([]);
   const [noticeLoading, setNoticeLoading] = useState(true);
 
   const [latestPosts, setLatestPosts] = useState<PostRow[]>([]);
@@ -945,15 +1031,66 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // 최신 공지 — board_type='notice', is_pinned 우선
+  // 최신 공지 — 학교 홈페이지 크롤링 3종 + 문파스공지(board_type=notice) 합산.
+  // 둘 중 한쪽이 실패해도 다른 쪽은 정상 노출.
   useEffect(() => {
     let active = true;
     setNoticeLoading(true);
-    listPosts("notice", 1, { pinnedFirst: true }).then((res) => {
+
+    type SchoolRow = {
+      id: string;
+      source: SchoolNoticeSource;
+      title: string;
+      date: string;
+      original_url: string;
+    };
+
+    const fetchSchool = fetch("/api/school-notices?limit=10")
+      .then((r) => r.json())
+      .then((j: { ok?: boolean; items?: SchoolRow[] }) =>
+        j.ok && j.items ? j.items : [],
+      )
+      .catch(() => [] as SchoolRow[]);
+
+    const fetchMoonpas = listPosts("notice", 1, { pinnedFirst: true }).then(
+      (res) => res.posts.slice(0, 10),
+    );
+
+    Promise.all([fetchSchool, fetchMoonpas]).then(([schoolRows, moonpasRows]) => {
       if (!active) return;
-      setNoticePosts(res.posts.slice(0, 5));
+
+      const merged: UnifiedNotice[] = [
+        ...schoolRows.map<UnifiedNotice>((r) => ({
+          kind: "school",
+          id: r.id,
+          source: r.source,
+          title: r.title,
+          // 학교공지는 date(YYYY-MM-DD) — 시간 정보 없으니 자정 기준
+          sortKey: `${r.date}T00:00:00+09:00`,
+          href: r.original_url,
+        })),
+        ...moonpasRows.map<UnifiedNotice>((p) => ({
+          kind: "moonpas",
+          id: p.id,
+          title: p.title,
+          sortKey: p.created_at,
+          pinned: p.is_pinned,
+          href: `/board/notice/${p.id}`,
+        })),
+      ];
+
+      // 고정글 우선 → 그 다음 날짜 내림차순. 학교공지엔 pinned 개념이 없어 false 로 간주.
+      merged.sort((a, b) => {
+        const ap = a.kind === "moonpas" && a.pinned ? 1 : 0;
+        const bp = b.kind === "moonpas" && b.pinned ? 1 : 0;
+        if (ap !== bp) return bp - ap;
+        return b.sortKey.localeCompare(a.sortKey);
+      });
+
+      setUnifiedNotices(merged.slice(0, 5));
       setNoticeLoading(false);
     });
+
     return () => {
       active = false;
     };
@@ -1082,7 +1219,7 @@ export default function DashboardPage() {
         {profileOrLogin}
         <TrendingSearchCard />
         <HotPostsCard posts={hotPosts} loading={hotLoading} />
-        <NoticesCard posts={noticePosts} loading={noticeLoading} />
+        <NoticesCard notices={unifiedNotices} loading={noticeLoading} />
         <ShortcutsCard />
       </div>
 
@@ -1102,7 +1239,7 @@ export default function DashboardPage() {
           <main className="flex min-w-0 flex-1 flex-col gap-4">
             <MealCard />
             <SchoolCalendar />
-            <NoticesCard posts={noticePosts} loading={noticeLoading} />
+            <NoticesCard notices={unifiedNotices} loading={noticeLoading} />
             <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
             <LatestFeedCard posts={latestPosts} loading={latestLoading} />
           </main>
@@ -1122,7 +1259,7 @@ export default function DashboardPage() {
           <aside className="flex w-[280px] shrink-0 flex-col gap-4">
             <MealCard />
             <SchoolCalendar />
-            <NoticesCard posts={noticePosts} loading={noticeLoading} />
+            <NoticesCard notices={unifiedNotices} loading={noticeLoading} />
           </aside>
 
           {/* 가운데 메인 — 배너는 위로 빠졌으므로 문튜브 → 최신글 순서 */}

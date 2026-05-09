@@ -14,9 +14,16 @@ import { getBoardCounts, getTodayPostCount, type BoardType } from "@/lib/board";
 import { logSearch, normalizeKeyword } from "@/lib/search-log";
 
 // ── 메뉴 정의 ───────────────────────────────────────────────────────────
-// boardType 을 단일 source of truth 로 두고 href = /board/{boardType}, 카운트는 Supabase 에서 조회.
-type NavItem = { boardType: BoardType; label: string };
+// 일반 항목은 boardType 으로 /board/{boardType} 링크. 학교 공지 3종은 외부/내부
+// 라우트가 별도라 boardType 가 없으므로 href 를 직접 지정한다.
+type BoardNavItem = { boardType: BoardType; label: string };
+type LinkNavItem = { href: string; label: string };
+type NavItem = BoardNavItem | LinkNavItem;
 type NavGroup = { label: string; items: NavItem[] };
+
+function isBoardItem(item: NavItem): item is BoardNavItem {
+  return "boardType" in item;
+}
 
 const MEGA_NAV: NavGroup[] = [
   {
@@ -24,7 +31,6 @@ const MEGA_NAV: NavGroup[] = [
     items: [
       { boardType: "anonymous", label: "문태 에타 🌙" },
       { boardType: "free", label: "자유게시판" },
-      { boardType: "notice", label: "공지사항" },
       { boardType: "lost", label: "분실물센터" },
       { boardType: "market", label: "나눔장터" },
       { boardType: "debate", label: "이슈토론" },
@@ -34,6 +40,10 @@ const MEGA_NAV: NavGroup[] = [
   {
     label: "재학생",
     items: [
+      // 학교 홈페이지 공지 3종 — /notices/{source} 내부 페이지가 크롤링 결과를 보여준다.
+      { href: "/notices/school", label: "학교공지" },
+      { href: "/notices/news", label: "문태소식" },
+      { href: "/notices/letter", label: "가정통신문" },
       { boardType: "college", label: "대입정보" },
       { boardType: "curriculum", label: "교육과정" },
       { boardType: "council", label: "학생회" },
@@ -69,7 +79,19 @@ const MEGA_NAV: NavGroup[] = [
 ];
 
 function itemHref(item: NavItem): string {
-  return `/board/${item.boardType}`;
+  return isBoardItem(item) ? `/board/${item.boardType}` : item.href;
+}
+
+function itemKey(item: NavItem): string {
+  return isBoardItem(item) ? `b:${item.boardType}` : `l:${item.href}`;
+}
+
+function itemCount(
+  item: NavItem,
+  counts: Partial<Record<BoardType, number>>,
+): number | null {
+  // 학교공지 3종 등 외부 링크 항목은 카운트 미표시 (DB 카운트 없음)
+  return isBoardItem(item) ? counts[item.boardType] ?? 0 : null;
 }
 
 const SINGLE_NAV = [{ href: "/profile", label: "내 프로필" }];
@@ -409,9 +431,9 @@ export function TopBar() {
                               <ul>
                                 {nav.items.map((item) => {
                                   const href = itemHref(item);
-                                  const cnt = counts[item.boardType] ?? 0;
+                                  const cnt = itemCount(item, counts);
                                   return (
-                                    <li key={href}>
+                                    <li key={itemKey(item)}>
                                       <Link
                                         href={href}
                                         onClick={closeMenu}
@@ -423,9 +445,11 @@ export function TopBar() {
                                         )}
                                       >
                                         <span className="font-medium">{item.label}</span>
-                                        <span className="text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
-                                          {cnt.toLocaleString()}
-                                        </span>
+                                        {cnt !== null && (
+                                          <span className="text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+                                            {cnt.toLocaleString()}
+                                          </span>
+                                        )}
                                       </Link>
                                     </li>
                                   );
@@ -481,10 +505,10 @@ export function TopBar() {
                 <ul className="space-y-1">
                   {nav.items.map((item) => {
                     const href = itemHref(item);
-                    const cnt = counts[item.boardType] ?? 0;
+                    const cnt = itemCount(item, counts);
                     const isActive = pathname.startsWith(href);
                     return (
-                      <li key={href}>
+                      <li key={itemKey(item)}>
                         <Link
                           href={href}
                           className={cn(
@@ -495,16 +519,18 @@ export function TopBar() {
                           )}
                         >
                           <span className="truncate">{item.label}</span>
-                          <span
-                            className={cn(
-                              "shrink-0 text-[11px] tabular-nums transition-colors",
-                              isActive
-                                ? "text-violet-500/80 dark:text-violet-400/70"
-                                : "text-gray-400 group-hover:text-violet-500 dark:text-gray-500 dark:group-hover:text-violet-400",
-                            )}
-                          >
-                            {cnt.toLocaleString()}
-                          </span>
+                          {cnt !== null && (
+                            <span
+                              className={cn(
+                                "shrink-0 text-[11px] tabular-nums transition-colors",
+                                isActive
+                                  ? "text-violet-500/80 dark:text-violet-400/70"
+                                  : "text-gray-400 group-hover:text-violet-500 dark:text-gray-500 dark:group-hover:text-violet-400",
+                              )}
+                            >
+                              {cnt.toLocaleString()}
+                            </span>
+                          )}
                         </Link>
                       </li>
                     );

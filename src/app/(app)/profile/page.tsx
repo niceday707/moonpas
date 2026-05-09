@@ -54,6 +54,14 @@ function ProfileShell() {
   const { user, profile, loading: profileLoading, refetch } = useSupabaseProfile();
   const [tab, setTab] = useState<"posts" | "comments">("posts");
 
+  // URL ?tab= 쿼리로 초기 탭 선택 (window는 클라이언트에서만 접근)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("tab");
+    if (t === "comments") setTab("comments");
+    else if (t === "posts") setTab("posts");
+  }, []);
+
   const [posts, setPosts] = useState<PostRow[] | null>(null);
   const [comments, setComments] = useState<UserCommentRow[] | null>(null);
   const [stats, setStats] = useState<UserStats>({
@@ -114,6 +122,8 @@ function ProfileShell() {
         postCount={stats.posts}
         commentCount={stats.comments}
         onAvatarChanged={refetch}
+        onPostsClick={() => setTab("posts")}
+        onCommentsClick={() => setTab("comments")}
       />
 
       {/* 탭 */}
@@ -163,6 +173,8 @@ function ProfileHeader({
   postCount,
   commentCount,
   onAvatarChanged,
+  onPostsClick,
+  onCommentsClick,
 }: {
   userId: string | null;
   nickname: string;
@@ -172,6 +184,8 @@ function ProfileHeader({
   postCount: number;
   commentCount: number;
   onAvatarChanged: () => Promise<void>;
+  onPostsClick?: () => void;
+  onCommentsClick?: () => void;
 }) {
   return (
     <motion.header
@@ -212,13 +226,14 @@ function ProfileHeader({
 
       {/* 통계 */}
       <div className="mt-5 grid grid-cols-3 gap-2">
-        <StatBox icon={Heart} label="받은 좋아요" value={likes} accent="rose" />
-        <StatBox icon={FileText} label="쓴 글" value={postCount} accent="violet" />
+        <StatBox icon={Heart} label="좋아요" value={likes} accent="rose" />
+        <StatBox icon={FileText} label="쓴 글" value={postCount} accent="violet" onClick={onPostsClick} />
         <StatBox
           icon={MessageCircle}
           label="쓴 댓글"
           value={commentCount}
           accent="cyan"
+          onClick={onCommentsClick}
         />
       </div>
     </motion.header>
@@ -236,14 +251,16 @@ function StatBox({
   label,
   value,
   accent,
+  onClick,
 }: {
   icon: typeof Heart;
   label: string;
   value: number;
   accent: keyof typeof ACCENT_STYLES;
+  onClick?: () => void;
 }) {
-  return (
-    <div className="flex flex-col items-center gap-1 rounded-2xl border border-foreground/10 bg-foreground/[0.02] px-3 py-3">
+  const inner = (
+    <>
       <span
         className={cn(
           "grid h-7 w-7 place-items-center rounded-full",
@@ -256,6 +273,22 @@ function StatBox({
         {value.toLocaleString()}
       </span>
       <span className="text-[11px] text-foreground/55">{label}</span>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex flex-col items-center gap-1 rounded-2xl border border-foreground/10 bg-foreground/[0.02] px-3 py-3 transition-colors hover:bg-foreground/[0.06]"
+      >
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center gap-1 rounded-2xl border border-foreground/10 bg-foreground/[0.02] px-3 py-3">
+      {inner}
     </div>
   );
 }

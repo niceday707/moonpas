@@ -365,13 +365,22 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
       // 하단 고정 댓글 입력바(약 60px) + 답글 배너 여유 + safe-area
       style={{ paddingBottom: "calc(8rem + env(safe-area-inset-bottom))" }}
     >
-      <Link
-        href={`/board/${boardType}`}
-        className="inline-flex items-center gap-1 text-xs text-gray-500 transition hover:text-gray-800 dark:hover:text-gray-200"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        {BOARD_LABEL[boardType]}
-      </Link>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-white/10 dark:hover:text-gray-200"
+          aria-label="뒤로 가기"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <Link
+          href={`/board/${boardType}`}
+          className="text-xs font-medium text-gray-500 transition hover:text-gray-800 dark:hover:text-gray-200"
+        >
+          {BOARD_LABEL[boardType]}
+        </Link>
+      </div>
 
       <article
         className={cn(

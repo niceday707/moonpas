@@ -861,10 +861,10 @@ function ProfileCard({
   stats: UserStats;
   onSetupClick?: () => void;
 }) {
-  const items: { v: number; l: string }[] = [
-    { v: stats.posts, l: "쓴 글" },
-    { v: stats.receivedLikes, l: "받은 좋아요" },
-    { v: stats.comments, l: "쓴 댓글" },
+  const items: { v: number; l: string; href: string }[] = [
+    { v: stats.posts, l: "쓴 글", href: "/profile?tab=posts" },
+    { v: stats.receivedLikes, l: "좋아요", href: "/profile" },
+    { v: stats.comments, l: "쓴 댓글", href: "/profile?tab=comments" },
   ];
   return (
     <Card>
@@ -884,9 +884,12 @@ function ProfileCard({
           />
           <div className="flex flex-col items-start gap-1">
             {nickname ? (
-              <p className="text-sm font-bold text-gray-900 dark:text-white">
+              <Link
+                href="/profile"
+                className="text-sm font-bold text-gray-900 hover:underline dark:text-white"
+              >
                 {nickname}
-              </p>
+              </Link>
             ) : (
               <button
                 type="button"
@@ -901,15 +904,16 @@ function ProfileCard({
         </div>
         <div className="mt-3 grid grid-cols-3 gap-2 text-center">
           {items.map((s) => (
-            <div
+            <Link
               key={s.l}
-              className="rounded-lg bg-gray-50 py-1.5 dark:bg-white/[0.04]"
+              href={s.href}
+              className="rounded-lg bg-gray-50 py-1.5 transition-colors hover:bg-gray-100 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]"
             >
               <p className="text-sm font-bold text-gray-900 dark:text-white">
                 {s.v}
               </p>
               <p className="text-[10px] text-gray-500">{s.l}</p>
-            </div>
+            </Link>
           ))}
         </div>
       </div>

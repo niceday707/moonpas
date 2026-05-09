@@ -78,7 +78,8 @@ export const STUDY_SUBJECT_TAG_LABEL: Record<StudySubjectTag, string> = {
   math: "수학",
   social: "사회",
   science: "과학",
-  etc: "기타",
+  // DB 값은 'etc' 그대로 — UI 라벨만 "교양" 으로 표기.
+  etc: "교양",
 };
 export const STUDY_POST_CATEGORY_LABEL: Record<StudyPostCategory, string> = {
   question: "질문",

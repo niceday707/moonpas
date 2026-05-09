@@ -769,7 +769,7 @@ const STUDY_SUBJECT_OPTIONS: { value: "" | StudySubjectTag; label: string }[] = 
   { value: "math", label: "수학" },
   { value: "social", label: "사회" },
   { value: "science", label: "과학" },
-  { value: "etc", label: "기타" },
+  { value: "etc", label: "교양" },
 ];
 const STUDY_CATEGORY_OPTIONS: { value: "" | StudyPostCategory; label: string }[] = [
   { value: "", label: "전체" },

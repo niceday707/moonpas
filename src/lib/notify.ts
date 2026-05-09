@@ -17,7 +17,9 @@
 //   4) RLS 정책상 actor (인증된 사용자) 가 직접 INSERT — 트리거 없이 클라이언트가 처리.
 
 import { supabase } from "@/lib/supabase";
-import type { BoardType } from "@/lib/board";
+
+// board.ts 에서 import 하면 순환 의존 발생 — 여기서 직접 정의
+type BoardType = string;
 
 // ─────────────────────────────────────────────────────────
 // 알림 설정 폴백
@@ -115,6 +117,7 @@ export async function notifyComment(input: {
     const actor = maskActor(input.actorNickname, boardType);
     const { error } = await supabase.from("notifications").insert({
       user_id: authorId,
+      actor_id: input.actorId,
       type: "comment",
       message: `${actor}님이 회원님의 글에 댓글을 달았습니다`,
       post_id: input.postId,
@@ -184,6 +187,7 @@ export async function notifyReply(input: {
     const message = `${actor}님이 회원님의 댓글에 답글을 달았습니다`;
     const rows = targets.map((uid) => ({
       user_id: uid,
+      actor_id: input.actorId,
       type: "reply",
       message,
       post_id: input.postId,
@@ -235,6 +239,7 @@ export async function notifyLike(input: {
     const actor = maskActor(nickname, boardType);
     const { error } = await supabase.from("notifications").insert({
       user_id: authorId,
+      actor_id: input.actorId,
       type: "like",
       message: `${actor}님이 회원님의 글을 좋아합니다`,
       post_id: input.postId,

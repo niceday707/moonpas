@@ -14,8 +14,10 @@ import { getBoardCounts, getTodayPostCount, type BoardType } from "@/lib/board";
 import { logSearch, normalizeKeyword } from "@/lib/search-log";
 
 // ── 메뉴 정의 ───────────────────────────────────────────────────────────
-// 일반 항목은 boardType 으로 /board/{boardType} 링크. 학교 공지 3종은 외부/내부
-// 라우트가 별도라 boardType 가 없으므로 href 를 직접 지정한다.
+// 일반 항목은 boardType 으로 /board/{boardType} 링크. 학교 공지/외부 라우트는
+// boardType 가 없으므로 href 를 직접 지정한다.
+// 신규(준비 중) 게시판은 board_type 만 새로 부여하고, 실제 화면은
+// /board/[boardType] 라우트의 COMING_SOON_BOARDS 분기로 ComingSoon UI 가 뜬다.
 type BoardNavItem = { boardType: BoardType; label: string };
 type LinkNavItem = { href: string; label: string };
 type NavItem = BoardNavItem | LinkNavItem;
@@ -29,52 +31,58 @@ const MEGA_NAV: NavGroup[] = [
   {
     label: "커뮤니티",
     items: [
-      { boardType: "anonymous", label: "문태 에타 🌙" },
-      { boardType: "free", label: "자유게시판" },
-      { boardType: "lost", label: "분실물센터" },
-      { boardType: "market", label: "나눔장터" },
-      { boardType: "debate", label: "이슈토론" },
+      // 학습게시판: 기존 study board_type 재활용 (스터디 게시글은 별도 SQL 마이그레이션 예정).
+      { boardType: "study", label: "학습게시판 📚" },
       { boardType: "challenge", label: "챌린지" },
+      { boardType: "anonymous", label: "문태에타 🔥" },
+      { boardType: "free", label: "자유게시판" },
+      { boardType: "market", label: "나눔장터" },
+      { boardType: "lost", label: "분실물센터" },
+    ],
+  },
+  {
+    label: "문태 이벤트 🎉",
+    items: [
+      { boardType: "event_quiz", label: "오늘의 퀴즈" },
+      // who_am_i: 신규 board_type, 준비 중 안내 페이지로 분기.
+      { boardType: "who_am_i" as BoardType, label: "누구일까요? 🎭" },
+      { boardType: "event_praise", label: "칭찬합시다" },
+      { boardType: "event_member", label: "회원 참여방" },
+      { href: "/birthday", label: "오늘의 생일 🎂" },
     ],
   },
   {
     label: "재학생",
+    items: [
+      { href: "/timetable", label: "시간표" },
+      { boardType: "youtube", label: "문튜브" },
+      { boardType: "resources", label: "학습 자료실" },
+      { boardType: "debate", label: "이슈토론" },
+      { boardType: "council", label: "학생자치회" },
+      { boardType: "college", label: "입시 나침반" },
+      { boardType: "curriculum", label: "선택과목 가이드" },
+    ],
+  },
+  {
+    label: "문태교우",
+    items: [
+      // campus_story / insight: 신규 board_type, 준비 중 안내 페이지로 분기.
+      { boardType: "campus_story" as BoardType, label: "캠퍼스 스토리" },
+      { boardType: "senior", label: "면접·입시 후기" },
+      { boardType: "insight" as BoardType, label: "인사이트" },
+      { boardType: "news", label: "문태 뉴스" },
+    ],
+  },
+  {
+    label: "학교알림",
     items: [
       // 학교 홈페이지 공지 3종 — /notices/{source} 내부 페이지가 크롤링 결과를 보여준다.
       { href: "/notices/school", label: "학교공지" },
       { href: "/notices/news", label: "문태소식" },
       { href: "/notices/letter", label: "가정통신문" },
       { href: "/notices/gallery", label: "행사갤러리" },
-      { boardType: "college", label: "대입정보" },
-      { boardType: "curriculum", label: "교육과정" },
-      { boardType: "council", label: "학생회" },
-      { boardType: "qa", label: "Q&A" },
-    ],
-  },
-  {
-    label: "문태생활",
-    items: [
-      { boardType: "youtube", label: "문튜브" },
-      { boardType: "resources", label: "자료실" },
-      { boardType: "study", label: "스터디" },
-      { boardType: "news", label: "뉴스" },
-    ],
-  },
-  {
-    label: "문태교우",
-    items: [
-      { boardType: "alumni", label: "졸업생" },
-      { boardType: "senior", label: "선배후기" },
-    ],
-  },
-  {
-    label: "문태 이벤트 🎉",
-    items: [
-      { boardType: "event_member", label: "회원 참여방" },
-      { boardType: "event_find", label: "찹쌀 꽈배기" },
-      { boardType: "event_praise", label: "칭찬합시다" },
-      { boardType: "event_study", label: "공부 인증" },
-      { boardType: "event_quiz", label: "오늘의 퀴즈" },
+      // parent_board: 신규 board_type, 준비 중 안내 페이지로 분기.
+      { boardType: "parent_board" as BoardType, label: "학부모 마당" },
     ],
   },
 ];

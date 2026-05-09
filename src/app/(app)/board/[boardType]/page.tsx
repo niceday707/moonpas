@@ -90,10 +90,36 @@ import {
   type StudySubject,
   type YoutubeCategory,
 } from "@/lib/board";
+import { ComingSoon } from "@/components/ui/ComingSoon";
 import { displayAuthorNameFor } from "@/lib/author-display";
 import { extractPostPreview } from "@/lib/parsePostContent";
 
 const VALID_BOARDS = Object.keys(BOARD_LABEL) as BoardType[];
+
+// 준비 중 게시판 — TopBar 메뉴는 노출하되 클릭 시 ComingSoon 안내만 표시.
+// study 는 기존 board_type 이지만 학습게시판으로 재출시 예정이라 임시로 placeholder 처리.
+const COMING_SOON_BOARDS: Record<string, { title: string; subtitle?: string }> = {
+  study: {
+    title: "학습게시판 📚",
+    subtitle: "함께 공부할 수 있는 학습게시판을 새롭게 준비하고 있어요.",
+  },
+  who_am_i: {
+    title: "누구일까요? 🎭",
+    subtitle: "친구들과 추리로 즐기는 코너를 곧 오픈해요!",
+  },
+  campus_story: {
+    title: "캠퍼스 스토리",
+    subtitle: "선배들의 대학 캠퍼스 이야기를 모아드릴게요.",
+  },
+  insight: {
+    title: "인사이트",
+    subtitle: "졸업생·재학생의 인사이트를 나누는 공간입니다.",
+  },
+  parent_board: {
+    title: "학부모 마당",
+    subtitle: "학부모님을 위한 전용 공간을 준비하고 있어요.",
+  },
+};
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 function isNewPost(iso: string): boolean {
@@ -132,7 +158,16 @@ function previewText(
 
 export default function BoardListPage() {
   const params = useParams<{ boardType: string }>();
-  const boardType = params.boardType as BoardType;
+  const rawBoardType = params.boardType;
+
+  // 신규/재개편 예정 게시판은 본 목록 UI 대신 ComingSoon 으로 안내.
+  // VALID_BOARDS 검사보다 먼저 처리 — study 처럼 기존 board_type 인 경우도 포함하기 때문.
+  const comingSoon = COMING_SOON_BOARDS[rawBoardType];
+  if (comingSoon) {
+    return <ComingSoon title={comingSoon.title} subtitle={comingSoon.subtitle} />;
+  }
+
+  const boardType = rawBoardType as BoardType;
 
   if (!VALID_BOARDS.includes(boardType)) {
     return (

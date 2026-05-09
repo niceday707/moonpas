@@ -43,6 +43,7 @@ import { NicknameSetupModal } from "@/components/dashboard/NicknameSetupModal";
 // DdayCard 는 일시 비활성화 — 추후 관리자 기능과 연동 후 다시 노출 예정.
 // 컴포넌트 파일(@/components/DdayCard) 자체는 그대로 유지한다.
 import { MealCard } from "@/components/MealCard";
+import { SchoolCalendar } from "@/components/SchoolCalendar";
 import { Badge, type Role } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useAuth, attemptGoogleLogin } from "@/lib/auth";
@@ -1025,6 +1026,7 @@ export default function DashboardPage() {
           ───────────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-4 md:hidden">
         <MealCard />
+        <SchoolCalendar />
         <BannerSlider />
         <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
         <LatestFeedCard posts={latestPosts} loading={latestLoading} />
@@ -1050,6 +1052,7 @@ export default function DashboardPage() {
           {/* 가운데 메인 */}
           <main className="flex min-w-0 flex-1 flex-col gap-4">
             <MealCard />
+            <SchoolCalendar />
             <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
             <LatestFeedCard posts={latestPosts} loading={latestLoading} />
           </main>
@@ -1069,7 +1072,7 @@ export default function DashboardPage() {
           {/* 좌측 사이드바 — 280px 고정, lg 부터 노출 */}
           <aside className="flex w-[280px] shrink-0 flex-col gap-4">
             <MealCard />
-            {/* TODO: 학사일정 캘린더 위젯 자리 — 추후 추가 */}
+            <SchoolCalendar />
           </aside>
 
           {/* 가운데 메인 — 배너는 위로 빠졌으므로 문튜브 → 최신글 순서 */}

@@ -23,9 +23,6 @@ import Link from "next/link";
 import {
   Flame,
   Bell,
-  TrendingUp,
-  TrendingDown,
-  Minus,
   Eye,
   MessageSquare,
   Heart,
@@ -98,24 +95,32 @@ const BOARD_BADGE_COLOR: Record<BoardType, string> = {
 };
 
 /** 실시간 검색 — 첫 페인트용 시드 데이터.
- *  /api/trending 응답이 도착하기 전 깜빡임을 막고, 호출 실패 시 폴백으로도 사용. */
-type TrendKind = "up" | "down" | "same" | "new";
-type TrendingItem = { rank: number; keyword: string; trend: TrendKind };
+ *  /api/trending 응답이 도착하기 전 깜빡임을 막고, 호출 실패 시 폴백으로도 사용.
+ *  shape 는 /api/trending 응답과 동일. */
+type TrendChange = "up" | "down" | "same" | "new";
+type TrendingItem = {
+  rank: number;
+  keyword: string;
+  count: number;
+  isNew: boolean;
+  change: TrendChange;
+};
 
+// 사용자 지정 — 서버 fallback 과 동일한 10개. 서버가 곧 같은 응답을 돌려주므로 깜빡임 없음.
 const TRENDING_SEED: TrendingItem[] = [
-  { rank: 1, keyword: "중간고사", trend: "up" },
-  { rank: 2, keyword: "체육대회", trend: "same" },
-  { rank: 3, keyword: "급식 메뉴", trend: "up" },
-  { rank: 4, keyword: "2028 대입", trend: "new" },
-  { rank: 5, keyword: "수행평가", trend: "down" },
-  { rank: 6, keyword: "야자 신청", trend: "up" },
-  { rank: 7, keyword: "수학 30번", trend: "new" },
-  { rank: 8, keyword: "물리학 공부법", trend: "down" },
-  { rank: 9, keyword: "학부모 총회", trend: "same" },
-  { rank: 10, keyword: "문튜브", trend: "up" },
+  { rank: 1, keyword: "체육한마당", count: 0, isNew: false, change: "same" },
+  { rank: 2, keyword: "문튜브", count: 0, isNew: false, change: "same" },
+  { rank: 3, keyword: "생기부 세특", count: 0, isNew: false, change: "same" },
+  { rank: 4, keyword: "급식 꿀조합", count: 0, isNew: false, change: "same" },
+  { rank: 5, keyword: "야자 빠지는 법", count: 0, isNew: false, change: "same" },
+  { rank: 6, keyword: "수행평가 일정", count: 0, isNew: false, change: "same" },
+  { rank: 7, keyword: "문태 축제", count: 0, isNew: false, change: "same" },
+  { rank: 8, keyword: "점심시간 맛집", count: 0, isNew: false, change: "same" },
+  { rank: 9, keyword: "대입 수시 전략", count: 0, isNew: false, change: "same" },
+  { rank: 10, keyword: "쉬는시간 노래추천", count: 0, isNew: false, change: "same" },
 ];
 
-const TRENDING_REFRESH_MS = 5 * 60 * 1000;
+const TRENDING_REFRESH_MS = 60 * 1000; // 60초 — 네이버 실검 톤
 
 const EXTERNAL_LINKS = [
   {
@@ -544,20 +549,39 @@ function LatestFeedList({
 
 // ── 트렌드 / 로그인 / 프로필 ───────────────────────────────
 
-function TrendIcon({ trend }: { trend: "up" | "down" | "same" | "new" }) {
-  if (trend === "new")
-    return <span className="text-[10px] font-bold text-red-500">NEW</span>;
-  if (trend === "up") return <TrendingUp className="h-3 w-3 text-red-500" />;
-  if (trend === "down") return <TrendingDown className="h-3 w-3 text-blue-500" />;
-  return <Minus className="h-3 w-3 text-gray-400" />;
+/** 순위 변동 표시 — 네이버 실검 스타일. NEW 는 보라 뱃지, 그 외는 ▲ ▼ - 텍스트 마커. */
+function ChangeIndicator({ item }: { item: TrendingItem }) {
+  if (item.isNew || item.change === "new") {
+    return (
+      <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-extrabold tracking-wide text-violet-700 dark:bg-violet-500/20 dark:text-violet-300">
+        NEW
+      </span>
+    );
+  }
+  if (item.change === "up") {
+    return (
+      <span className="text-[10px] font-bold leading-none text-red-500">
+        ▲
+      </span>
+    );
+  }
+  if (item.change === "down") {
+    return (
+      <span className="text-[10px] font-bold leading-none text-blue-500">
+        ▼
+      </span>
+    );
+  }
+  return <span className="text-[10px] leading-none text-gray-400">-</span>;
 }
 
 // ── 모바일·PC 공용으로 재사용되는 작은 카드들 ──────────────
 
 function TrendingSearchCard() {
-  // /api/trending 으로부터 라이브 데이터를 받아 5분마다 갱신.
+  // /api/trending 으로부터 라이브 데이터를 받아 60초마다 갱신.
   // 첫 페인트는 SEED 로 보여주고, fetch 결과가 오면 부드럽게 교체 (스켈레톤 깜빡임 방지).
   const [items, setItems] = useState<TrendingItem[]>(TRENDING_SEED);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -568,6 +592,7 @@ function TrendingSearchCard() {
         const json = (await res.json()) as { items?: TrendingItem[] };
         if (!active || !Array.isArray(json.items) || json.items.length === 0) return;
         setItems(json.items);
+        setUpdatedAt(new Date());
       } catch {
         // 네트워크 에러 — SEED 그대로 유지
       }
@@ -587,29 +612,53 @@ function TrendingSearchCard() {
           <Flame className="h-4 w-4" />
           실시간 검색
         </div>
-        <span className="text-[10px] text-gray-400">실시간 인기</span>
+        <span className="text-[10px] text-gray-400">
+          {updatedAt
+            ? `${String(updatedAt.getHours()).padStart(2, "0")}:${String(
+                updatedAt.getMinutes(),
+              ).padStart(2, "0")} 기준`
+            : "실시간 인기"}
+        </span>
       </div>
       <ul className="divide-y divide-gray-50 dark:divide-white/[0.03]">
-        {items.map((t) => (
-          <li key={t.rank}>
-            <Link
-              href={`/board/free?search=${encodeURIComponent(t.keyword)}`}
-              className="flex items-center gap-2.5 px-4 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
-            >
-              <span
-                className={`w-4 shrink-0 text-center text-xs font-bold tabular-nums ${
-                  t.rank <= 3 ? "text-red-500" : "text-gray-400"
-                }`}
+        {items.map((t) => {
+          const isTop3 = t.rank <= 3;
+          return (
+            <li key={`${t.rank}-${t.keyword}`}>
+              <Link
+                href={`/search?q=${encodeURIComponent(t.keyword)}`}
+                className="flex items-center gap-2.5 px-4 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
               >
-                {t.rank}
-              </span>
-              <span className="flex-1 text-xs text-gray-800 dark:text-gray-100">
-                {t.keyword}
-              </span>
-              <TrendIcon trend={t.trend} />
-            </Link>
-          </li>
-        ))}
+                <span
+                  className={`w-4 shrink-0 text-center text-xs font-extrabold tabular-nums ${
+                    t.rank === 1
+                      ? "text-red-500"
+                      : t.rank === 2
+                        ? "text-orange-500"
+                        : t.rank === 3
+                          ? "text-amber-500"
+                          : "text-gray-400"
+                  }`}
+                >
+                  {t.rank}
+                </span>
+                <span
+                  className={`flex-1 truncate text-xs text-gray-800 dark:text-gray-100 ${
+                    isTop3 ? "font-bold" : "font-medium"
+                  }`}
+                >
+                  {t.keyword}
+                </span>
+                {t.count > 0 && (
+                  <span className="hidden shrink-0 text-[9.5px] tabular-nums text-gray-400 sm:inline">
+                    {t.count.toLocaleString()}
+                  </span>
+                )}
+                <ChangeIndicator item={t} />
+              </Link>
+            </li>
+          );
+        })}
       </ul>
     </Card>
   );

@@ -1,24 +1,36 @@
 // GET /api/trending — 실시간 검색어 TOP 10
-//   - public.get_trending_keywords RPC 호출 (최근 6시간 vs 직전 6시간)
-//   - count vs prev_count 로 trend (up/down/same/new) 계산
-//   - 결과가 10개 미만이면 디폴트 키워드로 채워서 항상 10개 반환 (UI 빈자리 방지)
-//   - s-maxage=300 → CDN 5분 캐시 (DB 부하 분산)
 //
-// SUPABASE_SERVICE_ROLE_KEY 가 있으면 그것을 우선 사용 (RLS 우회 보장).
-// 없으면 ANON 키로도 동작 — RPC 가 SECURITY DEFINER + GRANT TO anon 이므로 OK.
+//   1) public.get_trending_keywords_v2 RPC 우선 호출
+//      (검색 로그 + 게시글 제목 토큰의 view_count 가중 합산, 24h 윈도우)
+//   2) v2 가 없으면 v1 (get_trending_keywords) 으로 폴백 — 6h 검색로그만
+//   3) 최종 결과가 10개 미만이면 사용자 지정 fallback 키워드로 채움
+//
+//   응답 형식:
+//     items: Array<{
+//       rank: number;        // 1..10
+//       keyword: string;
+//       count: number;       // 가중치 합 (UI 노출용 정수 반올림)
+//       isNew: boolean;      // 직전 윈도우에 없던 키워드면 true
+//       change: "up"|"down"|"same"|"new";
+//     }>
+//
+//   Cache: s-maxage=30, stale-while-revalidate=60
+//   클라이언트는 60s 간격으로 refetch — 그 사이는 CDN 캐시 응답을 받게 됨.
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-export const revalidate = 300;
-export const dynamic = "force-dynamic"; // RPC 결과는 시간 의존이라 빌드 타임 정적화 금지
+export const revalidate = 30;
+export const dynamic = "force-dynamic"; // RPC 결과는 시간 의존 — 빌드타임 정적화 금지
 
-type Trend = "up" | "down" | "same" | "new";
+type Change = "up" | "down" | "same" | "new";
 
 type TrendingItem = {
   rank: number;
   keyword: string;
-  trend: Trend;
+  count: number;
+  isNew: boolean;
+  change: Change;
 };
 
 type RpcRow = {
@@ -28,24 +40,24 @@ type RpcRow = {
   prev_count: number | string;
 };
 
-// RPC 결과가 비어 있을 때 채워넣는 디폴트 키워드 (기존 하드코딩 그대로 이식)
+// 사용자 지정 — 데이터가 0건일 때 카드를 비워두지 않도록 항상 10개를 채움.
 const FALLBACK_KEYWORDS = [
-  "중간고사",
-  "체육대회",
-  "급식 메뉴",
-  "2028 대입",
-  "수행평가",
-  "야자 신청",
-  "수학 30번",
-  "물리학 공부법",
-  "학부모 총회",
+  "체육한마당",
   "문튜브",
+  "생기부 세특",
+  "급식 꿀조합",
+  "야자 빠지는 법",
+  "수행평가 일정",
+  "문태 축제",
+  "점심시간 맛집",
+  "대입 수시 전략",
+  "쉬는시간 노래추천",
 ];
 
-function computeTrend(count: number, prev: number): Trend {
-  if (prev === 0) return "new";
-  if (count > prev) return "up";
-  if (count < prev) return "down";
+function computeChange(curr: number, prev: number): Change {
+  if (prev <= 0 && curr > 0) return "new";
+  if (curr > prev) return "up";
+  if (curr < prev) return "down";
   return "same";
 }
 
@@ -67,18 +79,34 @@ export async function GET() {
 
   try {
     const supabase = getServerClient();
-    const { data, error } = await supabase.rpc("get_trending_keywords");
 
-    if (error) {
-      console.warn("[/api/trending] RPC 에러", error.message);
-    } else if (Array.isArray(data)) {
-      liveItems = (data as RpcRow[]).map((row, idx) => {
-        const count = Number(row.count);
-        const prev = Number(row.prev_count);
+    // v2 우선 — 실패하면 v1 으로 폴백 (마이그레이션 미적용 환경 보호)
+    let rows: RpcRow[] | null = null;
+    const v2 = await supabase.rpc("get_trending_keywords_v2");
+    if (!v2.error && Array.isArray(v2.data)) {
+      rows = v2.data as RpcRow[];
+    } else {
+      if (v2.error) {
+        console.warn("[/api/trending] v2 RPC 에러", v2.error.message);
+      }
+      const v1 = await supabase.rpc("get_trending_keywords");
+      if (v1.error) {
+        console.warn("[/api/trending] v1 RPC 에러", v1.error.message);
+      } else if (Array.isArray(v1.data)) {
+        rows = v1.data as RpcRow[];
+      }
+    }
+
+    if (rows) {
+      liveItems = rows.map((row, idx) => {
+        const count = Number(row.count) || 0;
+        const prev = Number(row.prev_count) || 0;
         return {
           rank: Number(row.rank) || idx + 1,
           keyword: row.keyword,
-          trend: computeTrend(count, prev),
+          count: Math.max(1, Math.round(count)), // UI 표시용 정수
+          isNew: prev <= 0 && count > 0,
+          change: computeChange(count, prev),
         };
       });
     }
@@ -86,25 +114,26 @@ export async function GET() {
     console.warn("[/api/trending] 예외", err);
   }
 
-  // 실제 검색 키워드와 디폴트가 겹치지 않도록 set 으로 중복 제거
-  const usedKeywords = new Set(liveItems.map((it) => it.keyword.toLowerCase()));
+  // ── 부족분을 fallback 으로 채워 항상 10개 반환 ───────────
+  const used = new Set(liveItems.map((it) => it.keyword.toLowerCase()));
   const filled: TrendingItem[] = [...liveItems];
 
   for (const fk of FALLBACK_KEYWORDS) {
     if (filled.length >= 10) break;
-    if (usedKeywords.has(fk.toLowerCase())) continue;
+    if (used.has(fk.toLowerCase())) continue;
     filled.push({
       rank: filled.length + 1,
       keyword: fk,
-      trend: "same",
+      count: 0,
+      isNew: false,
+      change: "same",
     });
   }
 
-  // rank 재정렬 — 부족분 채워 넣은 뒤 1..N 으로 보정
+  // rank 재부여 (1..10)
   const items: TrendingItem[] = filled.slice(0, 10).map((it, i) => ({
+    ...it,
     rank: i + 1,
-    keyword: it.keyword,
-    trend: it.trend,
   }));
 
   return NextResponse.json(
@@ -112,7 +141,7 @@ export async function GET() {
     {
       status: 200,
       headers: {
-        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60",
+        "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
       },
     },
   );

@@ -208,7 +208,8 @@ function ProfileHeader({
             <h1 className="truncate text-xl font-extrabold tracking-tight md:text-2xl">
               {nickname}
             </h1>
-            {role && <Badge role={role} />}
+            {/* 본인 프로필이라 admin 은 "관리자"로 노출 (다른 페이지에서는 자동으로 "교사" 위장) */}
+            {role && <Badge role={role} context="admin" />}
           </div>
           <p className="mt-1 text-xs text-foreground/55">
             언제든 닉네임을 변경할 수 있어요

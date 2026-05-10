@@ -71,7 +71,11 @@ export async function uploadImage(
 ): Promise<string | null> {
   try {
     const blob = await compressImage(file);
-    const path = `${userId}/${Date.now()}_${safeBaseName(file.name)}.jpg`;
+    // 원본 파일명에 한글/특수문자가 들어오면 Supabase Storage 가 "Invalid key" 로 거부함.
+    // safeBaseName 으로도 NFC/유니코드 케이스를 완벽히 못 잡아서, 아예 원본명을 버리고
+    // timestamp + 짧은 UUID 만으로 키를 만든다. 이미지 본문은 어차피 JPEG 재압축 결과라
+    // 원본 파일명을 보존할 이유가 없음.
+    const path = `${userId}/${Date.now()}_${crypto.randomUUID().slice(0, 8)}.jpg`;
 
     const { error: uploadError } = await supabase.storage
       .from(BUCKET)

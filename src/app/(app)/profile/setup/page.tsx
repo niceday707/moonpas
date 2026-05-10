@@ -236,6 +236,7 @@ function ProfileSetupForm() {
               <span className="truncate text-base font-bold">
                 {previewNickname}
               </span>
+              {/* "게시판에는 이렇게 표시돼요" 미리보기 — 실제 게시판과 맞춰 public 맥락으로 표시 (admin → 교사) */}
               {profile?.role && <Badge role={profile.role} />}
             </div>
             <p className="text-[11px] text-foreground/45">

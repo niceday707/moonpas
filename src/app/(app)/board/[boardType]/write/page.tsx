@@ -609,6 +609,15 @@ function WriteInner() {
     if (imageFile) {
       const url = await uploadImage(imageFile, user.id);
       if (!url) {
+        // TODO(임시): 업로드 실패 원인 파악용 로그. uploadImage 내부에서도 console.error 가
+        // 찍히지만, 호출부 컨텍스트(어떤 게시판/유저/파일이 실패했는지) 도 같이 보고 싶어 추가.
+        console.error("[write] 이미지 업로드 실패", {
+          boardType,
+          userId: user.id,
+          fileName: imageFile.name,
+          fileType: imageFile.type,
+          fileSize: imageFile.size,
+        });
         setUploading(false);
         setError("이미지 업로드에 실패했어요. 잠시 후 다시 시도해주세요.");
         return;

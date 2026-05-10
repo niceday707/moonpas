@@ -582,6 +582,8 @@ export async function createPost(input: {
   postCategory?: StudyPostCategory | null;
   // 챌린지(board_type='challenge') 전용 — post_category 컬럼에 저장됨.
   challengeCategory?: ChallengeCategory | null;
+  // 챌린지 v2 — 학생이 만든 개별 챌린지에 인증 글 연결
+  challengeId?: string | null;
 }): Promise<{
   id: string | null;
   error: string | null;
@@ -646,6 +648,7 @@ export async function createPost(input: {
       grade: isStudyBoard ? (input.grade ?? null) : null,
       subject_tag: isStudyBoard ? (input.subjectTag ?? null) : null,
       post_category: postCategoryValue,
+      challenge_id: isChallengeBoard ? (input.challengeId ?? null) : null,
     })
     .select("id")
     .single();

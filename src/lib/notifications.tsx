@@ -25,7 +25,8 @@ export type NotificationType =
   | "comment"
   | "reply"
   | "like"
-  | "notice";
+  | "notice"
+  | "challenge_invite";
 
 export interface AppNotification {
   id: string;
@@ -238,6 +239,10 @@ export function useNotifications() {
 /** 알림 클릭 시 이동할 경로 — post_id + board_type 이 있으면 그 글 상세로, 없으면 대시보드 */
 export function getNotificationHref(n: AppNotification): string {
   if (n.type === "notice") return "/notices";
+  // 챌린지 초대: post_id 필드에 challenge_id 가 들어있음 → 챌린지 상세로 이동.
+  if (n.type === "challenge_invite") {
+    return n.postId ? `/board/challenge/${n.postId}` : "/board/challenge";
+  }
   if (n.postId && n.boardType) {
     return `/board/${n.boardType}/${n.postId}`;
   }

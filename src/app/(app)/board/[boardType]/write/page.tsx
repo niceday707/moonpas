@@ -117,6 +117,14 @@ function WriteInner() {
   const router = useRouter();
   const boardType = params.boardType as BoardType;
   const editId = search.get("id");
+  // 챌린지 인증 — 특정 챌린지 ID 가 쿼리에 있으면 그 챌린지에 귀속.
+  const challengeIdParam = search.get("challengeId");
+  const [challengeContext, setChallengeContext] = useState<{
+    id: string;
+    title: string;
+    emoji: string | null;
+    category: ChallengeCategory | null;
+  } | null>(null);
 
   const { user, profile, loading: profileLoading } = useSupabaseProfile();
 
@@ -289,6 +297,31 @@ function WriteInner() {
     };
   }, [boardType]);
 
+  // 챌린지 v2 — challengeId 쿼리가 있으면 챌린지 정보 로드 + 카테고리 자동 설정
+  useEffect(() => {
+    if (boardType !== "challenge" || !challengeIdParam) return;
+    let active = true;
+    import("@/lib/challenge").then(({ getChallenge }) => {
+      getChallenge(challengeIdParam).then((c) => {
+        if (!active || !c) return;
+        const cat: ChallengeCategory | null =
+          c.category === "custom"
+            ? null
+            : (c.category as ChallengeCategory);
+        setChallengeContext({
+          id: c.id,
+          title: c.title,
+          emoji: c.emoji,
+          category: cat,
+        });
+        if (cat) setChallengeCategory(cat);
+      });
+    });
+    return () => {
+      active = false;
+    };
+  }, [boardType, challengeIdParam]);
+
   if (!VALID_BOARDS.includes(boardType)) {
     return (
       <div className="mx-auto max-w-screen-md px-4 py-10 text-center text-sm text-gray-500">
@@ -442,8 +475,8 @@ function WriteInner() {
       setError("챌린지 게시판은 인증샷 이미지가 필요해요.");
       return;
     }
-    // 챌린지는 카테고리 필수
-    if (isChallenge && !challengeCategory) {
+    // 챌린지는 카테고리 필수 (단, 학생 개설 챌린지(custom)는 카테고리 자동 처리되므로 예외)
+    if (isChallenge && !challengeCategory && !challengeContext) {
       setError("챌린지 카테고리를 선택해주세요.");
       return;
     }
@@ -652,6 +685,8 @@ function WriteInner() {
         challengeCategory: isChallenge
           ? ((challengeCategory || null) as ChallengeCategory | null)
           : undefined,
+        // 챌린지 v2 — 학생이 만든 챌린지의 인증이면 challenge_id 연결
+        challengeId: isChallenge ? challengeIdParam : undefined,
       });
       setSubmitting(false);
       if (result.error || !result.id) {
@@ -697,7 +732,20 @@ function WriteInner() {
       </h1>
 
       <div className="mt-5 space-y-4 rounded-xl border border-gray-200 bg-white p-4 dark:border-white/[0.07] dark:bg-[#16162a]">
-        {isChallenge && (
+        {isChallenge && challengeContext && (
+          <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-violet-500/10 to-cyan-500/10 px-4 py-3 ring-1 ring-violet-500/30 dark:from-violet-500/15 dark:to-cyan-500/15">
+            <span className="text-2xl">{challengeContext.emoji ?? "🔥"}</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-violet-600 dark:text-violet-300">
+                챌린지 인증
+              </p>
+              <p className="line-clamp-1 text-sm font-extrabold text-gray-900 dark:text-white">
+                {challengeContext.title} 인증하기
+              </p>
+            </div>
+          </div>
+        )}
+        {isChallenge && !challengeContext && (
           <ChallengeCategoryPicker
             value={challengeCategory}
             onChange={setChallengeCategory}

@@ -106,6 +106,18 @@ import { MobileBackButton } from "@/components/nav/MobileBackButton";
 import { NicknameButton } from "@/components/profile/NicknameButton";
 import { displayAuthorNameFor } from "@/lib/author-display";
 import { extractPostPreview } from "@/lib/parsePostContent";
+import {
+  CHALLENGE_TAGS,
+  CHALLENGE_TAG_STYLE,
+  formatChallengeDuration,
+  getMyPendingInvites,
+  listChallenges,
+  parseTags,
+  respondToInvite,
+  type Challenge as ChallengeV2,
+  type ChallengeTagKey,
+  type PendingInvite,
+} from "@/lib/challenge";
 
 const VALID_BOARDS = Object.keys(BOARD_LABEL) as BoardType[];
 
@@ -586,6 +598,11 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     isResources ||
     isNews;
     // 학습게시판은 자체 안내 배너 + 3 행 필터를 별도 슬롯에 렌더 — hasIntro 계산에선 제외.
+
+  // 챌린지 v2 — 챌린지 게시판은 글 목록이 아닌 챌린지 카드 목록 UI 로 완전 분기.
+  if (isChallenge) {
+    return <ChallengeListView currentUserId={user?.id ?? null} />;
+  }
 
   return (
     <motion.div
@@ -1388,6 +1405,394 @@ function IssueRow({ post }: { post: PostRow }) {
         </div>
       </Link>
     </li>
+  );
+}
+
+// ── 챌린지 v2 — 카드 목록 / 탭 / 초대 배너 통합 뷰 ────────────
+type ChallengeTab = "all" | "official" | "mine";
+
+function ChallengeListView({ currentUserId }: { currentUserId: string | null }) {
+  const [tab, setTab] = useState<ChallengeTab>("all");
+  const [allChallenges, setAllChallenges] = useState<ChallengeV2[]>([]);
+  const [myChallenges, setMyChallenges] = useState<ChallengeV2[]>([]);
+  const [invites, setInvites] = useState<PendingInvite[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+
+  const reload = async () => {
+    setLoading(true);
+    const [all, mine, inv] = await Promise.all([
+      listChallenges(),
+      currentUserId ? listChallenges({ onlyMine: true }) : Promise.resolve([]),
+      currentUserId ? getMyPendingInvites() : Promise.resolve([]),
+    ]);
+    setAllChallenges(all);
+    setMyChallenges(mine);
+    setInvites(inv);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setLoading(true);
+      const [all, mine, inv] = await Promise.all([
+        listChallenges(),
+        currentUserId ? listChallenges({ onlyMine: true }) : Promise.resolve([]),
+        currentUserId ? getMyPendingInvites() : Promise.resolve([]),
+      ]);
+      if (!active) return;
+      setAllChallenges(all);
+      setMyChallenges(mine);
+      setInvites(inv);
+      setLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [currentUserId]);
+
+  // 정렬: 학생 챌린지 = 참여자수 내림차순, 공식 챌린지 = 카테고리 순서 유지.
+  const popularChallenges = allChallenges
+    .filter((c) => !c.is_official)
+    .sort(
+      (a, b) => (b.participant_count ?? 0) - (a.participant_count ?? 0),
+    );
+  const officialChallenges = allChallenges.filter((c) => c.is_official);
+
+  const inviteCount = invites.length;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+      className="mx-auto max-w-screen-lg px-4 py-6"
+    >
+      {/* 헤더 */}
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <MobileBackButton />
+          <h1 className="text-xl font-extrabold text-gray-900 dark:text-white">
+            문태 챌린지 🔥
+          </h1>
+        </div>
+        <Link
+          href="/board/challenge/create"
+          className="flex items-center gap-1.5 rounded-xl bg-violet-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700"
+        >
+          <PenSquare className="h-4 w-4" />
+          챌린지 만들기 ✏️
+        </Link>
+      </div>
+
+      {/* 초대 배너 */}
+      {inviteCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowInviteModal(true)}
+          className="mb-3 flex w-full items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500/15 to-cyan-500/15 px-4 py-3 text-left ring-1 ring-violet-500/30 transition hover:ring-violet-500/60"
+        >
+          <span className="text-lg">📩</span>
+          <span className="flex-1 text-sm font-bold text-violet-700 dark:text-violet-200">
+            {inviteCount}개의 챌린지 초대가 있습니다
+          </span>
+          <span className="text-xs text-violet-500">자세히 보기 →</span>
+        </button>
+      )}
+
+      {/* 탭 */}
+      <div className="mb-5 flex flex-wrap gap-1.5">
+        {(
+          [
+            { value: "all", label: "전체" },
+            { value: "official", label: "⭐ 공식" },
+            { value: "mine", label: "내 챌린지" },
+          ] as { value: ChallengeTab; label: string }[]
+        ).map((opt) => {
+          const active = tab === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setTab(opt.value)}
+              className={cn(
+                "rounded-full border px-3.5 py-1.5 text-xs font-semibold transition",
+                active
+                  ? "border-violet-500 bg-violet-500/10 text-violet-600 dark:text-violet-300"
+                  : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+              )}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-violet-500">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </div>
+      ) : tab === "official" ? (
+        <ChallengeSection
+          title="⭐ 공식 챌린지"
+          challenges={officialChallenges}
+          official
+          emptyText="공식 챌린지가 없어요."
+        />
+      ) : tab === "mine" ? (
+        <ChallengeSection
+          title="📌 내 챌린지"
+          challenges={myChallenges}
+          emptyText="아직 참여하거나 만든 챌린지가 없어요. 첫 번째 챌린지를 만들어보세요! 🎯"
+        />
+      ) : (
+        <div className="space-y-6">
+          <ChallengeSection
+            title="🔥 인기 챌린지"
+            challenges={popularChallenges}
+            emptyText="아직 챌린지가 없어요. 첫 번째 챌린지를 만들어보세요! 🎯"
+          />
+          <ChallengeSection
+            title="⭐ 공식 챌린지"
+            challenges={officialChallenges}
+            official
+          />
+        </div>
+      )}
+
+      {/* 초대 모달 */}
+      {showInviteModal && (
+        <ChallengeInviteModal
+          invites={invites}
+          onClose={() => setShowInviteModal(false)}
+          onResolved={async () => {
+            await reload();
+          }}
+        />
+      )}
+    </motion.div>
+  );
+}
+
+function ChallengeSection({
+  title,
+  challenges,
+  emptyText,
+  official,
+}: {
+  title: string;
+  challenges: ChallengeV2[];
+  emptyText?: string;
+  official?: boolean;
+}) {
+  return (
+    <section>
+      <h2 className="mb-2 text-sm font-extrabold text-gray-800 dark:text-gray-100">
+        {title}
+      </h2>
+      {challenges.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-6 py-10 text-center dark:border-white/10 dark:bg-[#16162a]">
+          <p className="text-sm text-gray-500 dark:text-gray-300">
+            {emptyText ?? "챌린지가 없어요."}
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {challenges.map((c) => (
+            <ChallengeListCard key={c.id} challenge={c} highlightOfficial={!!official} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ChallengeListCard({
+  challenge,
+  highlightOfficial,
+}: {
+  challenge: ChallengeV2;
+  highlightOfficial?: boolean;
+}) {
+  const tags = parseTags(challenge.description);
+  const durationLabel = formatChallengeDuration(challenge);
+  const showOfficialBadge = challenge.is_official;
+  const useOfficialBorder = highlightOfficial || challenge.is_official;
+  const tagDefByKey = new Map(CHALLENGE_TAGS.map((t) => [t.key, t]));
+
+  return (
+    <Link
+      href={`/board/challenge/${challenge.id}`}
+      className={cn(
+        "group flex flex-col gap-3 rounded-2xl bg-white p-4 transition hover:scale-[1.02] hover:shadow-lg dark:bg-[#16162a]",
+        useOfficialBorder
+          ? "border-2 border-violet-400 dark:border-violet-500/60"
+          : "border border-gray-200 dark:border-white/[0.07]",
+      )}
+    >
+      {/* 상단: 이모지 + 제목 */}
+      <div className="flex items-start gap-2">
+        <span className="text-3xl leading-none">{challenge.emoji ?? "🔥"}</span>
+        <h3 className="line-clamp-2 flex-1 text-base font-bold text-gray-900 dark:text-white">
+          {challenge.title}
+        </h3>
+      </div>
+
+      {/* 중단: 개설자 + 참여자수 */}
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="truncate text-gray-500 dark:text-gray-400">
+          {challenge.creator?.nickname ?? "(알수없음)"}
+        </span>
+        <span className="inline-flex shrink-0 items-center gap-1 text-gray-500 dark:text-gray-400">
+          <Users className="h-3.5 w-3.5" />
+          {challenge.participant_count ?? 0}명 참여 중
+        </span>
+      </div>
+
+      {/* 태그 */}
+      {tags.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {tags.slice(0, 4).map((key: ChallengeTagKey) => {
+            const def = tagDefByKey.get(key);
+            if (!def) return null;
+            return (
+              <span
+                key={key}
+                className={cn(
+                  "inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                  CHALLENGE_TAG_STYLE[key],
+                )}
+              >
+                <span>{def.emoji}</span>
+                <span>{def.label}</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 하단: 기간 + 공식 뱃지 */}
+      <div className="flex items-center justify-between gap-2 pt-1 text-[11px]">
+        <span className="rounded-full bg-gray-100 px-2 py-0.5 font-bold text-gray-600 dark:bg-white/[0.06] dark:text-gray-300">
+          {durationLabel}
+        </span>
+        {showOfficialBadge && (
+          <span className="rounded-full bg-violet-100 px-2 py-0.5 font-bold text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">
+            ⭐ 공식
+          </span>
+        )}
+      </div>
+    </Link>
+  );
+}
+
+// ── 초대 응답 모달 ────────────────────────────────────────────
+function ChallengeInviteModal({
+  invites,
+  onClose,
+  onResolved,
+}: {
+  invites: PendingInvite[];
+  onClose: () => void;
+  onResolved: () => void | Promise<void>;
+}) {
+  const [pending, setPending] = useState<Record<string, "accept" | "decline" | null>>({});
+  const [resolved, setResolved] = useState<Record<string, "accepted" | "declined">>({});
+
+  async function handleRespond(inviteId: string, accept: boolean) {
+    setPending((p) => ({ ...p, [inviteId]: accept ? "accept" : "decline" }));
+    const { error } = await respondToInvite(inviteId, accept);
+    setPending((p) => ({ ...p, [inviteId]: null }));
+    if (error) {
+      alert(`처리 실패: ${error}`);
+      return;
+    }
+    setResolved((r) => ({ ...r, [inviteId]: accept ? "accepted" : "declined" }));
+    await onResolved();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[80vh] w-full max-w-md overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-white/[0.08] dark:bg-[#16162a]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-white/[0.06]">
+          <h3 className="text-base font-extrabold text-gray-900 dark:text-white">
+            챌린지 초대 📩
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="닫기"
+            className="grid h-8 w-8 place-items-center rounded-lg text-gray-400 transition hover:bg-gray-100 dark:hover:bg-white/[0.06]"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <ul className="max-h-[60vh] divide-y divide-gray-100 overflow-y-auto dark:divide-white/[0.05]">
+          {invites.map((inv) => {
+            const status = resolved[inv.invite.id];
+            const busy = pending[inv.invite.id];
+            return (
+              <li key={inv.invite.id} className="flex items-start gap-3 px-5 py-4">
+                <span className="mt-0.5 text-2xl leading-none">
+                  {inv.challenge.emoji ?? "🎯"}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-gray-900 dark:text-white">
+                    {inv.challenge.title}
+                  </p>
+                  <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    @{inv.inviter.nickname}님이 초대했어요
+                  </p>
+                  <div className="mt-2 flex items-center gap-1.5">
+                    {status === "accepted" ? (
+                      <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                        ✓ 참여 완료
+                      </span>
+                    ) : status === "declined" ? (
+                      <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-500 dark:bg-white/[0.06]">
+                        거절됨
+                      </span>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          disabled={!!busy}
+                          onClick={() => handleRespond(inv.invite.id, true)}
+                          className="inline-flex items-center gap-1 rounded-full bg-violet-500 px-4 py-1 text-xs font-bold text-white transition hover:bg-violet-600 disabled:opacity-50"
+                        >
+                          {busy === "accept" && (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          )}
+                          수락
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!!busy}
+                          onClick={() => handleRespond(inv.invite.id, false)}
+                          className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-4 py-1 text-xs font-bold text-gray-600 transition hover:bg-gray-200 disabled:opacity-50 dark:bg-white/[0.08] dark:text-gray-200 dark:hover:bg-white/[0.14]"
+                        >
+                          {busy === "decline" && (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          )}
+                          거절
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
   );
 }
 

@@ -1,16 +1,19 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AtSign,
   Bell,
+  Loader2,
   MessageCircle,
   MessageSquare,
   Heart,
   Megaphone,
   CheckCheck,
   Settings,
+  Target,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -21,6 +24,9 @@ import {
 } from "@/lib/notifications";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+import { useSupabaseUser } from "@/lib/supabase-profile";
+import { respondToInvite } from "@/lib/challenge";
 
 // ── 알림 타입별 아이콘 / 색상 / 문구 ─────────────────────────────────
 
@@ -58,6 +64,12 @@ const TYPE_META: Record<
     bg: "bg-amber-50 dark:bg-amber-900/25",
     label: "공지",
   },
+  challenge_invite: {
+    icon: Target,
+    color: "text-violet-500",
+    bg: "bg-violet-50 dark:bg-violet-900/25",
+    label: "챌린지 초대",
+  },
 };
 
 // ── 단일 알림 아이템 ─────────────────────────────────────────────────
@@ -67,6 +79,7 @@ function NotificationItem({ notification }: { notification: AppNotification }) {
   const { markAsRead } = useNotifications();
   const meta = TYPE_META[notification.type] ?? TYPE_META.mention;
   const Icon = meta.icon;
+  const isInvite = notification.type === "challenge_invite";
 
   const handleClick = async () => {
     await markAsRead(notification.id);
@@ -81,48 +94,176 @@ function NotificationItem({ notification }: { notification: AppNotification }) {
       exit={{ opacity: 0, x: -20 }}
       transition={{ duration: 0.22 }}
     >
-      <button
-        type="button"
-        onClick={handleClick}
+      <div
         className={cn(
-          "flex w-full items-start gap-3 px-4 py-4 text-left transition-colors",
-          "hover:bg-gray-50 dark:hover:bg-white/[0.03]",
+          "flex items-start gap-3 px-4 py-4 transition-colors",
+          isInvite && "border-l-4 border-violet-500",
           !notification.isRead && "bg-violet-50/50 dark:bg-violet-900/10",
         )}
       >
-        {/* 타입 아이콘 */}
-        <span
+        {/* 타입 아이콘 — 클릭 시 상세 이동 */}
+        <button
+          type="button"
+          onClick={handleClick}
+          aria-label="알림 보기"
           className={cn(
-            "mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl",
+            "mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl transition hover:opacity-80",
             meta.bg,
           )}
         >
-          <Icon className={cn("h-5 w-5", meta.color)} />
-        </span>
+          {isInvite ? (
+            <span className="text-xl">🎯</span>
+          ) : (
+            <Icon className={cn("h-5 w-5", meta.color)} />
+          )}
+        </button>
 
         {/* 본문 */}
         <div className="min-w-0 flex-1">
-          <p
-            className={cn(
-              "text-sm leading-snug",
-              notification.isRead
-                ? "text-gray-500 dark:text-gray-400"
-                : "font-semibold text-gray-900 dark:text-white",
-            )}
+          <button
+            type="button"
+            onClick={handleClick}
+            className="block w-full text-left"
           >
-            {notification.message}
-          </p>
-          <p className="mt-1.5 text-[11px] text-gray-400 dark:text-gray-500">
-            {relativeTime(notification.createdAt)}
-          </p>
+            <p
+              className={cn(
+                "text-sm leading-snug",
+                notification.isRead
+                  ? "text-gray-500 dark:text-gray-400"
+                  : "font-semibold text-gray-900 dark:text-white",
+              )}
+            >
+              {notification.message}
+            </p>
+            <p className="mt-1.5 text-[11px] text-gray-400 dark:text-gray-500">
+              {relativeTime(notification.createdAt)}
+            </p>
+          </button>
+
+          {/* 챌린지 초대 — 수락/거절 버튼 */}
+          {isInvite && notification.postId && (
+            <ChallengeInviteActions
+              notificationId={notification.id}
+              challengeId={notification.postId}
+            />
+          )}
         </div>
 
         {/* 읽지 않은 파란 점 */}
         {!notification.isRead && (
           <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-violet-500" />
         )}
-      </button>
+      </div>
     </motion.li>
+  );
+}
+
+// ── 챌린지 초대 — 수락/거절 인라인 버튼 ─────────────────────────
+// post_id(=challenge_id) + 현재 사용자로 challenge_invites 한 행을 찾아
+// respondToInvite 호출. 응답 후 상태별로 UI 비활성.
+function ChallengeInviteActions({
+  notificationId,
+  challengeId,
+}: {
+  notificationId: string;
+  challengeId: string;
+}) {
+  const { user } = useSupabaseUser();
+  const { markAsRead } = useNotifications();
+  const [inviteId, setInviteId] = useState<string | null>(null);
+  const [status, setStatus] = useState<"pending" | "accepted" | "declined" | "missing" | null>(
+    null,
+  );
+  const [busy, setBusy] = useState<"accept" | "decline" | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from("challenge_invites")
+        .select("id, status")
+        .eq("challenge_id", challengeId)
+        .eq("invitee_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!active) return;
+      if (error || !data) {
+        setStatus("missing");
+        return;
+      }
+      const row = data as { id: string; status: "pending" | "accepted" | "declined" };
+      setInviteId(row.id);
+      setStatus(row.status);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [user, challengeId]);
+
+  async function respond(accept: boolean) {
+    if (!inviteId) return;
+    setBusy(accept ? "accept" : "decline");
+    const { error } = await respondToInvite(inviteId, accept);
+    setBusy(null);
+    if (error) {
+      alert(`처리 실패: ${error}`);
+      return;
+    }
+    setStatus(accept ? "accepted" : "declined");
+    await markAsRead(notificationId);
+  }
+
+  if (status === null) {
+    return (
+      <div className="mt-2 inline-flex items-center gap-1 text-[11px] text-gray-400">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        확인 중…
+      </div>
+    );
+  }
+
+  if (status === "missing") {
+    // 초대 row 가 없으면 본인이 아니거나 초대자가 받은 "참여 완료" 알림 — 버튼 비표시
+    return null;
+  }
+
+  if (status === "accepted") {
+    return (
+      <span className="mt-2 inline-flex rounded-full bg-emerald-500/15 px-3 py-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+        ✓ 참여 완료
+      </span>
+    );
+  }
+  if (status === "declined") {
+    return (
+      <span className="mt-2 inline-flex rounded-full bg-gray-100 px-3 py-1 text-[11px] font-bold text-gray-500 dark:bg-white/[0.06]">
+        거절됨
+      </span>
+    );
+  }
+  return (
+    <div className="mt-2 flex items-center gap-1.5">
+      <button
+        type="button"
+        disabled={!!busy}
+        onClick={() => respond(true)}
+        className="inline-flex items-center gap-1 rounded-full bg-violet-500 px-4 py-1 text-xs font-bold text-white transition hover:bg-violet-600 disabled:opacity-50"
+      >
+        {busy === "accept" && <Loader2 className="h-3 w-3 animate-spin" />}
+        수락
+      </button>
+      <button
+        type="button"
+        disabled={!!busy}
+        onClick={() => respond(false)}
+        className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-4 py-1 text-xs font-bold text-gray-600 transition hover:bg-gray-200 disabled:opacity-50 dark:bg-white/[0.08] dark:text-gray-200 dark:hover:bg-white/[0.14]"
+      >
+        {busy === "decline" && <Loader2 className="h-3 w-3 animate-spin" />}
+        거절
+      </button>
+    </div>
   );
 }
 

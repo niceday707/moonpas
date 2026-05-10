@@ -41,6 +41,8 @@ const MEGA_NAV: NavGroup[] = [
       { boardType: "free", label: "자유게시판" },
       { boardType: "market", label: "나눔장터" },
       { boardType: "lost", label: "분실물센터" },
+      // council: 재학생에서 커뮤니티로 이동 — board_type/href 그대로 유지.
+      { boardType: "council", label: "학생자치회" },
     ],
   },
   {
@@ -62,7 +64,6 @@ const MEGA_NAV: NavGroup[] = [
       { boardType: "youtube", label: "문튜브" },
       { boardType: "resources", label: "학습 자료실" },
       { boardType: "debate", label: "이슈토론" },
-      { boardType: "council", label: "학생자치회" },
       { boardType: "college", label: "입시 나침반" },
       { boardType: "curriculum", label: "선택과목 가이드" },
     ],

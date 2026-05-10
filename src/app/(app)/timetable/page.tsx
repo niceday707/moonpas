@@ -344,7 +344,7 @@ function TimetableGrid({
                       colSpan={DAYS.length + 1}
                       className="border-y border-amber-200 bg-amber-50 px-2 py-1.5 text-center text-[11px] font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
                     >
-                      🍚 점심시간 (12:40~13:30)
+                      🍚 점심시간 (12:40~13:40)
                     </td>
                   </tr>
                 )}

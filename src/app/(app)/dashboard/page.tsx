@@ -6,10 +6,10 @@
 //  · 모바일 (md 미만): 1컬럼 세로 스택
 //      급식 → 배너 → 문튜브 → 최신글 → 프로필/로그인 → 실시간검색 → HOT → 공지
 //  · 태블릿 (md ~ lg 미만): 배너(전체 너비) → 그 아래 2단 (가운데 flex-1 | 우측 280px)
-//      가운데: 급식 → 문튜브 → 최신글
+//      가운데: 급식 → 학사일정 → 다음시험 → 문튜브 → 최신글
 //      우측 : 최신 공지 → 인기글
 //  · 데스크톱 (lg 이상): 배너(전체 너비) → 그 아래 3단 (좌측 280px | 가운데 flex-1 | 우측 300px)
-//      좌측 : 급식 (+ 추후 학사일정 캘린더)
+//      좌측 : 급식 → 학사일정 → 다음시험
 //      가운데: 문튜브 → 최신글
 //      우측 : 최신 공지 → 인기글
 //
@@ -1332,12 +1332,11 @@ export default function DashboardPage() {
         {/* 태블릿 (md ~ lg 미만): 2단 — 가운데(flex-1) | 우측(280px)
             급식은 가운데 컬럼 상단에 배치. */}
         <div className="flex gap-5 lg:hidden">
-          {/* 가운데 메인 — 태블릿엔 좌측 사이드바가 없어서 학사일정 아래에 공지 카드를 함께 배치 */}
+          {/* 가운데 메인 — 최신 공지는 우측 사이드바에서 단독 노출 */}
           <main className="flex min-w-0 flex-1 flex-col gap-4">
             <MealCard />
             <SchoolCalendar />
             <ExamWidget />
-            <NoticesCard notices={unifiedNotices} loading={noticeLoading} />
             <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
             <LatestFeedCard posts={latestPosts} loading={latestLoading} />
           </main>
@@ -1349,14 +1348,13 @@ export default function DashboardPage() {
           </aside>
         </div>
 
-        {/* 데스크톱 (lg+): 3단 — 좌측(280px, 급식·학사일정·공지) | 가운데(flex-1, 문튜브·최신글) | 우측(300px) */}
+        {/* 데스크톱 (lg+): 3단 — 좌측(280px, 급식·학사일정·다음시험) | 가운데(flex-1, 문튜브·최신글) | 우측(300px) */}
         <div className="hidden lg:flex lg:gap-5">
-          {/* 좌측 사이드바 — 280px 고정, lg 부터 노출. 순서: 급식 → 학사일정 → 최신 공지 */}
+          {/* 좌측 사이드바 — 280px 고정, lg 부터 노출. 순서: 급식 → 학사일정 → 다음 시험 */}
           <aside className="flex w-[280px] shrink-0 flex-col gap-4">
             <MealCard />
             <SchoolCalendar />
             <ExamWidget />
-            <NoticesCard notices={unifiedNotices} loading={noticeLoading} />
           </aside>
 
           {/* 가운데 메인 — 배너는 위로 빠졌으므로 문튜브 → 최신글 순서 */}

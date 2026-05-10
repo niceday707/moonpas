@@ -7,6 +7,17 @@ import { supabase } from "@/lib/supabase";
 import { notifyLike } from "@/lib/notify";
 import type { Role } from "@/components/ui/Badge";
 
+/**
+ * 게시글 상세 페이지 URL.
+ * 챌린지 인증 글은 /board/challenge/[challengeId] 라우트와 충돌하므로
+ * 별도 라우트(/board/challenge/post/[postId])로 보낸다.
+ * 그 외는 /board/[boardType]/[postId].
+ */
+export function postDetailHref(boardType: string, postId: string): string {
+  if (boardType === "challenge") return `/board/challenge/post/${postId}`;
+  return `/board/${boardType}/${postId}`;
+}
+
 // 게시판 종류 — board_type 컬럼에 들어가는 키
 export type BoardType =
   | "free" // 자유게시판

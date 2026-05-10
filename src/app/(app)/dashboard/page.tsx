@@ -61,6 +61,7 @@ import {
   getUserStats,
   listPosts,
   parseYoutubeContent,
+  postDetailHref,
   youtubeThumbUrl,
   type BoardType,
   type PostRow,
@@ -309,7 +310,7 @@ function HotPostList({
       {posts.map((p, i) => (
         <li key={p.id}>
           <Link
-            href={`/board/${p.board_type}/${p.id}`}
+            href={postDetailHref(p.board_type, p.id)}
             className="flex items-start gap-2.5 px-4 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
           >
             <span
@@ -609,7 +610,7 @@ function LatestFeedList({
       {posts.map((p) => (
         <li key={p.id}>
           <Link
-            href={`/board/${p.board_type}/${p.id}`}
+            href={postDetailHref(p.board_type, p.id)}
             className="flex items-center gap-2.5 px-4 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02] sm:gap-3"
           >
             {/* 게시판 뱃지 */}

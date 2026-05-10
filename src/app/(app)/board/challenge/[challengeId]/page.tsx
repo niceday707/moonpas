@@ -134,9 +134,9 @@ function ChallengeDetailInner() {
       <div className="mx-auto max-w-screen-md px-4 py-10">
         <Link
           href="/board/challenge"
-          className="inline-flex items-center gap-1 text-xs text-gray-500 transition hover:text-gray-800 dark:hover:text-gray-200"
+          className="inline-flex items-center gap-1 py-3 mb-2 block relative z-10 text-sm text-gray-500 transition hover:text-gray-800 dark:hover:text-gray-200"
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
+          <ArrowLeft className="h-4 w-4" />
           챌린지 목록
         </Link>
         <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-8 text-center dark:border-white/[0.07] dark:bg-[#16162a]">
@@ -163,9 +163,9 @@ function ChallengeDetailInner() {
     >
       <Link
         href="/board/challenge"
-        className="inline-flex items-center gap-1 text-xs text-gray-500 transition hover:text-gray-800 dark:hover:text-gray-200"
+        className="inline-flex items-center gap-1 py-3 mb-2 block relative z-10 text-sm text-gray-500 transition hover:text-gray-800 dark:hover:text-gray-200"
       >
-        <ArrowLeft className="h-3.5 w-3.5" />
+        <ArrowLeft className="h-4 w-4" />
         챌린지 목록
       </Link>
 

@@ -191,21 +191,20 @@ function ManualSlide({ banner: b }: { banner: Banner }) {
   const hasImage = !!b.image_url;
   const hasLink = !!b.link && b.link.trim().length > 0;
 
-  return (
-    <div
-      className="absolute inset-0"
-      style={{
-        backgroundColor: b.background_color,
-        ...(hasImage
-          ? {
-              backgroundImage: `url(${b.image_url})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-            }
-          : {}),
-      }}
-    >
+  const bgStyle: React.CSSProperties = {
+    backgroundColor: b.background_color,
+    ...(hasImage
+      ? {
+          backgroundImage: `url(${b.image_url})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }
+      : {}),
+  };
+
+  const inner = (
+    <>
       {/* 이미지 모드: 가독성을 위한 어두운 그라데이션 오버레이 */}
       {hasImage && (
         <div
@@ -237,14 +236,23 @@ function ManualSlide({ banner: b }: { banner: Banner }) {
         )}
 
         {hasLink && (
-          <Link
-            href={b.link!}
-            className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-white px-3 py-1 text-[11px] font-bold text-gray-900 shadow-[0_4px_14px_rgba(0,0,0,0.18)] transition-transform hover:scale-105 md:px-3.5 md:py-1.5 md:text-xs"
-          >
+          <span className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-white px-3 py-1 text-[11px] font-bold text-gray-900 shadow-[0_4px_14px_rgba(0,0,0,0.18)] transition-transform md:px-3.5 md:py-1.5 md:text-xs">
             자세히 보기 →
-          </Link>
+          </span>
         )}
       </div>
+    </>
+  );
+
+  // 링크가 있으면 배너 전체를 Link 로 감싸 어디를 눌러도 이동.
+  // 링크가 없으면 일반 div + cursor-default 로 클릭/포인터 모두 비활성.
+  return hasLink ? (
+    <Link href={b.link!} className="absolute inset-0 block cursor-pointer" style={bgStyle}>
+      {inner}
+    </Link>
+  ) : (
+    <div className="absolute inset-0 cursor-default" style={bgStyle}>
+      {inner}
     </div>
   );
 }
@@ -253,8 +261,8 @@ function ManualSlide({ banner: b }: { banner: Banner }) {
 function AutoSlide({ banner: b }: { banner: AutoBanner }) {
   const hasLink = !!b.link && b.link.trim().length > 0;
 
-  return (
-    <div className={`absolute inset-0 bg-gradient-to-br ${b.gradient}`}>
+  const inner = (
+    <>
       {/* 우측 큰 이모지 — 배경 데코 */}
       <div
         aria-hidden
@@ -266,10 +274,7 @@ function AutoSlide({ banner: b }: { banner: AutoBanner }) {
       {/* 텍스트 영역 */}
       <div className="relative z-10 flex h-full w-[80%] flex-col justify-center gap-1 px-4 md:w-[75%] md:gap-1.5 md:px-5 lg:px-6">
         <div className="flex items-center gap-1.5">
-          <span
-            className="text-base md:text-lg"
-            aria-hidden
-          >
+          <span className="text-base md:text-lg" aria-hidden>
             {b.emoji}
           </span>
           <h2
@@ -288,14 +293,25 @@ function AutoSlide({ banner: b }: { banner: AutoBanner }) {
         </p>
 
         {hasLink && (
-          <Link
-            href={b.link!}
-            className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-white px-3 py-1 text-[11px] font-bold text-gray-900 shadow-[0_4px_14px_rgba(0,0,0,0.18)] transition-transform hover:scale-105 md:px-3.5 md:py-1.5 md:text-xs"
-          >
+          <span className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-white px-3 py-1 text-[11px] font-bold text-gray-900 shadow-[0_4px_14px_rgba(0,0,0,0.18)] transition-transform md:px-3.5 md:py-1.5 md:text-xs">
             자세히 보기 →
-          </Link>
+          </span>
         )}
       </div>
+    </>
+  );
+
+  // 링크 유무에 따라 Link / div 로 분기 — 링크 없는 자동 배너(생일 등)는 클릭 비활성.
+  return hasLink ? (
+    <Link
+      href={b.link!}
+      className={`absolute inset-0 block cursor-pointer bg-gradient-to-br ${b.gradient}`}
+    >
+      {inner}
+    </Link>
+  ) : (
+    <div className={`absolute inset-0 cursor-default bg-gradient-to-br ${b.gradient}`}>
+      {inner}
     </div>
   );
 }

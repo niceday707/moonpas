@@ -22,7 +22,7 @@ import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
-import { CHALLENGE_CATEGORY_LABEL, type PostRow } from "@/lib/board";
+import { CHALLENGE_CATEGORY_LABEL } from "@/lib/board";
 import {
   CHALLENGE_TAGS,
   CHALLENGE_TAG_STYLE,

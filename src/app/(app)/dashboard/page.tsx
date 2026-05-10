@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { BannerSlider } from "@/components/dashboard/BannerSlider";
 import { BirthdayCelebration } from "@/components/dashboard/BirthdayCelebration";
+import { BirthdayWidget } from "@/components/dashboard/BirthdayWidget";
 import { ExamWidget } from "@/components/dashboard/ExamWidget";
 import { NicknameSetupModal } from "@/components/dashboard/NicknameSetupModal";
 import { PushNotificationBanner } from "@/components/dashboard/PushNotificationBanner";
@@ -1319,6 +1320,7 @@ export default function DashboardPage() {
           ───────────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-4 md:hidden">
         <MealCard />
+        <BirthdayWidget />
         <SchoolCalendar />
         <ExamWidget />
         <BannerSlider />
@@ -1345,6 +1347,7 @@ export default function DashboardPage() {
           {/* 가운데 메인 — 최신 공지는 우측 사이드바에서 단독 노출 */}
           <main className="flex min-w-0 flex-1 flex-col gap-4">
             <MealCard />
+            <BirthdayWidget />
             <SchoolCalendar />
             <ExamWidget />
             <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
@@ -1365,6 +1368,7 @@ export default function DashboardPage() {
           {/* 좌측 사이드바 — 280px 고정, lg 부터 노출. 순서: 급식 → 학사일정 → 다음 시험 */}
           <aside className="flex w-[280px] shrink-0 flex-col gap-4">
             <MealCard />
+            <BirthdayWidget />
             <SchoolCalendar />
             <ExamWidget />
           </aside>

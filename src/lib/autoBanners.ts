@@ -2,7 +2,7 @@
 // 학사일정 기반 자동 배너 생성 — DB 불필요, 코드에서 동적 생성
 
 import { SCHOOL_SCHEDULE } from '@/data/schoolSchedule';
-import { fetchBirthdaysOnDays } from '@/lib/birthdays';
+import { fetchBirthdaysOnDays, getKstDayRange } from '@/lib/birthdays';
 
 export interface AutoBanner {
   id: string;
@@ -152,6 +152,8 @@ export function getAutoBanners(): AutoBanner[] {
 // 생일자는 두 출처를 합친다:
 //   1) profiles  — 실제 가입 유저의 nickname
 //   2) birthday_registry — 관리자 등록 (학년/반/이름 또는 교사)
+//
+// 노출 기간: D-2 ~ D+1 의 4일 윈도우 안에 누구라도 생일이면 배너 노출.
 export async function getBirthdayBanners(): Promise<AutoBanner[]> {
   const kst = new Date(
     new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }),
@@ -160,7 +162,8 @@ export async function getBirthdayBanners(): Promise<AutoBanner[]> {
   const day = kst.getDate();
 
   try {
-    const people = await fetchBirthdaysOnDays([{ month, day }]);
+    const days = getKstDayRange([-2, -1, 0, 1]);
+    const people = await fetchBirthdaysOnDays(days);
     const names = people.map((p) => p.displayName).filter((n) => n.length > 0);
     if (names.length === 0) return [];
 

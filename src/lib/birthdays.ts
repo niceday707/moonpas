@@ -11,10 +11,39 @@ import type { Role } from "@/components/ui/Badge";
 
 export type BirthdaySource = "profile" | "registry";
 
+/** KST 기준 오늘 Date (시간은 시스템 로컬과 다를 수 있으나 월/일 추출용으로만 사용) */
+export function getKstToday(): Date {
+  return new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }),
+  );
+}
+
+/**
+ * KST 오늘에서 ±delta 일 떨어진 (month, day) 반환. 월/연 경계 처리.
+ *   예) 1월 1일 + (-2) → {month: 12, day: 30}
+ */
+export function shiftKstDay(delta: number): { month: number; day: number } {
+  const today = getKstToday();
+  const d = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  d.setDate(d.getDate() + delta);
+  return { month: d.getMonth() + 1, day: d.getDate() };
+}
+
+/**
+ * 여러 delta 에 대응하는 (month, day) 배열. 중복 제거 없이 그대로 반환.
+ *   예) deltas=[-2,-1,0,1] → 4 일치
+ */
+export function getKstDayRange(
+  deltas: number[],
+): Array<{ month: number; day: number }> {
+  return deltas.map((d) => shiftKstDay(d));
+}
+
 /**
  * 생일자 통합 타입.
  *   source=profile  → id 가 실제 user UUID
- *   source=registry → id 가 `registry-${row.id}` synthetic key
+ *   source=registry → id 가 `registry-${row.id}` synthetic key,
+ *                      registryRowId 에 birthday_registry.id (number) 보관
  */
 export type BirthdayPerson = {
   source: BirthdaySource;
@@ -24,6 +53,8 @@ export type BirthdayPerson = {
   avatar_url: string | null;
   birth_month: number;
   birth_day: number;
+  /** registry 출처일 때만 — birthday_messages.registry_id 에 넣을 실제 행 id */
+  registryRowId?: number;
 };
 
 export type BirthdayRegistryRow = {
@@ -38,14 +69,16 @@ export type BirthdayRegistryRow = {
 
 /**
  * registry 한 행의 표시명.
- *   grade=0 → "교사 [이름]"
- *   그 외   → "[학년]-[반] [이름]"
+ *   grade=0  → "교사 [이름]"
+ *   grade=99 → "[이름]" (직접입력. 행사명 등)
+ *   그 외     → "[학년]-[반] [이름]"
  */
 export function registryDisplayName(row: {
   grade: number;
   class: number;
   name: string;
 }): string {
+  if (row.grade === 99) return row.name;
   if (row.grade === 0) return `교사 ${row.name}`;
   return `${row.grade}-${row.class} ${row.name}`;
 }
@@ -54,9 +87,10 @@ function registryToPerson(row: BirthdayRegistryRow): BirthdayPerson {
   return {
     source: "registry",
     id: `registry-${row.id}`,
+    registryRowId: row.id,
     displayName: registryDisplayName(row),
-    // 색상용: 교사면 보라, 그 외 파란 그라데이션이 자연스럽다.
-    role: row.grade === 0 ? "teacher" : "student",
+    // 색상용: 교사/직접입력은 보라, 그 외 파란 그라데이션이 자연스럽다.
+    role: row.grade === 0 || row.grade === 99 ? "teacher" : "student",
     avatar_url: null,
     birth_month: row.birth_month,
     birth_day: row.birth_day,

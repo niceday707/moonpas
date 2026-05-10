@@ -1,19 +1,20 @@
 "use client";
 
-// 오늘의 생일 페이지 — 전날·당일·다음날 생일자에게 축하 메시지를 보낼 수 있다.
-//   · 상단: 3일간 생일자 카드 + 받은 메시지 목록
+// 오늘의 생일 페이지 — 4일치 생일자(D-2, D-1, 오늘, D+1)에게 축하 메시지를 보낼 수 있다.
+//   · 상단: 4일치 생일자 카드 + 댓글식 축하 메시지 목록 + 입력창
 //   · 하단: 이달의 생일 달력 리스트
 //   · 본인 생일 미등록이면 상단에 안내 배너
 //   · admin 이면 맨 아래 birthday_registry 일괄 등록/관리 섹션
 //
 // 생일자 출처:
-//   · profiles  — 실제 가입한 유저 (축하 메시지 receiver_id 가능)
-//   · birthday_registry — 관리자 등록 (학년/반/이름). 메시지 송신은 불가.
+//   · profiles  — 실제 가입한 유저 (birthday_messages.receiver_id 로 메시지 저장)
+//   · birthday_registry — 관리자 등록 (학년/반/이름 또는 교사/직접입력).
+//                         birthday_messages.registry_id 로 저장.
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Cake, Loader2, Plus, Send, Trash2, X as XIcon } from "lucide-react";
+import { Cake, Loader2, Plus, Send, Trash2 } from "lucide-react";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { supabase } from "@/lib/supabase";
@@ -21,7 +22,9 @@ import { useSupabaseProfile } from "@/lib/supabase-profile";
 import {
   fetchBirthdaysOfMonth,
   fetchBirthdaysOnDays,
+  getKstToday,
   registryDisplayName,
+  shiftKstDay,
   type BirthdayPerson,
   type BirthdayRegistryRow,
 } from "@/lib/birthdays";
@@ -40,20 +43,15 @@ type BirthdayMessage = {
   } | null;
 };
 
-// KST 기준 오늘 날짜
-function getKstToday(): Date {
-  return new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }),
-  );
-}
+// 표시 윈도우 — D-2, D-1, 오늘, D+1
+const DAY_DELTAS = [-2, -1, 0, 1];
 
-function shiftDay(month: number, day: number, delta: number): { month: number; day: number } {
-  // 현재 연도(KST) 기준으로 ±delta 일 계산. 월 경계만 고려하면 충분.
-  const today = getKstToday();
-  const d = new Date(today.getFullYear(), month - 1, day);
-  d.setDate(d.getDate() + delta);
-  return { month: d.getMonth() + 1, day: d.getDate() };
-}
+const DELTA_LABEL: Record<number, string> = {
+  [-2]: "D-2",
+  [-1]: "D-1",
+  [0]: "오늘",
+  [1]: "D+1",
+};
 
 function formatRelative(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -84,64 +82,61 @@ function BirthdayShell() {
   const month = today.getMonth() + 1;
   const day = today.getDate();
 
-  const [todayPeople, setTodayPeople] = useState<BirthdayPerson[]>([]);
-  const [yesterdayPeople, setYesterdayPeople] = useState<BirthdayPerson[]>([]);
-  const [tomorrowPeople, setTomorrowPeople] = useState<BirthdayPerson[]>([]);
+  // 4일치 윈도우를 한 번 계산해서 자식 컴포넌트에 그대로 전달
+  const days = DAY_DELTAS.map((delta) => {
+    const d = shiftKstDay(delta);
+    return { delta, month: d.month, day: d.day };
+  });
+
+  const [peopleByKey, setPeopleByKey] = useState<Record<string, BirthdayPerson[]>>({});
   const [monthPeople, setMonthPeople] = useState<BirthdayPerson[]>([]);
-  const [messagesByReceiver, setMessagesByReceiver] = useState<Record<string, BirthdayMessage[]>>({});
+  // 메시지는 BirthdayPerson.id (profile UUID 또는 `registry-${id}`) 로 키링
+  const [messagesByPerson, setMessagesByPerson] = useState<Record<string, BirthdayMessage[]>>({});
   const [loading, setLoading] = useState(true);
-  const [composeFor, setComposeFor] = useState<BirthdayPerson | null>(null);
 
-  const loadAll = useCallback(async () => {
-    setLoading(true);
+  /** 메시지만 따로 새로고침 — 댓글 작성 후 목록 갱신용 */
+  const refreshMessages = useCallback(
+    async (people: BirthdayPerson[]) => {
+      const profileIds = people
+        .filter((p) => p.source === "profile")
+        .map((p) => p.id);
+      const registryIds = people
+        .filter((p) => p.source === "registry" && p.registryRowId != null)
+        .map((p) => p.registryRowId as number);
 
-    const yesterday = shiftDay(month, day, -1);
-    const tomorrow = shiftDay(month, day, 1);
+      const [profileRes, registryRes] = await Promise.all([
+        profileIds.length > 0
+          ? supabase
+              .from("birthday_messages")
+              .select(
+                "id, sender_id, receiver_id, registry_id, message, created_at, sender:profiles!sender_id ( nickname, role, avatar_url )",
+              )
+              .in("receiver_id", profileIds)
+              .order("created_at", { ascending: true })
+              .limit(500)
+          : Promise.resolve({ data: [], error: null }),
+        registryIds.length > 0
+          ? supabase
+              .from("birthday_messages")
+              .select(
+                "id, sender_id, receiver_id, registry_id, message, created_at, sender:profiles!sender_id ( nickname, role, avatar_url )",
+              )
+              .in("registry_id", registryIds)
+              .order("created_at", { ascending: true })
+              .limit(500)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
 
-    const days = [
-      { month: yesterday.month, day: yesterday.day },
-      { month, day },
-      { month: tomorrow.month, day: tomorrow.day },
-    ];
-
-    // 3일치 통합 조회 — profiles + registry
-    const [rangeRows, monthRows] = await Promise.all([
-      fetchBirthdaysOnDays(days),
-      fetchBirthdaysOfMonth(month),
-    ]);
-
-    const ofDay = (m: number, d: number) =>
-      rangeRows
-        .filter((r) => r.birth_month === m && r.birth_day === d)
-        .sort((a, b) => a.displayName.localeCompare(b.displayName));
-
-    setYesterdayPeople(ofDay(yesterday.month, yesterday.day));
-    setTodayPeople(ofDay(month, day));
-    setTomorrowPeople(ofDay(tomorrow.month, tomorrow.day));
-    setMonthPeople(monthRows);
-
-    // 받은 메시지 — profile-source 인 사람만 receiver_id 로 조회 가능
-    const receiverIds = rangeRows
-      .filter((r) => r.source === "profile")
-      .map((r) => r.id);
-    if (receiverIds.length > 0) {
-      const { data: msgRows, error: msgErr } = await supabase
-        .from("birthday_messages")
-        .select(
-          "id, sender_id, receiver_id, message, created_at, sender:profiles!sender_id ( nickname, role, avatar_url )",
-        )
-        .in("receiver_id", receiverIds)
-        .order("created_at", { ascending: false })
-        .limit(500);
-
-      if (msgErr) {
-        console.error("[birthday] 메시지 조회 실패", msgErr);
-      }
+      if (profileRes.error)
+        console.error("[birthday] profile 메시지 조회 실패", profileRes.error);
+      if (registryRes.error)
+        console.error("[birthday] registry 메시지 조회 실패", registryRes.error);
 
       type RawMsg = {
         id: number;
         sender_id: string;
-        receiver_id: string;
+        receiver_id: string | null;
+        registry_id: number | null;
         message: string;
         created_at: string;
         sender:
@@ -151,10 +146,17 @@ function BirthdayShell() {
       };
 
       const grouped: Record<string, BirthdayMessage[]> = {};
-      for (const m of ((msgRows ?? []) as unknown as RawMsg[])) {
-        const key = m.receiver_id;
-        if (!grouped[key]) grouped[key] = [];
-        if (grouped[key].length < 10) {
+      const ingest = (rows: RawMsg[]) => {
+        for (const m of rows) {
+          // BirthdayPerson.id 매칭 키 생성
+          const key =
+            m.receiver_id != null
+              ? m.receiver_id
+              : m.registry_id != null
+                ? `registry-${m.registry_id}`
+                : null;
+          if (!key) continue;
+          if (!grouped[key]) grouped[key] = [];
           const senderRaw = m.sender;
           const sender = Array.isArray(senderRaw)
             ? (senderRaw[0] ?? null)
@@ -167,18 +169,51 @@ function BirthdayShell() {
             sender,
           });
         }
+      };
+      ingest(((profileRes.data ?? []) as unknown as RawMsg[]));
+      ingest(((registryRes.data ?? []) as unknown as RawMsg[]));
+
+      // 각 그룹 내부 ASC 정렬 (혹시 두 쿼리가 합쳐지면서 순서 흐트러질까 봐)
+      for (const arr of Object.values(grouped)) {
+        arr.sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
       }
-      setMessagesByReceiver(grouped);
-    } else {
-      setMessagesByReceiver({});
+
+      setMessagesByPerson(grouped);
+    },
+    [],
+  );
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+
+    const queryDays = days.map(({ month, day }) => ({ month, day }));
+
+    const [rangeRows, monthRows] = await Promise.all([
+      fetchBirthdaysOnDays(queryDays),
+      fetchBirthdaysOfMonth(month),
+    ]);
+
+    // delta 별로 묶기 — 같은 (월,일) 인 사람을 모음
+    const grouped: Record<string, BirthdayPerson[]> = {};
+    for (const d of days) {
+      const key = `${d.month}-${d.day}`;
+      grouped[key] = rangeRows
+        .filter((r) => r.birth_month === d.month && r.birth_day === d.day)
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
     }
+    setPeopleByKey(grouped);
+    setMonthPeople(monthRows);
+
+    await refreshMessages(rangeRows);
 
     setLoading(false);
-  }, [month, day]);
+  }, [month, days, refreshMessages]);
 
   useEffect(() => {
     void loadAll();
-  }, [loadAll]);
+    // days 가 매 렌더 새 객체라 의존성에 넣으면 무한 루프 → month/day 만 신뢰
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [month, day]);
 
   const needsBirthdaySetup =
     !profileLoading &&
@@ -186,6 +221,12 @@ function BirthdayShell() {
     (profile.birth_month === null || profile.birth_day === null);
 
   const isAdmin = profile?.role === "admin";
+
+  // 메시지 작성 후 메시지 목록만 다시 fetch — 전체 birthday 데이터 재조회는 불필요
+  const handleMessageSent = useCallback(async () => {
+    const flat = Object.values(peopleByKey).flat();
+    await refreshMessages(flat);
+  }, [peopleByKey, refreshMessages]);
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6 md:py-8">
@@ -203,7 +244,7 @@ function BirthdayShell() {
           {month}월 {day}일, 함께 축하해요 🎉
         </h1>
         <p className="mt-1 text-sm opacity-90">
-          전날·당일·다음날 생일자에게 따뜻한 한 줄을 남겨보세요.
+          최근 4일간 생일자에게 따뜻한 한 줄을 남겨보세요.
         </p>
       </motion.header>
 
@@ -226,39 +267,22 @@ function BirthdayShell() {
         </motion.div>
       )}
 
-      {/* 3일치 섹션 */}
+      {/* 4일치 섹션 */}
       <section className="mt-6 flex flex-col gap-4">
-        <DayGroup
-          label="어제"
-          month={shiftDay(month, day, -1).month}
-          day={shiftDay(month, day, -1).day}
-          people={yesterdayPeople}
-          loading={loading}
-          messagesByReceiver={messagesByReceiver}
-          currentUserId={user?.id ?? null}
-          onCelebrate={(p) => setComposeFor(p)}
-        />
-        <DayGroup
-          label="오늘"
-          month={month}
-          day={day}
-          people={todayPeople}
-          loading={loading}
-          messagesByReceiver={messagesByReceiver}
-          currentUserId={user?.id ?? null}
-          highlight
-          onCelebrate={(p) => setComposeFor(p)}
-        />
-        <DayGroup
-          label="내일"
-          month={shiftDay(month, day, 1).month}
-          day={shiftDay(month, day, 1).day}
-          people={tomorrowPeople}
-          loading={loading}
-          messagesByReceiver={messagesByReceiver}
-          currentUserId={user?.id ?? null}
-          onCelebrate={(p) => setComposeFor(p)}
-        />
+        {days.map((d) => (
+          <DayGroup
+            key={`${d.month}-${d.day}`}
+            label={DELTA_LABEL[d.delta]}
+            month={d.month}
+            day={d.day}
+            people={peopleByKey[`${d.month}-${d.day}`] ?? []}
+            loading={loading}
+            messagesByPerson={messagesByPerson}
+            currentUserId={user?.id ?? null}
+            highlight={d.delta === 0}
+            onSent={handleMessageSent}
+          />
+        ))}
       </section>
 
       {/* 이달의 생일 */}
@@ -276,27 +300,12 @@ function BirthdayShell() {
 
       {/* 관리자 — birthday_registry 일괄 등록/관리 */}
       {isAdmin && <AdminRegistrySection />}
-
-      {/* 메시지 작성 모달 */}
-      <AnimatePresence>
-        {composeFor && (
-          <ComposeModal
-            target={composeFor}
-            currentUserId={user?.id ?? null}
-            onClose={() => setComposeFor(null)}
-            onSent={async () => {
-              setComposeFor(null);
-              await loadAll();
-            }}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────
-// 3일치 카드 그룹
+// 4일치 카드 그룹
 // ─────────────────────────────────────────────
 
 function DayGroup({
@@ -305,20 +314,20 @@ function DayGroup({
   day,
   people,
   loading,
-  messagesByReceiver,
+  messagesByPerson,
   currentUserId,
-  onCelebrate,
   highlight = false,
+  onSent,
 }: {
   label: string;
   month: number;
   day: number;
   people: BirthdayPerson[];
   loading: boolean;
-  messagesByReceiver: Record<string, BirthdayMessage[]>;
+  messagesByPerson: Record<string, BirthdayMessage[]>;
   currentUserId: string | null;
-  onCelebrate: (p: BirthdayPerson) => void;
   highlight?: boolean;
+  onSent: () => Promise<void>;
 }) {
   return (
     <div
@@ -365,9 +374,10 @@ function DayGroup({
             <PersonCard
               key={p.id}
               person={p}
-              messages={messagesByReceiver[p.id] ?? []}
+              messages={messagesByPerson[p.id] ?? []}
               isMe={p.source === "profile" && currentUserId === p.id}
-              onCelebrate={() => onCelebrate(p)}
+              currentUserId={currentUserId}
+              onSent={onSent}
             />
           ))}
         </ul>
@@ -380,16 +390,15 @@ function PersonCard({
   person,
   messages,
   isMe,
-  onCelebrate,
+  currentUserId,
+  onSent,
 }: {
   person: BirthdayPerson;
   messages: BirthdayMessage[];
   isMe: boolean;
-  onCelebrate: () => void;
+  currentUserId: string | null;
+  onSent: () => Promise<void>;
 }) {
-  // registry 출처는 실제 user 가 아니므로 메시지 송신 불가 — 버튼 숨김.
-  const canSendMessage = person.source === "profile" && !isMe;
-
   return (
     <li className="rounded-xl bg-pink-50/40 p-3 dark:bg-pink-500/5">
       <div className="flex items-center gap-3">
@@ -412,20 +421,16 @@ function PersonCard({
             🎂 {person.birth_month}월 {person.birth_day}일 생일
           </p>
         </div>
-        {canSendMessage && (
-          <button
-            type="button"
-            onClick={onCelebrate}
-            className="shrink-0 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 px-3 py-1.5 text-[11px] font-bold text-white shadow-[0_4px_14px_rgba(244,114,182,0.4)] transition-transform hover:scale-105"
-          >
-            축하 메시지 보내기
-          </button>
-        )}
       </div>
 
-      {messages.length > 0 && (
-        <ul className="mt-3 flex flex-col gap-2 border-t border-pink-200/60 pt-3 dark:border-pink-500/20">
-          {messages.map((m) => (
+      {/* 댓글 목록 */}
+      <ul className="mt-3 flex flex-col gap-2 border-t border-pink-200/60 pt-3 dark:border-pink-500/20">
+        {messages.length === 0 ? (
+          <li className="px-1 py-1 text-[12px] text-foreground/55">
+            아직 축하 메시지가 없어요. 첫 번째로 축하해주세요! 🎉
+          </li>
+        ) : (
+          messages.map((m) => (
             <li key={m.id} className="flex items-start gap-2">
               <UserAvatar
                 nickname={m.sender?.nickname ?? null}
@@ -446,10 +451,123 @@ function PersonCard({
                 </p>
               </div>
             </li>
-          ))}
-        </ul>
-      )}
+          ))
+        )}
+      </ul>
+
+      {/* 입력창 — isMe 여도 본인에게 메시지를 남길 수 있도록 허용 */}
+      <MessageComposer
+        person={person}
+        currentUserId={currentUserId}
+        onSent={onSent}
+      />
     </li>
+  );
+}
+
+const MESSAGE_MAX = 200;
+
+function MessageComposer({
+  person,
+  currentUserId,
+  onSent,
+}: {
+  person: BirthdayPerson;
+  currentUserId: string | null;
+  onSent: () => Promise<void>;
+}) {
+  const [text, setText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const trimmed = text.trim();
+  const canSend =
+    !!currentUserId &&
+    trimmed.length > 0 &&
+    trimmed.length <= MESSAGE_MAX &&
+    !submitting;
+
+  async function send() {
+    if (!canSend) return;
+    setError(null);
+    setSubmitting(true);
+
+    const payload: Record<string, unknown> = {
+      sender_id: currentUserId,
+      message: trimmed,
+    };
+    if (person.source === "profile") {
+      payload.receiver_id = person.id;
+      payload.registry_id = null;
+    } else if (person.registryRowId != null) {
+      payload.receiver_id = null;
+      payload.registry_id = person.registryRowId;
+    } else {
+      setSubmitting(false);
+      setError("이 친구에게는 메시지를 보낼 수 없어요.");
+      return;
+    }
+
+    const { error: insertErr } = await supabase
+      .from("birthday_messages")
+      .insert(payload);
+    setSubmitting(false);
+    if (insertErr) {
+      console.error("[birthday] 메시지 INSERT 실패", insertErr);
+      setError("전송에 실패했어요. 잠시 후 다시 시도해주세요.");
+      return;
+    }
+    setText("");
+    await onSent();
+  }
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-center gap-2 rounded-2xl bg-white px-3 py-1.5 ring-1 ring-pink-200/60 focus-within:ring-pink-400 dark:bg-white/[0.06] dark:ring-pink-500/30">
+        <input
+          type="text"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              void send();
+            }
+          }}
+          maxLength={MESSAGE_MAX + 20}
+          placeholder={
+            currentUserId
+              ? "한 줄 축하 메시지를 남겨보세요…"
+              : "로그인이 필요해요"
+          }
+          disabled={!currentUserId}
+          className="min-w-0 flex-1 bg-transparent py-1 text-sm outline-none placeholder:text-foreground/35 disabled:opacity-50"
+        />
+        <button
+          type="button"
+          onClick={send}
+          disabled={!canSend}
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-bold text-white transition-opacity",
+            "bg-gradient-to-br from-pink-500 to-rose-500 shadow-[0_4px_14px_rgba(244,114,182,0.4)]",
+            "disabled:cursor-not-allowed disabled:opacity-40",
+          )}
+        >
+          {submitting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Send className="h-3.5 w-3.5" />
+          )}
+          축하 🎉
+        </button>
+      </div>
+      {error && (
+        <p className="mt-1 text-[11px] text-rose-500">{error}</p>
+      )}
+    </div>
   );
 }
 
@@ -541,161 +659,6 @@ function MonthList({
 }
 
 // ─────────────────────────────────────────────
-// 메시지 작성 모달
-// ─────────────────────────────────────────────
-
-const MESSAGE_MAX = 200;
-
-function ComposeModal({
-  target,
-  currentUserId,
-  onClose,
-  onSent,
-}: {
-  target: BirthdayPerson;
-  currentUserId: string | null;
-  onClose: () => void;
-  onSent: () => Promise<void>;
-}) {
-  const [text, setText] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const trimmed = text.trim();
-  const canSend = trimmed.length > 0 && trimmed.length <= MESSAGE_MAX && !submitting;
-
-  async function send() {
-    if (!canSend) return;
-    if (!currentUserId) {
-      setError("로그인이 필요해요.");
-      return;
-    }
-    if (target.source !== "profile") {
-      setError("이 친구에게는 메시지를 보낼 수 없어요.");
-      return;
-    }
-    setError(null);
-    setSubmitting(true);
-    try {
-      const { error: insertErr } = await supabase
-        .from("birthday_messages")
-        .insert({
-          sender_id: currentUserId,
-          receiver_id: target.id,
-          message: trimmed,
-        });
-      if (insertErr) {
-        console.error("[birthday] 메시지 INSERT 실패", insertErr);
-        setError("전송에 실패했어요. 잠시 후 다시 시도해주세요.");
-        return;
-      }
-      await onSent();
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.18 }}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ y: 24, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 16, opacity: 0 }}
-        transition={{ duration: 0.22 }}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-t-3xl bg-white/95 p-5 shadow-2xl backdrop-blur-md dark:bg-[#16162a]/95 sm:rounded-3xl"
-      >
-        <div className="flex items-start gap-3">
-          <UserAvatar
-            nickname={target.displayName}
-            role={target.role}
-            avatarUrl={target.avatar_url}
-            size="lg"
-          />
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-pink-500">생일 축하 메시지</p>
-            <p className="truncate text-base font-extrabold">
-              {target.displayName}님께
-            </p>
-            <p className="text-[11px] text-foreground/55">
-              🎂 {target.birth_month}월 {target.birth_day}일 생일
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="닫기"
-            className="grid h-8 w-8 place-items-center rounded-full bg-foreground/5 text-foreground/55 transition-colors hover:bg-foreground/10"
-          >
-            <XIcon className="h-4 w-4" />
-          </button>
-        </div>
-
-        <textarea
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            setError(null);
-          }}
-          rows={3}
-          autoFocus
-          maxLength={MESSAGE_MAX + 20}
-          placeholder="따뜻한 한 마디를 남겨주세요 🎉"
-          className="mt-4 w-full resize-none rounded-2xl bg-foreground/5 px-4 py-3 text-sm outline-none ring-1 ring-inset ring-transparent transition-colors placeholder:text-foreground/35 focus:ring-pink-500/40"
-        />
-        <div className="mt-1 flex items-center justify-between text-[11px]">
-          <span className={error ? "text-rose-500" : "text-foreground/45"}>
-            {error ?? "한 줄 메시지로 마음을 전해주세요"}
-          </span>
-          <span
-            className={cn(
-              "tabular-nums",
-              trimmed.length > MESSAGE_MAX ? "text-rose-500" : "text-foreground/45",
-            )}
-          >
-            {trimmed.length}/{MESSAGE_MAX}
-          </span>
-        </div>
-
-        <div className="mt-4 flex gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 rounded-2xl bg-foreground/5 px-4 py-2.5 text-sm font-bold text-foreground/75 transition-colors hover:bg-foreground/10"
-          >
-            취소
-          </button>
-          <button
-            type="button"
-            onClick={send}
-            disabled={!canSend}
-            className={cn(
-              "inline-flex flex-1 items-center justify-center gap-1.5 rounded-2xl px-4 py-2.5 text-sm font-bold text-white transition-opacity",
-              "bg-gradient-to-br from-pink-500 to-rose-500 shadow-[0_6px_20px_rgba(244,114,182,0.4)]",
-              "disabled:cursor-not-allowed disabled:opacity-50",
-            )}
-          >
-            {submitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-            {submitting ? "보내는 중…" : "보내기"}
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-// ─────────────────────────────────────────────
 // 관리자 — birthday_registry 일괄 등록/관리
 // ─────────────────────────────────────────────
 
@@ -704,6 +667,7 @@ const GRADE_OPTIONS = [
   { value: 1, label: "1학년" },
   { value: 2, label: "2학년" },
   { value: 3, label: "3학년" },
+  { value: 99, label: "직접입력" },
 ];
 const CLASS_OPTIONS = [
   { value: 0, label: "해당없음" },
@@ -731,6 +695,9 @@ function AdminRegistrySection() {
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const isCustom = grade === 99;
+  const isTeacher = grade === 0;
+
   const loadRegistry = useCallback(async () => {
     setRegistryLoading(true);
     const { data, error: e } = await supabase
@@ -750,10 +717,10 @@ function AdminRegistrySection() {
     void loadRegistry();
   }, [loadRegistry]);
 
-  // 학년이 0(교사) 으로 바뀌면 반은 자동으로 0(해당없음).
+  // 학년이 0(교사) 또는 99(직접입력) 으로 바뀌면 반은 0(해당없음).
   useEffect(() => {
-    if (grade === 0 && classNum !== 0) setClassNum(0);
-  }, [grade, classNum]);
+    if ((isTeacher || isCustom) && classNum !== 0) setClassNum(0);
+  }, [isTeacher, isCustom, classNum]);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -763,7 +730,7 @@ function AdminRegistrySection() {
   async function submit() {
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setError("이름을 입력해주세요.");
+      setError(isCustom ? "라벨을 입력해주세요." : "이름을 입력해주세요.");
       return;
     }
     setError(null);
@@ -816,7 +783,8 @@ function AdminRegistrySection() {
       </div>
       <p className="mb-4 text-xs text-foreground/55">
         학번 기반으로 학생·교사 생일을 일괄 등록합니다. 등록된 생일은 배너와
-        목록에 자동 노출돼요.
+        목록에 자동 노출돼요. &quot;직접입력&quot; 으로 개교기념일 같은 행사도
+        등록할 수 있어요.
       </p>
 
       {/* 입력 폼 */}
@@ -827,27 +795,50 @@ function AdminRegistrySection() {
           onChange={setGrade}
           options={GRADE_OPTIONS}
         />
-        <Select
-          label="반"
-          value={classNum}
-          onChange={setClassNum}
-          options={CLASS_OPTIONS}
-          disabled={grade === 0}
-        />
-        <label className="col-span-2 flex flex-col gap-1 text-[11px] font-bold text-foreground/65 sm:col-span-1">
-          <span>이름</span>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value);
-              setError(null);
-            }}
-            placeholder="예: 아이유"
-            maxLength={20}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500 dark:border-white/10 dark:bg-white/[0.04]"
-          />
-        </label>
+
+        {isCustom ? (
+          // 직접입력 모드 — 반 드롭다운을 숨기고 라벨 입력란만 노출.
+          // 라벨 입력은 이름 칸과 동일하게 다음 컬럼에 자유 텍스트로.
+          <label className="col-span-2 flex flex-col gap-1 text-[11px] font-bold text-foreground/65 sm:col-span-2">
+            <span>라벨 (예: 개교기념일)</span>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setError(null);
+              }}
+              placeholder="예: 개교기념일"
+              maxLength={20}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500 dark:border-white/10 dark:bg-white/[0.04]"
+            />
+          </label>
+        ) : (
+          <>
+            <Select
+              label="반"
+              value={classNum}
+              onChange={setClassNum}
+              options={CLASS_OPTIONS}
+              disabled={isTeacher}
+            />
+            <label className="col-span-2 flex flex-col gap-1 text-[11px] font-bold text-foreground/65 sm:col-span-1">
+              <span>이름</span>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setError(null);
+                }}
+                placeholder="예: 아이유"
+                maxLength={20}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500 dark:border-white/10 dark:bg-white/[0.04]"
+              />
+            </label>
+          </>
+        )}
+
         <Select
           label="생일 월"
           value={birthMonth}

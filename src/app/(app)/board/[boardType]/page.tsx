@@ -34,6 +34,7 @@ import {
   GraduationCap,
   School,
   Quote,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { ShareButton } from "@/components/board/ShareButton";
@@ -51,6 +52,8 @@ import { useSupabaseProfile } from "@/lib/supabase-profile";
 import { cn } from "@/lib/utils";
 import {
   BOARD_LABEL,
+  CHALLENGE_CATEGORY_ICON,
+  CHALLENGE_CATEGORY_LABEL,
   MARKET_CONDITION_LABEL,
   POSTS_PER_PAGE,
   QA_SUBJECTS,
@@ -61,10 +64,14 @@ import {
   getCareerTrackLabel,
   getChallengeStats,
   getLikedPostIds,
+  getMyChallengeSubs,
   getQaSubjectLabel,
   getResourceCategoryLabel,
   getYoutubeCategoryLabel,
+  joinChallenge,
+  leaveChallenge,
   listPosts,
+  rejectChallengePost,
   toggleLike,
   parseAlumniContent,
   parseIssueContent,
@@ -83,6 +90,7 @@ import {
   type AlumniCategory,
   type BoardType,
   type CareerTrack,
+  type ChallengeCategory,
   type ChallengeStats,
   type PostRow,
   type PostStatus,
@@ -349,6 +357,13 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
 
   // 챌린지 — 연속 인증/주간 랭킹
   const [challengeStats, setChallengeStats] = useState<ChallengeStats | null>(null);
+  // 챌린지 — 카테고리 필터 ("" = 전체) / 내 참여 카테고리 / 인증 취소 모달
+  const [challengeCategoryFilter, setChallengeCategoryFilter] = useState<
+    "" | ChallengeCategory
+  >("");
+  const [myChallengeSubs, setMyChallengeSubs] = useState<ChallengeCategory[]>([]);
+  const [joiningCategory, setJoiningCategory] = useState<ChallengeCategory | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<PostRow | null>(null);
 
   // 자유게시판 — 좋아요 진행 중 상태
   const [likingId, setLikingId] = useState<string | null>(null);
@@ -363,6 +378,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     alumniCategoryFilter,
     seniorTrackFilter,
     youtubeCategoryFilter,
+    challengeCategoryFilter,
     boardType,
   ]);
 
@@ -393,7 +409,12 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
       // 학습게시판 전용 — 다른 board 에서는 ""(전체) 라 필터 적용 안 됨.
       grade: isStudy && studyGradeFilter ? studyGradeFilter : null,
       subjectTag: isStudy && studySubjectTagFilter ? studySubjectTagFilter : null,
-      postCategory: isStudy && studyPostCategoryFilter ? studyPostCategoryFilter : null,
+      // 학습 / 챌린지 모두 post_category 컬럼을 사용 — board_type 분기.
+      postCategory: isStudy
+        ? (studyPostCategoryFilter || null)
+        : isChallenge
+        ? (challengeCategoryFilter || null)
+        : null,
     }).then((res) => {
       if (!active) return;
       setPosts(res.posts);
@@ -413,6 +434,8 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     isSenior,
     isYoutube,
     isStudy,
+    isChallenge,
+    challengeCategoryFilter,
     studyGradeFilter,
     studySubjectTagFilter,
     studyPostCategoryFilter,
@@ -425,17 +448,65 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     youtubeCategoryFilter,
   ]);
 
-  // 챌린지 보드 진입 시 통계 fetch
+  // 챌린지 보드 진입 시 통계 + 내 참여 카테고리 fetch
   useEffect(() => {
     if (!isChallenge) return;
     let active = true;
     getChallengeStats().then((s) => {
       if (active) setChallengeStats(s);
     });
+    getMyChallengeSubs().then((subs) => {
+      if (active) setMyChallengeSubs(subs);
+    });
     return () => {
       active = false;
     };
   }, [isChallenge]);
+
+  // 챌린지 — 카테고리 참여/해제 토글
+  async function handleToggleChallengeJoin(category: ChallengeCategory) {
+    if (joiningCategory) return;
+    const isJoined = myChallengeSubs.includes(category);
+    setJoiningCategory(category);
+    const { error } = isJoined
+      ? await leaveChallenge(category)
+      : await joinChallenge(category);
+    if (!error) {
+      setMyChallengeSubs((prev) =>
+        isJoined ? prev.filter((c) => c !== category) : [...prev, category],
+      );
+      // 참여자 수도 즉시 반영 (낙관적)
+      setChallengeStats((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev.participantCounts };
+        next[category] = Math.max(0, next[category] + (isJoined ? -1 : 1));
+        return { ...prev, participantCounts: next };
+      });
+    } else {
+      alert(`참여 처리 실패: ${error}`);
+    }
+    setJoiningCategory(null);
+  }
+
+  // 챌린지 — 인증 취소 확정
+  async function handleRejectChallenge(postId: string, reason: string) {
+    const { error } = await rejectChallengePost(postId, reason);
+    if (error) {
+      alert(`인증 취소 실패: ${error}`);
+      return;
+    }
+    // 목록 갱신: 해당 글 status 만 즉시 rejected 로 표시
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? { ...p, challenge_status: "rejected", challenge_rejected_reason: reason }
+          : p,
+      ),
+    );
+    // 통계 재집계
+    getChallengeStats().then((s) => setChallengeStats(s));
+    setRejectTarget(null);
+  }
 
   // 자유게시판 — 현재 페이지 글들에 대해 본인 좋아요 상태를 서버에서 hydrate
   useEffect(() => {
@@ -590,12 +661,23 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
         )}
       </div>
 
-      {/* 챌린지 — 본인 연속 인증 배너 + 주간 랭킹 */}
+      {/* 챌린지 — 카테고리 카드 + 카테고리 탭 주간 랭킹 */}
       {isChallenge && (
-        <ChallengeHeader
-          stats={challengeStats}
-          currentUserId={user?.id ?? null}
-        />
+        <>
+          <ChallengeHeader
+            stats={challengeStats}
+            currentUserId={user?.id ?? null}
+            mySubs={myChallengeSubs}
+            joining={joiningCategory}
+            onToggleJoin={handleToggleChallengeJoin}
+            onSelectCategory={setChallengeCategoryFilter}
+            currentCategory={challengeCategoryFilter}
+          />
+          <ChallengeCategoryTabs
+            value={challengeCategoryFilter}
+            onChange={setChallengeCategoryFilter}
+          />
+        </>
       )}
 
       {/* 학습 Q&A 과목 필터 */}
@@ -696,6 +778,8 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
         <ChallengeGrid
           posts={posts}
           streakByAuthor={challengeStats?.streakByAuthor ?? {}}
+          isStaff={isStaff}
+          onRequestReject={(post) => setRejectTarget(post)}
         />
       ) : isFree ? (
         <FreeCards
@@ -745,6 +829,15 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
             </button>
           ))}
         </div>
+      )}
+
+      {/* 챌린지 — 관리자 인증 취소 모달 */}
+      {rejectTarget && (
+        <ChallengeRejectModal
+          post={rejectTarget}
+          onCancel={() => setRejectTarget(null)}
+          onConfirm={(reason) => handleRejectChallenge(rejectTarget.id, reason)}
+        />
       )}
     </motion.div>
   );
@@ -876,10 +969,10 @@ function StudyTagBadges({ post }: { post: PostRow }) {
         <span
           className={cn(
             "rounded px-1.5 py-0.5 text-[10px] font-bold",
-            STUDY_POST_CATEGORY_STYLE[post.post_category],
+            STUDY_POST_CATEGORY_STYLE[post.post_category as StudyPostCategory],
           )}
         >
-          {STUDY_POST_CATEGORY_LABEL[post.post_category]}
+          {STUDY_POST_CATEGORY_LABEL[post.post_category as StudyPostCategory]}
         </span>
       )}
     </span>
@@ -1298,99 +1391,293 @@ function IssueRow({ post }: { post: PostRow }) {
   );
 }
 
-// ── 챌린지 — 본인 연속 인증 배너 + 주간 랭킹 ─────────────────
+// ── 챌린지 — 카테고리 카드 + 카테고리 탭 주간 랭킹 ────────────
+const CHALLENGE_CATEGORY_ORDER: ChallengeCategory[] = [
+  "attendance",
+  "study_cert",
+  "exercise",
+];
+
 function ChallengeHeader({
   stats,
   currentUserId,
+  mySubs,
+  joining,
+  onToggleJoin,
+  onSelectCategory,
+  currentCategory,
 }: {
   stats: ChallengeStats | null;
   currentUserId: string | null;
+  mySubs: ChallengeCategory[];
+  joining: ChallengeCategory | null;
+  onToggleJoin: (category: ChallengeCategory) => void;
+  onSelectCategory: (category: "" | ChallengeCategory) => void;
+  currentCategory: "" | ChallengeCategory;
 }) {
-  const myStreak =
-    currentUserId && stats ? stats.streakByAuthor[currentUserId] ?? 0 : 0;
+  const [rankTab, setRankTab] = useState<"" | ChallengeCategory>("");
 
   return (
-    <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
-      {/* 본인 연속 인증 배너 */}
-      <div
-        className={cn(
-          "flex items-center gap-3 rounded-2xl px-4 py-3.5 ring-1",
-          myStreak >= 1
-            ? "bg-gradient-to-br from-orange-500/15 to-rose-500/15 ring-orange-500/30"
-            : "bg-gradient-to-br from-violet-500/10 to-cyan-500/10 ring-violet-500/20",
-        )}
-      >
-        <span
-          className={cn(
-            "grid h-12 w-12 shrink-0 place-items-center rounded-xl text-2xl",
-            myStreak >= 1
-              ? "bg-orange-500/20 text-orange-500"
-              : "bg-violet-500/20 text-violet-500",
-          )}
-        >
-          {myStreak >= 1 ? "🔥" : "📸"}
-        </span>
-        <div className="min-w-0 flex-1">
-          {myStreak >= 1 ? (
-            <>
-              <p className="text-sm font-extrabold text-gray-900 dark:text-white">
-                {myStreak}일 연속 인증 중!
-              </p>
-              <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                오늘도 인증샷 올리고 연속 기록 이어가세요.
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="text-sm font-extrabold text-gray-900 dark:text-white">
-                오늘 인증을 시작해보세요!
-              </p>
-              <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                매일 인증샷을 올리면 연속 기록이 카운트됩니다.
-              </p>
-            </>
-          )}
+    <div className="mb-4 space-y-3">
+      {/* 내 참여 현황 — 3개 카테고리 카드 */}
+      <div>
+        <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">
+          내 참여 현황
+        </p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {CHALLENGE_CATEGORY_ORDER.map((cat) => {
+            const isJoined = mySubs.includes(cat);
+            const isLoading = joining === cat;
+            const myStreak =
+              isJoined && currentUserId && stats
+                ? stats.streakByAuthorByCategory[cat][currentUserId] ?? 0
+                : 0;
+            const participantCount = stats?.participantCounts[cat] ?? 0;
+            const isActiveFilter = currentCategory === cat;
+            return (
+              <div
+                key={cat}
+                className={cn(
+                  "rounded-2xl p-3.5 ring-1 transition",
+                  isActiveFilter
+                    ? "bg-gradient-to-br from-violet-500/20 to-cyan-500/20 ring-violet-500/40"
+                    : isJoined
+                    ? "bg-gradient-to-br from-orange-500/10 to-rose-500/10 ring-orange-500/30"
+                    : "bg-gray-50 ring-gray-200 dark:bg-white/[0.03] dark:ring-white/10",
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => onSelectCategory(isActiveFilter ? "" : cat)}
+                  className="block w-full text-left"
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "grid h-9 w-9 shrink-0 place-items-center rounded-xl text-lg",
+                        isJoined ? "bg-white dark:bg-white/10" : "bg-gray-100 dark:bg-white/[0.04]",
+                      )}
+                    >
+                      {CHALLENGE_CATEGORY_ICON[cat]}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-extrabold text-gray-900 dark:text-white">
+                        {CHALLENGE_CATEGORY_LABEL[cat]}
+                      </p>
+                      <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+                        {participantCount}명 참여 ·{" "}
+                        {isJoined ? `🔥 ${myStreak}일 연속` : "참여 전"}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() => onToggleJoin(cat)}
+                  className={cn(
+                    "mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold transition disabled:cursor-not-allowed disabled:opacity-60",
+                    isJoined
+                      ? "bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300"
+                      : "bg-violet-600 text-white hover:bg-violet-700",
+                  )}
+                >
+                  {isLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {isJoined ? "참여 중 ✓" : "참여하기"}
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      {/* 주간 랭킹 */}
+      {/* 주간 랭킹 — 카테고리 탭 */}
       <div className="rounded-2xl border border-gray-200 bg-white p-3.5 dark:border-white/[0.07] dark:bg-[#16162a]">
-        <div className="mb-2 flex items-center gap-1.5 text-xs font-bold text-amber-500">
-          <Trophy className="h-3.5 w-3.5" />
-          이번 주 챌린지 TOP 5
-        </div>
-        {stats == null ? (
-          <div className="flex items-center justify-center py-4 text-xs text-gray-400">
-            <Loader2 className="h-4 w-4 animate-spin" />
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-500">
+            <Trophy className="h-3.5 w-3.5" />
+            이번 주 챌린지 TOP 5
           </div>
-        ) : stats.weeklyRanking.length === 0 ? (
-          <p className="px-1 py-2 text-[11px] text-gray-400">
-            아직 인증한 사람이 없어요. 1등을 차지해보세요!
-          </p>
-        ) : (
-          <ol className="space-y-1.5">
-            {stats.weeklyRanking.map((r, i) => {
-              const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}`;
-              return (
-                <li
-                  key={r.author_id}
-                  className="flex items-center gap-2 text-xs"
-                >
-                  <span className="grid w-6 shrink-0 place-items-center text-base">
-                    {medal}
-                  </span>
-                  <span className="flex-1 truncate font-semibold text-gray-800 dark:text-gray-100">
-                    {r.nickname}
-                  </span>
-                  <Badge role={r.role} className="text-[9px] py-0 px-1.5" />
-                  <span className="shrink-0 tabular-nums text-gray-400">
-                    {r.count}회
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
-        )}
+        </div>
+        {/* 탭 */}
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {(
+            [
+              { value: "" as const, label: "전체" },
+              ...CHALLENGE_CATEGORY_ORDER.map((c) => ({
+                value: c,
+                label: `${CHALLENGE_CATEGORY_ICON[c]} ${CHALLENGE_CATEGORY_LABEL[c]}`,
+              })),
+            ]
+          ).map((opt) => {
+            const active = rankTab === opt.value;
+            return (
+              <button
+                key={String(opt.value)}
+                type="button"
+                onClick={() => setRankTab(opt.value)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-[11px] font-semibold transition",
+                  active
+                    ? "border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-300"
+                    : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+                )}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        {(() => {
+          const ranking =
+            rankTab === ""
+              ? stats?.weeklyRanking ?? null
+              : stats?.weeklyRankingByCategory[rankTab] ?? null;
+          if (stats == null) {
+            return (
+              <div className="flex items-center justify-center py-4 text-xs text-gray-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+              </div>
+            );
+          }
+          if (!ranking || ranking.length === 0) {
+            return (
+              <p className="px-1 py-2 text-[11px] text-gray-400">
+                아직 인증한 사람이 없어요. 1등을 차지해보세요!
+              </p>
+            );
+          }
+          return (
+            <ol className="space-y-1.5">
+              {ranking.map((r, i) => {
+                const medal =
+                  i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}`;
+                return (
+                  <li
+                    key={r.author_id}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <span className="grid w-6 shrink-0 place-items-center text-base">
+                      {medal}
+                    </span>
+                    <span className="flex-1 truncate font-semibold text-gray-800 dark:text-gray-100">
+                      {r.nickname}
+                    </span>
+                    <Badge role={r.role} className="text-[9px] py-0 px-1.5" />
+                    <span className="shrink-0 tabular-nums text-gray-400">
+                      {r.count}회
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          );
+        })()}
+      </div>
+    </div>
+  );
+}
+
+// ── 챌린지 — 카테고리 필터 탭 (전체/등교/공부/운동) ──────────
+function ChallengeCategoryTabs({
+  value,
+  onChange,
+}: {
+  value: "" | ChallengeCategory;
+  onChange: (v: "" | ChallengeCategory) => void;
+}) {
+  const opts: { value: "" | ChallengeCategory; label: string }[] = [
+    { value: "", label: "전체" },
+    ...CHALLENGE_CATEGORY_ORDER.map((c) => ({
+      value: c,
+      label: `${CHALLENGE_CATEGORY_ICON[c]} ${CHALLENGE_CATEGORY_LABEL[c].replace(" 인증", "")}`,
+    })),
+  ];
+  return (
+    <div className="mb-4 flex flex-wrap gap-1.5">
+      {opts.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={String(opt.value)}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+              active
+                ? "border-violet-500 bg-violet-500/10 text-violet-600 dark:text-violet-300"
+                : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+            )}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── 챌린지 — 인증 취소 모달 ───────────────────────────────────
+function ChallengeRejectModal({
+  post,
+  onCancel,
+  onConfirm,
+}: {
+  post: PostRow;
+  onCancel: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/[0.08] dark:bg-[#16162a]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-base font-extrabold text-gray-900 dark:text-white">
+          이 인증을 취소하시겠습니까?
+        </h3>
+        <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400 line-clamp-2">
+          {post.title}
+        </p>
+        <label className="mt-4 block text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+          취소 사유 (필수)
+        </label>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="작성자에게 전달될 사유를 입력해주세요"
+          rows={4}
+          disabled={submitting}
+          className="mt-1.5 w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={submitting}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 transition hover:bg-gray-50 disabled:opacity-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/[0.05]"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            disabled={submitting || !reason.trim()}
+            onClick={async () => {
+              setSubmitting(true);
+              await onConfirm(reason.trim());
+              setSubmitting(false);
+            }}
+            className="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            인증 취소
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1400,9 +1687,13 @@ function ChallengeHeader({
 function ChallengeGrid({
   posts,
   streakByAuthor,
+  isStaff,
+  onRequestReject,
 }: {
   posts: PostRow[];
   streakByAuthor: Record<string, number>;
+  isStaff: boolean;
+  onRequestReject: (post: PostRow) => void;
 }) {
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -1411,52 +1702,130 @@ function ChallengeGrid({
           key={post.id}
           post={post}
           streak={streakByAuthor[post.author_id] ?? 0}
+          isStaff={isStaff}
+          onRequestReject={onRequestReject}
         />
       ))}
     </div>
   );
 }
 
-function ChallengeCard({ post, streak }: { post: PostRow; streak: number }) {
+/** 연속일수 뱃지 색상 — 1-6 주황 / 7-13 빨강 / 14-29 보라 / 30+ 금색 */
+function streakBadgeStyle(streak: number): { bg: string; emoji: string } {
+  if (streak >= 30) return { bg: "bg-amber-400/95 text-gray-900", emoji: "👑" };
+  if (streak >= 14) return { bg: "bg-violet-500/90 text-white", emoji: "💜" };
+  if (streak >= 7) return { bg: "bg-red-500/90 text-white", emoji: "🔥" };
+  return { bg: "bg-orange-500/90 text-white", emoji: "🔥" };
+}
+
+function ChallengeCard({
+  post,
+  streak,
+  isStaff,
+  onRequestReject,
+}: {
+  post: PostRow;
+  streak: number;
+  isStaff: boolean;
+  onRequestReject: (post: PostRow) => void;
+}) {
+  const isRejected = post.challenge_status === "rejected";
+  const cat = (post.post_category as ChallengeCategory | null) ?? null;
+  const badge = streakBadgeStyle(streak);
+
   return (
-    <Link
-      href={`/board/challenge/${post.id}`}
-      className="group relative aspect-square overflow-hidden rounded-xl bg-gray-100 dark:bg-white/[0.04]"
+    <div
+      className={cn(
+        "group relative aspect-square overflow-hidden rounded-xl bg-gray-100 dark:bg-white/[0.04]",
+        isRejected && "opacity-60",
+      )}
     >
-      {post.image_url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={post.image_url}
-          alt=""
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-          loading="lazy"
-        />
-      ) : (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-violet-500 to-cyan-500 p-3 text-white">
-          <Flame className="h-8 w-8 opacity-90" />
-          <span className="line-clamp-3 text-center text-[11px] font-bold leading-tight">
-            {post.title}
+      <Link
+        href={`/board/challenge/${post.id}`}
+        className="block h-full w-full"
+      >
+        {post.image_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={post.image_url}
+            alt=""
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            loading="lazy"
+          />
+        ) : (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-violet-500 to-cyan-500 p-3 text-white">
+            <Flame className="h-8 w-8 opacity-90" />
+            <span className="line-clamp-3 text-center text-[11px] font-bold leading-tight">
+              {post.title}
+            </span>
+          </div>
+        )}
+
+        {/* 카테고리 아이콘 뱃지 — 좌상단 */}
+        {cat && (
+          <span
+            className="absolute left-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-white/90 text-base shadow ring-1 ring-inset ring-white/40 backdrop-blur-sm dark:bg-black/60"
+            aria-label={CHALLENGE_CATEGORY_LABEL[cat]}
+            title={CHALLENGE_CATEGORY_LABEL[cat]}
+          >
+            {CHALLENGE_CATEGORY_ICON[cat]}
           </span>
+        )}
+
+        {/* 연속일수 뱃지 (3일 이상) — 카테고리 뱃지 아래쪽으로 */}
+        {streak >= 3 && (
+          <span
+            className={cn(
+              "absolute right-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset ring-white/20 backdrop-blur-sm",
+              badge.bg,
+            )}
+          >
+            {badge.emoji} {streak}일
+          </span>
+        )}
+
+        {/* 닉네임 + 날짜 오버레이 */}
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent px-3 pb-2 pt-6">
+          <p className="line-clamp-1 text-[11px] font-semibold text-white drop-shadow">
+            {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
+          </p>
+          <p className="text-[10px] text-white/80 drop-shadow">
+            {relativeTime(post.created_at)}
+          </p>
+        </div>
+      </Link>
+
+      {/* 인증 취소 오버레이 */}
+      {isRejected && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55">
+          <div className="rounded-lg bg-red-600/95 px-3 py-1.5 text-center">
+            <p className="text-[11px] font-extrabold text-white">인증 취소됨</p>
+            {post.challenge_rejected_reason && (
+              <p className="mt-0.5 line-clamp-2 max-w-[10rem] text-[10px] text-white/85">
+                {post.challenge_rejected_reason}
+              </p>
+            )}
+          </div>
         </div>
       )}
 
-      {/* 연속일수 뱃지 (3일 이상) */}
-      {streak >= 3 && (
-        <span className="absolute left-2 top-2 rounded-full bg-orange-500/90 px-2 py-0.5 text-[10px] font-bold text-white ring-1 ring-inset ring-white/20 backdrop-blur-sm">
-          🔥 {streak}일
-        </span>
+      {/* 관리자 — 인증 취소 버튼 (rejected 가 아닐 때만) */}
+      {isStaff && !isRejected && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onRequestReject(post);
+          }}
+          aria-label="인증 취소"
+          title="인증 취소"
+          className="absolute right-2 bottom-2 z-10 grid h-7 w-7 place-items-center rounded-full bg-black/60 text-white opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:bg-red-600"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       )}
-
-      {/* 닉네임 + 날짜 오버레이 */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent px-3 pb-2 pt-6">
-        <p className="line-clamp-1 text-[11px] font-semibold text-white drop-shadow">
-          {displayAuthorNameFor({ boardType: post.board_type, author: post.author })}
-        </p>
-        <p className="text-[10px] text-white/80 drop-shadow">
-          {relativeTime(post.created_at)}
-        </p>
-      </div>
-    </Link>
+    </div>
   );
 }
 

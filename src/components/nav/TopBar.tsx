@@ -34,10 +34,12 @@ const MEGA_NAV: NavGroup[] = [
   {
     label: "커뮤니티 🫧",
     items: [
-      // 학습게시판: 기존 study board_type 재활용 (스터디 게시글은 별도 SQL 마이그레이션 예정).
+      // 1) 문태 챌린지 — 카테고리 3종(등교/공부/운동) 인증 — 가장 위로.
+      { boardType: "challenge", label: "문태 챌린지" },
+      // 2) 문태에타 — 익명 게시판.
+      { boardType: "anonymous", label: "문태에타 🔥" },
+      // 3) 학습게시판: 기존 study board_type 재활용.
       { boardType: "study", label: "학습게시판 📚" },
-      { boardType: "challenge", label: "챌린지" },
-      { boardType: "anonymous", label: "문태에타 🌙" },
       { boardType: "free", label: "자유게시판" },
       { boardType: "market", label: "나눔장터" },
       { boardType: "lost", label: "분실물센터" },

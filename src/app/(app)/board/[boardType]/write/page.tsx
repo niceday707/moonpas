@@ -21,14 +21,19 @@ import { AuthGate } from "@/components/auth/AuthGate";
 import {
   ALUMNI_CATEGORIES,
   ALUMNI_YEARS,
+  ATTENDANCE_DEADLINE_HOUR,
+  ATTENDANCE_DEADLINE_MINUTE,
   BOARD_LABEL,
   CAREER_TRACKS,
+  CHALLENGE_CATEGORY_ICON,
+  CHALLENGE_CATEGORY_LABEL,
   MARKET_CONDITION_LABEL,
   QA_SUBJECTS,
   RESOURCE_CATEGORIES,
   YOUTUBE_CATEGORIES,
   createPost,
   extractYoutubeId,
+  getMyChallengeSubs,
   getPost,
   parseAlumniContent,
   parseIssueContent,
@@ -54,6 +59,7 @@ import {
   type AlumniCategory,
   type BoardType,
   type CareerTrack,
+  type ChallengeCategory,
   type MarketCondition,
   type QaSubject,
   type ResourceCategory,
@@ -73,6 +79,18 @@ import {
 } from "@/lib/storage";
 
 const VALID_BOARDS = Object.keys(BOARD_LABEL) as BoardType[];
+
+/** KST 기준 등교 인증 마감 시각(08:10)을 지났는지 */
+function isAttendanceClosed(): boolean {
+  const now = new Date();
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const h = kst.getUTCHours();
+  const m = kst.getUTCMinutes();
+  return (
+    h > ATTENDANCE_DEADLINE_HOUR ||
+    (h === ATTENDANCE_DEADLINE_HOUR && m > ATTENDANCE_DEADLINE_MINUTE)
+  );
+}
 
 export default function BoardWritePage() {
   return (
@@ -124,6 +142,9 @@ function WriteInner() {
   const [studyGrade, setStudyGrade] = useState<StudyGrade | "">("");
   const [studySubjectTag, setStudySubjectTag] = useState<StudySubjectTag | "">("");
   const [studyPostCategory, setStudyPostCategory] = useState<StudyPostCategory | "">("");
+  // 챌린지 전용 — 카테고리 (등교/공부/운동) 필수. 참여 중인 카테고리만 선택 가능.
+  const [challengeCategory, setChallengeCategory] = useState<ChallengeCategory | "">("");
+  const [myChallengeSubs, setMyChallengeSubs] = useState<ChallengeCategory[]>([]);
   // 졸업생(선배에게 물어봐) 전용
   const [alumniCategory, setAlumniCategory] =
     useState<AlumniCategory>("college-life");
@@ -206,7 +227,16 @@ function WriteInner() {
         }
         if (post.grade) setStudyGrade(post.grade);
         if (post.subject_tag) setStudySubjectTag(post.subject_tag);
-        if (post.post_category) setStudyPostCategory(post.post_category);
+        // post_category 는 챌린지와 공유 컬럼이라 union 타입 — study 분기에서는 항상 StudyPostCategory.
+        if (post.post_category) {
+          setStudyPostCategory(post.post_category as StudyPostCategory);
+        }
+      } else if (post.board_type === "challenge") {
+        // 챌린지: 카테고리는 post_category 컬럼에 저장됨.
+        if (post.post_category) {
+          setChallengeCategory(post.post_category as ChallengeCategory);
+        }
+        setContent(post.content);
       } else if (post.board_type === "alumni") {
         const parsed = parseAlumniContent(post.content);
         setAlumniCategory(parsed.category);
@@ -246,6 +276,18 @@ function WriteInner() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 챌린지 글쓰기 시 — 내 참여 카테고리 fetch
+  useEffect(() => {
+    if (boardType !== "challenge") return;
+    let active = true;
+    getMyChallengeSubs().then((subs) => {
+      if (active) setMyChallengeSubs(subs);
+    });
+    return () => {
+      active = false;
+    };
+  }, [boardType]);
 
   if (!VALID_BOARDS.includes(boardType)) {
     return (
@@ -398,6 +440,18 @@ function WriteInner() {
     // 챌린지는 이미지 필수 — 새 파일이거나 기존 이미지가 있어야 함
     if (isChallenge && !imageFile && !imagePreview) {
       setError("챌린지 게시판은 인증샷 이미지가 필요해요.");
+      return;
+    }
+    // 챌린지는 카테고리 필수
+    if (isChallenge && !challengeCategory) {
+      setError("챌린지 카테고리를 선택해주세요.");
+      return;
+    }
+    // 등교 인증은 KST 08:10 까지만
+    if (isChallenge && challengeCategory === "attendance" && isAttendanceClosed()) {
+      setError(
+        `등교 인증 시간이 지났습니다 (오전 ${ATTENDANCE_DEADLINE_HOUR}:${String(ATTENDANCE_DEADLINE_MINUTE).padStart(2, "0")}까지).`,
+      );
       return;
     }
     if (isLost && !lostLocation.trim()) {
@@ -560,12 +614,16 @@ function WriteInner() {
         imageUrl,
         fileUrl,
         fileName,
-        // 학습게시판만 태그 컬럼 포함, 그 외에는 undefined → 변경 없음.
+        // 학습게시판만 태그 컬럼 포함, 챌린지는 post_category 만 갱신, 그 외는 undefined → 변경 없음.
         ...(isStudy
           ? {
               grade: (studyGrade || null) as StudyGrade | null,
               subjectTag: (studySubjectTag || null) as StudySubjectTag | null,
               postCategory: (studyPostCategory || null) as StudyPostCategory | null,
+            }
+          : isChallenge
+          ? {
+              postCategory: (challengeCategory || null) as ChallengeCategory | null,
             }
           : {}),
       });
@@ -589,6 +647,10 @@ function WriteInner() {
         subjectTag: isStudy ? ((studySubjectTag || null) as StudySubjectTag | null) : undefined,
         postCategory: isStudy
           ? ((studyPostCategory || null) as StudyPostCategory | null)
+          : undefined,
+        // 챌린지: 카테고리는 createPost 내부에서 post_category 컬럼으로 저장.
+        challengeCategory: isChallenge
+          ? ((challengeCategory || null) as ChallengeCategory | null)
           : undefined,
       });
       setSubmitting(false);
@@ -635,6 +697,14 @@ function WriteInner() {
       </h1>
 
       <div className="mt-5 space-y-4 rounded-xl border border-gray-200 bg-white p-4 dark:border-white/[0.07] dark:bg-[#16162a]">
+        {isChallenge && (
+          <ChallengeCategoryPicker
+            value={challengeCategory}
+            onChange={setChallengeCategory}
+            mySubs={myChallengeSubs}
+            disabled={submitting}
+          />
+        )}
         <div>
           <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
             {isIssue ? "토론 주제" : isQa ? "질문 제목" : "제목"}
@@ -1288,6 +1358,76 @@ function WriteInner() {
         </div>
       </div>
     </motion.div>
+  );
+}
+
+// ── 챌린지 글쓰기 — 카테고리 picker ───────────────────────────
+// 등교/공부/운동 3개 중 하나 선택 (필수). 참여하지 않은 카테고리는 비활성.
+const CHALLENGE_PICKER_OPTIONS: ChallengeCategory[] = [
+  "attendance",
+  "study_cert",
+  "exercise",
+];
+
+function ChallengeCategoryPicker({
+  value,
+  onChange,
+  mySubs,
+  disabled,
+}: {
+  value: ChallengeCategory | "";
+  onChange: (v: ChallengeCategory | "") => void;
+  mySubs: ChallengeCategory[];
+  disabled?: boolean;
+}) {
+  const showAttendanceClosed =
+    value === "attendance" && isAttendanceClosed();
+  return (
+    <div>
+      <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+        챌린지 카테고리 (필수)
+      </label>
+      <div className="mt-1.5 grid grid-cols-3 gap-2">
+        {CHALLENGE_PICKER_OPTIONS.map((cat) => {
+          const active = value === cat;
+          const isJoined = mySubs.includes(cat);
+          const isDisabled = disabled || !isJoined;
+          return (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => onChange(cat)}
+              disabled={isDisabled}
+              title={isJoined ? "" : "먼저 '참여하기'를 눌러주세요"}
+              className={cn(
+                "flex flex-col items-center gap-1 rounded-xl border px-3 py-2.5 text-sm font-semibold transition",
+                active
+                  ? "border-violet-500 bg-violet-500/15 text-violet-700 dark:text-violet-200"
+                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+                isDisabled && "cursor-not-allowed opacity-50",
+              )}
+            >
+              <span className="text-lg leading-none">
+                {CHALLENGE_CATEGORY_ICON[cat]}
+              </span>
+              <span className="text-[12px]">
+                {CHALLENGE_CATEGORY_LABEL[cat]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-1.5 text-[10px] text-gray-400">
+        참여하지 않은 카테고리는 챌린지 목록에서 먼저 &quot;참여하기&quot;를 눌러주세요.
+      </p>
+      {showAttendanceClosed && (
+        <p className="mt-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+          ⚠️ 등교 인증 시간이 지났습니다 (오전{" "}
+          {ATTENDANCE_DEADLINE_HOUR}:
+          {String(ATTENDANCE_DEADLINE_MINUTE).padStart(2, "0")}까지)
+        </p>
+      )}
+    </div>
   );
 }
 

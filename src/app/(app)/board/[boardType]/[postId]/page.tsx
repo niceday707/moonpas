@@ -83,6 +83,7 @@ import {
   type ResourceContent,
   type SeniorContent,
   type StudyContent,
+  type StudyPostCategory,
   type YoutubeContent,
 } from "@/lib/board";
 import {
@@ -485,10 +486,10 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
             <span
               className={cn(
                 "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset ring-transparent",
-                STUDY_POST_CATEGORY_STYLE[post.post_category],
+                STUDY_POST_CATEGORY_STYLE[post.post_category as StudyPostCategory],
               )}
             >
-              {STUDY_POST_CATEGORY_LABEL[post.post_category]}
+              {STUDY_POST_CATEGORY_LABEL[post.post_category as StudyPostCategory]}
             </span>
           )}
           {isAlumni && alumniInfo && (

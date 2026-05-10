@@ -106,6 +106,35 @@ export const STUDY_POST_CATEGORY_STYLE: Record<StudyPostCategory, string> = {
   share:    "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
 };
 
+// ── 챌린지(board_type='challenge') 카테고리 ─────────────────
+// post_category 컬럼을 재사용해서 저장 — 학습게시판과는 board_type 으로 분리.
+export type ChallengeCategory = "attendance" | "study_cert" | "exercise";
+
+export const CHALLENGE_CATEGORY_LABEL: Record<ChallengeCategory, string> = {
+  attendance: "등교 인증",
+  study_cert: "공부 인증",
+  exercise: "운동 인증",
+};
+
+export const CHALLENGE_CATEGORY_ICON: Record<ChallengeCategory, string> = {
+  attendance: "☀️",
+  study_cert: "📚",
+  exercise: "💪",
+};
+
+export const CHALLENGE_CATEGORY_STYLE: Record<ChallengeCategory, string> = {
+  attendance: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+  study_cert: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+  exercise: "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
+};
+
+// 등교 인증 시간 제한 (KST) — 08:10 까지만 인증 가능
+export const ATTENDANCE_DEADLINE_HOUR = 8;
+export const ATTENDANCE_DEADLINE_MINUTE = 10;
+
+/** 챌린지 인증 상태 — 'approved' (정상, 기본값) / 'rejected' (관리자 취소) */
+export type ChallengeStatus = "approved" | "rejected";
+
 export type PostRow = {
   id: string;
   /** anonymous 게시판은 빈 문자열로 마스킹 — 학번/이름/UUID 모두 노출 금지 */
@@ -137,7 +166,12 @@ export type PostRow = {
   // 학습게시판 전용 — 그 외 board_type 에서는 항상 null.
   grade: StudyGrade | null;
   subject_tag: StudySubjectTag | null;
-  post_category: StudyPostCategory | null;
+  // post_category 는 학습게시판('question'|'tip'|'share') 또는
+  // 챌린지('attendance'|'study_cert'|'exercise') 두 용도로 쓰임 — board_type 으로 의미 분기.
+  post_category: StudyPostCategory | ChallengeCategory | null;
+  // 챌린지 전용 — 그 외에는 null/undefined.
+  challenge_status: ChallengeStatus | null;
+  challenge_rejected_reason: string | null;
 };
 
 export type CommentRow = {
@@ -183,19 +217,28 @@ export type CommentRow = {
 const POST_SELECT = `
   id, author_id, board_type, title, content, image_url, file_url, file_name,
   view_count, like_count, is_pinned, status, vote_a, vote_b, created_at, updated_at,
-  grade, subject_tag, post_category,
+  grade, subject_tag, post_category, challenge_status, challenge_rejected_reason,
   author:profiles!author_id ( id, nickname, role, avatar_url ),
   comments_aggregate:comments(count)
 `;
 
 type RawPost = Omit<
   PostRow,
-  "author" | "comment_count" | "is_pinned" | "status" | "vote_a" | "vote_b"
+  | "author"
+  | "comment_count"
+  | "is_pinned"
+  | "status"
+  | "vote_a"
+  | "vote_b"
+  | "challenge_status"
+  | "challenge_rejected_reason"
 > & {
   is_pinned: boolean | null;
   status: PostStatus | null;
   vote_a: number | null;
   vote_b: number | null;
+  challenge_status: ChallengeStatus | null;
+  challenge_rejected_reason: string | null;
   author: {
     id: string;
     nickname: string;
@@ -233,7 +276,11 @@ function normalizePost(raw: RawPost, currentUserId: string | null): PostRow {
     is_mine: isMine,
     grade: (raw.grade as StudyGrade | null) ?? null,
     subject_tag: (raw.subject_tag as StudySubjectTag | null) ?? null,
-    post_category: (raw.post_category as StudyPostCategory | null) ?? null,
+    post_category:
+      (raw.post_category as StudyPostCategory | ChallengeCategory | null) ?? null,
+    // challenge_status 가 NULL/미적용 환경이면 'approved' 로 간주 (DEFAULT 값과 동일).
+    challenge_status: (raw.challenge_status as ChallengeStatus | null) ?? "approved",
+    challenge_rejected_reason: raw.challenge_rejected_reason ?? null,
   };
 }
 
@@ -378,7 +425,8 @@ export async function listPosts(
     // 학습게시판 전용 — null/undefined 면 필터 적용 안 함 ("전체" 의미).
     grade?: StudyGrade | null;
     subjectTag?: StudySubjectTag | null;
-    postCategory?: StudyPostCategory | null;
+    // 학습게시판은 StudyPostCategory, 챌린지는 ChallengeCategory 가 들어옴 — board_type 분기로 의미 구분.
+    postCategory?: StudyPostCategory | ChallengeCategory | null;
   },
 ): Promise<{ posts: PostRow[]; total: number }> {
   const from = (page - 1) * POSTS_PER_PAGE;
@@ -532,6 +580,8 @@ export async function createPost(input: {
   grade?: StudyGrade | null;
   subjectTag?: StudySubjectTag | null;
   postCategory?: StudyPostCategory | null;
+  // 챌린지(board_type='challenge') 전용 — post_category 컬럼에 저장됨.
+  challengeCategory?: ChallengeCategory | null;
 }): Promise<{
   id: string | null;
   error: string | null;
@@ -554,6 +604,35 @@ export async function createPost(input: {
 
   // 학습게시판 외에는 태그 컬럼을 반드시 NULL 로 INSERT — 잘못된 board 에서 태그가 새지 않도록 가드.
   const isStudyBoard = input.boardType === "study";
+  const isChallengeBoard = input.boardType === "challenge";
+
+  // 등교 인증은 KST 08:10 까지만 허용.
+  if (isChallengeBoard && input.challengeCategory === "attendance") {
+    const now = new Date();
+    const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const h = kst.getUTCHours();
+    const m = kst.getUTCMinutes();
+    const past =
+      h > ATTENDANCE_DEADLINE_HOUR ||
+      (h === ATTENDANCE_DEADLINE_HOUR && m > ATTENDANCE_DEADLINE_MINUTE);
+    if (past) {
+      return {
+        id: null,
+        error: "등교 인증은 오전 8시 10분까지만 가능합니다",
+        code: "ATTENDANCE_DEADLINE",
+        details: null,
+        hint: null,
+      };
+    }
+  }
+
+  // post_category 는 학습게시판이면 StudyPostCategory, 챌린지면 ChallengeCategory 로 분기 저장.
+  const postCategoryValue = isStudyBoard
+    ? (input.postCategory ?? null)
+    : isChallengeBoard
+    ? (input.challengeCategory ?? null)
+    : null;
+
   const { data, error } = await supabase
     .from("posts")
     .insert({
@@ -566,7 +645,7 @@ export async function createPost(input: {
       file_name: input.fileName ?? null,
       grade: isStudyBoard ? (input.grade ?? null) : null,
       subject_tag: isStudyBoard ? (input.subjectTag ?? null) : null,
-      post_category: isStudyBoard ? (input.postCategory ?? null) : null,
+      post_category: postCategoryValue,
     })
     .select("id")
     .single();
@@ -615,7 +694,8 @@ export async function updatePost(
     // 학습게시판 전용 — 다른 board 의 수정에서는 그대로 undefined 로 두면 변경되지 않음.
     grade?: StudyGrade | null;
     subjectTag?: StudySubjectTag | null;
-    postCategory?: StudyPostCategory | null;
+    // 학습게시판은 StudyPostCategory, 챌린지는 ChallengeCategory 가 들어옴.
+    postCategory?: StudyPostCategory | ChallengeCategory | null;
   },
 ): Promise<{ error: string | null }> {
   const update: Record<string, unknown> = {
@@ -1695,6 +1775,9 @@ function anonPostToPostRow(r: AnonPostRpc): PostRow {
     grade: null,
     subject_tag: null,
     post_category: null,
+    // 익명 게시판은 챌린지가 아니므로 챌린지 상태도 null.
+    challenge_status: null,
+    challenge_rejected_reason: null,
   };
 }
 
@@ -1915,6 +1998,8 @@ const RANKING_LOOKBACK_DAYS = 7;
 type ChallengePost = {
   author_id: string;
   created_at: string;
+  post_category: ChallengeCategory | null;
+  challenge_status: ChallengeStatus | null;
   author: { id: string; nickname: string; role: Role } | null;
 };
 
@@ -1935,51 +2020,118 @@ function dateBefore(ymd: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** 챌린지 글의 작성자별 연속 인증일수 + 주간 랭킹 캐시 */
-export type ChallengeStats = {
-  /** author_id → 현재 연속일수 (오늘 또는 어제부터 거꾸로) */
-  streakByAuthor: Record<string, number>;
-  /** 최근 7일 랭킹 (글 많은 순, 동률은 닉네임 가나다) */
-  weeklyRanking: Array<{
-    author_id: string;
-    nickname: string;
-    role: Role;
-    count: number;
-  }>;
+/** 주간 랭킹 한 줄 */
+export type ChallengeRankRow = {
+  author_id: string;
+  nickname: string;
+  role: Role;
+  count: number;
 };
+
+/** 챌린지 글의 작성자별 연속 인증일수 + 주간 랭킹 캐시 (전체 + 카테고리별) */
+export type ChallengeStats = {
+  /** 전체 통합 — author_id → 현재 연속일수 */
+  streakByAuthor: Record<string, number>;
+  /** 카테고리별 — category → author_id → 연속일수 */
+  streakByAuthorByCategory: Record<ChallengeCategory, Record<string, number>>;
+  /** 최근 7일 전체 랭킹 (TOP 5) */
+  weeklyRanking: ChallengeRankRow[];
+  /** 카테고리별 최근 7일 랭킹 (각 TOP 5) */
+  weeklyRankingByCategory: Record<ChallengeCategory, ChallengeRankRow[]>;
+  /** 카테고리별 활성 참여자 수 */
+  participantCounts: Record<ChallengeCategory, number>;
+};
+
+const CHALLENGE_CATEGORIES: ChallengeCategory[] = [
+  "attendance",
+  "study_cert",
+  "exercise",
+];
+
+const emptyByCategory = <T>(make: () => T): Record<ChallengeCategory, T> => ({
+  attendance: make(),
+  study_cert: make(),
+  exercise: make(),
+});
+
+/** 인증 날짜 집합으로부터 연속일수 산출 — 오늘/어제 grace 1회 */
+function computeStreak(
+  set: Set<string>,
+  today: string,
+  yesterday: string,
+): number {
+  let cursor: string;
+  if (set.has(today)) cursor = today;
+  else if (set.has(yesterday)) cursor = yesterday;
+  else return 0;
+  let count = 0;
+  while (set.has(cursor)) {
+    count++;
+    cursor = dateBefore(cursor, 1);
+  }
+  return count;
+}
 
 export async function getChallengeStats(): Promise<ChallengeStats> {
   const since = dateBefore(todayKst(), STREAK_LOOKBACK_DAYS);
-  const { data, error } = await supabase
-    .from("posts")
-    .select(
-      "author_id, created_at, author:profiles!author_id ( id, nickname, role )",
-    )
-    .eq("board_type", "challenge")
-    .gte("created_at", since + "T00:00:00+09:00")
-    .order("created_at", { ascending: false });
+  const [postsRes, partRes] = await Promise.all([
+    supabase
+      .from("posts")
+      .select(
+        "author_id, created_at, post_category, challenge_status, author:profiles!author_id ( id, nickname, role )",
+      )
+      .eq("board_type", "challenge")
+      .gte("created_at", since + "T00:00:00+09:00")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("challenge_participants")
+      .select("category")
+      .eq("is_active", true),
+  ]);
 
-  if (error || !data) {
-    if (error) console.error("[getChallengeStats] 실패", error);
-    return { streakByAuthor: {}, weeklyRanking: [] };
+  const participantCounts = emptyByCategory<number>(() => 0);
+  if (!partRes.error && partRes.data) {
+    for (const row of partRes.data as Array<{ category: ChallengeCategory }>) {
+      if (CHALLENGE_CATEGORIES.includes(row.category)) {
+        participantCounts[row.category]++;
+      }
+    }
   }
 
-  const rows = data as unknown as ChallengePost[];
+  const empty: ChallengeStats = {
+    streakByAuthor: {},
+    streakByAuthorByCategory: emptyByCategory(() => ({})),
+    weeklyRanking: [],
+    weeklyRankingByCategory: emptyByCategory(() => []),
+    participantCounts,
+  };
 
-  // 작성자별 인증 날짜 (KST yyyy-mm-dd) 집합
-  const datesByAuthor = new Map<string, Set<string>>();
-  // 작성자 메타 캐시
+  if (postsRes.error || !postsRes.data) {
+    if (postsRes.error) console.error("[getChallengeStats] 실패", postsRes.error);
+    return empty;
+  }
+
+  // rejected 글은 통계에서 제외 — challenge_status 가 NULL/'approved' 면 정상.
+  const rows = (postsRes.data as unknown as ChallengePost[]).filter(
+    (r) => (r.challenge_status ?? "approved") !== "rejected",
+  );
+
+  // 전체 + 카테고리별 인증 날짜 집합
+  const datesAll = new Map<string, Set<string>>();
+  const datesByCat: Record<ChallengeCategory, Map<string, Set<string>>> =
+    emptyByCategory(() => new Map<string, Set<string>>());
+  // 작성자 메타
   const authorMeta = new Map<string, { nickname: string; role: Role }>();
   // 7일 카운트
-  const weeklyCounts = new Map<string, number>();
+  const weeklyAll = new Map<string, number>();
+  const weeklyByCat: Record<ChallengeCategory, Map<string, number>> =
+    emptyByCategory(() => new Map<string, number>());
   const weeklyCutoff = dateBefore(todayKst(), RANKING_LOOKBACK_DAYS - 1);
 
   for (const row of rows) {
     const day = ymdInKst(row.created_at);
-    if (!datesByAuthor.has(row.author_id)) {
-      datesByAuthor.set(row.author_id, new Set());
-    }
-    datesByAuthor.get(row.author_id)!.add(day);
+    if (!datesAll.has(row.author_id)) datesAll.set(row.author_id, new Set());
+    datesAll.get(row.author_id)!.add(day);
 
     if (row.author && !authorMeta.has(row.author_id)) {
       authorMeta.set(row.author_id, {
@@ -1989,49 +2141,234 @@ export async function getChallengeStats(): Promise<ChallengeStats> {
     }
 
     if (day >= weeklyCutoff) {
-      weeklyCounts.set(row.author_id, (weeklyCounts.get(row.author_id) ?? 0) + 1);
+      weeklyAll.set(row.author_id, (weeklyAll.get(row.author_id) ?? 0) + 1);
+    }
+
+    const cat = row.post_category;
+    if (cat && CHALLENGE_CATEGORIES.includes(cat)) {
+      const map = datesByCat[cat];
+      if (!map.has(row.author_id)) map.set(row.author_id, new Set());
+      map.get(row.author_id)!.add(day);
+
+      if (day >= weeklyCutoff) {
+        const wm = weeklyByCat[cat];
+        wm.set(row.author_id, (wm.get(row.author_id) ?? 0) + 1);
+      }
     }
   }
 
-  // 연속일수 계산 — 오늘 또는 어제부터 거꾸로 카운트 (한 번의 grace 적용)
+  // 연속일수 계산
   const today = todayKst();
   const yesterday = dateBefore(today, 1);
   const streakByAuthor: Record<string, number> = {};
-
-  for (const [authorId, set] of datesByAuthor.entries()) {
-    let cursor: string;
-    if (set.has(today)) cursor = today;
-    else if (set.has(yesterday)) cursor = yesterday;
-    else {
-      streakByAuthor[authorId] = 0;
-      continue;
+  for (const [authorId, set] of datesAll.entries()) {
+    streakByAuthor[authorId] = computeStreak(set, today, yesterday);
+  }
+  const streakByAuthorByCategory = emptyByCategory<Record<string, number>>(
+    () => ({}),
+  );
+  for (const cat of CHALLENGE_CATEGORIES) {
+    for (const [authorId, set] of datesByCat[cat].entries()) {
+      streakByAuthorByCategory[cat][authorId] = computeStreak(
+        set,
+        today,
+        yesterday,
+      );
     }
-    let count = 0;
-    while (set.has(cursor)) {
-      count++;
-      cursor = dateBefore(cursor, 1);
-    }
-    streakByAuthor[authorId] = count;
   }
 
-  // 주간 랭킹 정렬
-  const weeklyRanking = Array.from(weeklyCounts.entries())
-    .map(([author_id, count]) => {
-      const meta = authorMeta.get(author_id);
-      return {
-        author_id,
-        nickname: meta?.nickname ?? "(알수없음)",
-        role: meta?.role ?? ("student" as Role),
-        count,
-      };
-    })
-    .sort((a, b) => {
-      if (b.count !== a.count) return b.count - a.count;
-      return a.nickname.localeCompare(b.nickname, "ko");
-    })
-    .slice(0, 5);
+  // 주간 랭킹 정렬 헬퍼
+  const sortRanking = (counts: Map<string, number>): ChallengeRankRow[] =>
+    Array.from(counts.entries())
+      .map(([author_id, count]) => {
+        const meta = authorMeta.get(author_id);
+        return {
+          author_id,
+          nickname: meta?.nickname ?? "(알수없음)",
+          role: meta?.role ?? ("student" as Role),
+          count,
+        };
+      })
+      .sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        return a.nickname.localeCompare(b.nickname, "ko");
+      })
+      .slice(0, 5);
 
-  return { streakByAuthor, weeklyRanking };
+  const weeklyRanking = sortRanking(weeklyAll);
+  const weeklyRankingByCategory = emptyByCategory<ChallengeRankRow[]>(() => []);
+  for (const cat of CHALLENGE_CATEGORIES) {
+    weeklyRankingByCategory[cat] = sortRanking(weeklyByCat[cat]);
+  }
+
+  return {
+    streakByAuthor,
+    streakByAuthorByCategory,
+    weeklyRanking,
+    weeklyRankingByCategory,
+    participantCounts,
+  };
+}
+
+// ─────────────────────────────────────────────────────────
+// 챌린지 — 참여자 관리 (challenge_participants)
+// ─────────────────────────────────────────────────────────
+
+/** 현재 사용자가 참여 중(is_active=true)인 카테고리 목록 */
+export async function getMyChallengeSubs(): Promise<ChallengeCategory[]> {
+  const uid = await getCurrentUserId();
+  if (!uid) return [];
+  const { data, error } = await supabase
+    .from("challenge_participants")
+    .select("category")
+    .eq("user_id", uid)
+    .eq("is_active", true);
+  if (error || !data) {
+    if (error) console.warn("[getMyChallengeSubs] 실패", error);
+    return [];
+  }
+  return (data as Array<{ category: ChallengeCategory }>)
+    .map((r) => r.category)
+    .filter((c): c is ChallengeCategory => CHALLENGE_CATEGORIES.includes(c));
+}
+
+/** 카테고리 참여 — upsert (is_active=true) */
+export async function joinChallenge(
+  category: ChallengeCategory,
+): Promise<{ error: string | null }> {
+  const uid = await getCurrentUserId();
+  if (!uid) return { error: "로그인이 필요합니다" };
+  const { error } = await supabase
+    .from("challenge_participants")
+    .upsert(
+      {
+        user_id: uid,
+        category,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,category" },
+    );
+  if (error) {
+    console.error("[joinChallenge] 실패", error);
+    return { error: error.message };
+  }
+  return { error: null };
+}
+
+/** 카테고리 참여 해제 — is_active=false 로 update (행은 유지) */
+export async function leaveChallenge(
+  category: ChallengeCategory,
+): Promise<{ error: string | null }> {
+  const uid = await getCurrentUserId();
+  if (!uid) return { error: "로그인이 필요합니다" };
+  const { error } = await supabase
+    .from("challenge_participants")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("user_id", uid)
+    .eq("category", category);
+  if (error) {
+    console.error("[leaveChallenge] 실패", error);
+    return { error: error.message };
+  }
+  return { error: null };
+}
+
+/** 카테고리별 활성 참여자 수 — 챌린지 헤더 카드용 */
+export async function getChallengeParticipantCount(): Promise<
+  Record<ChallengeCategory, number>
+> {
+  const counts = emptyByCategory<number>(() => 0);
+  const { data, error } = await supabase
+    .from("challenge_participants")
+    .select("category")
+    .eq("is_active", true);
+  if (error || !data) {
+    if (error) console.warn("[getChallengeParticipantCount] 실패", error);
+    return counts;
+  }
+  for (const row of data as Array<{ category: ChallengeCategory }>) {
+    if (CHALLENGE_CATEGORIES.includes(row.category)) {
+      counts[row.category]++;
+    }
+  }
+  return counts;
+}
+
+// ─────────────────────────────────────────────────────────
+// 챌린지 — 관리자 인증 취소
+// ─────────────────────────────────────────────────────────
+
+/**
+ * 관리자/교사가 인증을 취소 — challenge_status='rejected' + 사유 저장 + 작성자 알림.
+ * RLS 가 권한 검증 (admin/teacher 만 update 가능하도록 정책 필요).
+ */
+export async function rejectChallengePost(
+  postId: string,
+  reason: string,
+): Promise<{ error: string | null }> {
+  const trimmed = reason.trim();
+  if (!trimmed) {
+    return { error: "사유를 입력해주세요" };
+  }
+
+  // 1) 작성자 / board_type 확인 — 알림 발송용
+  const { data: post, error: fetchErr } = await supabase
+    .from("posts")
+    .select("author_id, board_type")
+    .eq("id", postId)
+    .maybeSingle();
+  if (fetchErr || !post) {
+    return { error: fetchErr?.message ?? "글을 찾을 수 없습니다" };
+  }
+  if (post.board_type !== "challenge") {
+    return { error: "챌린지 게시글만 인증 취소할 수 있습니다" };
+  }
+
+  // 2) status 업데이트
+  const { error } = await supabase
+    .from("posts")
+    .update({
+      challenge_status: "rejected",
+      challenge_rejected_reason: trimmed,
+    })
+    .eq("id", postId);
+  if (error) {
+    console.error("[rejectChallengePost] 실패", error);
+    return { error: error.message };
+  }
+
+  // 3) 작성자에게 알림 발송 (fire-and-forget — 실패해도 인증 취소는 성공)
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    const actorId = session?.user?.id ?? null;
+    if (token && post.author_id) {
+      void fetch("/api/notifications/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          rows: [
+            {
+              user_id: post.author_id as string,
+              actor_id: actorId,
+              type: "challenge_reject",
+              message: `챌린지 인증이 취소되었습니다. 사유: ${trimmed}`,
+              post_id: postId,
+              comment_id: null,
+            },
+          ],
+        }),
+      });
+    }
+  } catch (e) {
+    console.warn("[rejectChallengePost] 알림 발송 실패 (무시)", e);
+  }
+
+  return { error: null };
 }
 
 /** 본인이 작성한 글 — /profile 페이지용 */

@@ -701,7 +701,15 @@ function WriteInner({
         setError(`수정 실패: ${e}`);
         return;
       }
-      router.push(`/board/${boardType}/${editId}`);
+      // 챌린지 인증 글 수정 후에는 챌린지 상세로. (나머지 게시판은 글 상세로)
+      // /board/challenge/{postId} 는 challengeId 라우트와 충돌하므로 별도 경로 사용.
+      if (isChallenge && challengeIdParam) {
+        router.push(`/board/challenge/${challengeIdParam}`);
+      } else if (isChallenge) {
+        router.push(`/board/challenge/post/${editId}`);
+      } else {
+        router.push(`/board/${boardType}/${editId}`);
+      }
     } else {
       const result = await createPost({
         authorId: user.id,
@@ -745,7 +753,16 @@ function WriteInner({
         });
       }
 
-      router.push(`/board/${boardType}/${result.id}`);
+      // 챌린지 인증은 챌린지 상세 페이지(/board/challenge/{challengeId})로 복귀.
+      // /board/challenge/{postId} 는 [challengeId] 라우트와 충돌해서 작동하지 않으므로
+      // challengeId 가 있으면 챌린지 상세로 보내고, 없으면 별도 인증 글 상세 라우트로.
+      if (isChallenge && challengeIdParam) {
+        router.push(`/board/challenge/${challengeIdParam}`);
+      } else if (isChallenge) {
+        router.push(`/board/challenge/post/${result.id}`);
+      } else {
+        router.push(`/board/${boardType}/${result.id}`);
+      }
     }
   }
 

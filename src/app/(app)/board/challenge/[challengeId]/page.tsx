@@ -407,7 +407,10 @@ function TimelineCard({
   streak: number;
 }) {
   return (
-    <div className="group relative aspect-square overflow-hidden rounded-xl bg-gray-100 dark:bg-white/[0.04]">
+    <Link
+      href={`/board/challenge/post/${post.id}`}
+      className="group relative block aspect-square overflow-hidden rounded-xl bg-gray-100 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:bg-white/[0.04]"
+    >
       {post.image_url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -437,7 +440,7 @@ function TimelineCard({
           {relativeTime(post.created_at)}
         </p>
       </div>
-    </div>
+    </Link>
   );
 }
 

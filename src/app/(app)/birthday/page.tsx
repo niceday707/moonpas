@@ -4,26 +4,29 @@
 //   · 상단: 3일간 생일자 카드 + 받은 메시지 목록
 //   · 하단: 이달의 생일 달력 리스트
 //   · 본인 생일 미등록이면 상단에 안내 배너
+//   · admin 이면 맨 아래 birthday_registry 일괄 등록/관리 섹션
+//
+// 생일자 출처:
+//   · profiles  — 실제 가입한 유저 (축하 메시지 receiver_id 가능)
+//   · birthday_registry — 관리자 등록 (학년/반/이름). 메시지 송신은 불가.
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Cake, Loader2, Send, X as XIcon } from "lucide-react";
+import { Cake, Loader2, Plus, Send, Trash2, X as XIcon } from "lucide-react";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { supabase } from "@/lib/supabase";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
+import {
+  fetchBirthdaysOfMonth,
+  fetchBirthdaysOnDays,
+  registryDisplayName,
+  type BirthdayPerson,
+  type BirthdayRegistryRow,
+} from "@/lib/birthdays";
 import type { Role } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
-
-type BirthdayPerson = {
-  id: string;
-  nickname: string | null;
-  role: Role | null;
-  avatar_url: string | null;
-  birth_month: number;
-  birth_day: number;
-};
 
 type BirthdayMessage = {
   id: number;
@@ -95,58 +98,32 @@ function BirthdayShell() {
     const yesterday = shiftDay(month, day, -1);
     const tomorrow = shiftDay(month, day, 1);
 
-    const range = [
+    const days = [
       { month: yesterday.month, day: yesterday.day },
       { month, day },
       { month: tomorrow.month, day: tomorrow.day },
     ];
 
-    // 3일치를 OR 한 번에 조회 — RLS 가 SELECT 허용한다고 가정 (다른 페이지도 동일 패턴).
-    // 컬럼 조합이 OR 안에 들어가므로 .or 문자열로 조립.
-    const orFilter = range
-      .map((r) => `and(birth_month.eq.${r.month},birth_day.eq.${r.day})`)
-      .join(",");
-
-    const { data: rangeRows, error: rangeErr } = await supabase
-      .from("profiles")
-      .select("id, nickname, role, avatar_url, birth_month, birth_day")
-      .or(orFilter)
-      .limit(200);
-
-    if (rangeErr) {
-      console.error("[birthday] 3일치 조회 실패", rangeErr);
-    }
-
-    const rows = ((rangeRows ?? []) as BirthdayPerson[]).filter(
-      (r) => r.birth_month !== null && r.birth_day !== null,
-    );
+    // 3일치 통합 조회 — profiles + registry
+    const [rangeRows, monthRows] = await Promise.all([
+      fetchBirthdaysOnDays(days),
+      fetchBirthdaysOfMonth(month),
+    ]);
 
     const ofDay = (m: number, d: number) =>
-      rows
+      rangeRows
         .filter((r) => r.birth_month === m && r.birth_day === d)
-        .sort((a, b) =>
-          (a.nickname ?? "").localeCompare(b.nickname ?? ""),
-        );
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
     setYesterdayPeople(ofDay(yesterday.month, yesterday.day));
     setTodayPeople(ofDay(month, day));
     setTomorrowPeople(ofDay(tomorrow.month, tomorrow.day));
+    setMonthPeople(monthRows);
 
-    // 이달 전체
-    const { data: monthRows, error: monthErr } = await supabase
-      .from("profiles")
-      .select("id, nickname, role, avatar_url, birth_month, birth_day")
-      .eq("birth_month", month)
-      .order("birth_day", { ascending: true })
-      .limit(200);
-
-    if (monthErr) {
-      console.error("[birthday] 이달 조회 실패", monthErr);
-    }
-    setMonthPeople(((monthRows ?? []) as BirthdayPerson[]) ?? []);
-
-    // 받은 메시지 — 3일치 receiver_id 들에 대해 한 번에 조회
-    const receiverIds = rows.map((r) => r.id);
+    // 받은 메시지 — profile-source 인 사람만 receiver_id 로 조회 가능
+    const receiverIds = rangeRows
+      .filter((r) => r.source === "profile")
+      .map((r) => r.id);
     if (receiverIds.length > 0) {
       const { data: msgRows, error: msgErr } = await supabase
         .from("birthday_messages")
@@ -207,6 +184,8 @@ function BirthdayShell() {
     !profileLoading &&
     !!profile &&
     (profile.birth_month === null || profile.birth_day === null);
+
+  const isAdmin = profile?.role === "admin";
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6 md:py-8">
@@ -294,6 +273,9 @@ function BirthdayShell() {
         </div>
         <MonthList people={monthPeople} loading={loading} todayDay={day} />
       </section>
+
+      {/* 관리자 — birthday_registry 일괄 등록/관리 */}
+      {isAdmin && <AdminRegistrySection />}
 
       {/* 메시지 작성 모달 */}
       <AnimatePresence>
@@ -384,7 +366,7 @@ function DayGroup({
               key={p.id}
               person={p}
               messages={messagesByReceiver[p.id] ?? []}
-              isMe={currentUserId === p.id}
+              isMe={p.source === "profile" && currentUserId === p.id}
               onCelebrate={() => onCelebrate(p)}
             />
           ))}
@@ -405,18 +387,21 @@ function PersonCard({
   isMe: boolean;
   onCelebrate: () => void;
 }) {
+  // registry 출처는 실제 user 가 아니므로 메시지 송신 불가 — 버튼 숨김.
+  const canSendMessage = person.source === "profile" && !isMe;
+
   return (
     <li className="rounded-xl bg-pink-50/40 p-3 dark:bg-pink-500/5">
       <div className="flex items-center gap-3">
         <UserAvatar
-          nickname={person.nickname}
+          nickname={person.displayName}
           role={person.role}
           avatarUrl={person.avatar_url}
           size="lg"
         />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-bold">
-            {person.nickname ?? "이름 없음"}
+            {person.displayName}
             {isMe && (
               <span className="ml-1.5 rounded-full bg-pink-500/15 px-1.5 py-0.5 text-[10px] font-bold text-pink-600 dark:text-pink-300">
                 나
@@ -427,7 +412,7 @@ function PersonCard({
             🎂 {person.birth_month}월 {person.birth_day}일 생일
           </p>
         </div>
-        {!isMe && (
+        {canSendMessage && (
           <button
             type="button"
             onClick={onCelebrate}
@@ -530,13 +515,13 @@ function MonthList({
               {p.birth_day}일
             </span>
             <UserAvatar
-              nickname={p.nickname}
+              nickname={p.displayName}
               role={p.role}
               avatarUrl={p.avatar_url}
               size="sm"
             />
             <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-              {p.nickname ?? "이름 없음"}
+              {p.displayName}
             </span>
             {isToday && (
               <span className="shrink-0 rounded-full bg-pink-500 px-2 py-0.5 text-[10px] font-bold text-white">
@@ -585,6 +570,10 @@ function ComposeModal({
       setError("로그인이 필요해요.");
       return;
     }
+    if (target.source !== "profile") {
+      setError("이 친구에게는 메시지를 보낼 수 없어요.");
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
@@ -625,7 +614,7 @@ function ComposeModal({
       >
         <div className="flex items-start gap-3">
           <UserAvatar
-            nickname={target.nickname}
+            nickname={target.displayName}
             role={target.role}
             avatarUrl={target.avatar_url}
             size="lg"
@@ -633,7 +622,7 @@ function ComposeModal({
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold text-pink-500">생일 축하 메시지</p>
             <p className="truncate text-base font-extrabold">
-              {target.nickname ?? "이름 없음"}님께
+              {target.displayName}님께
             </p>
             <p className="text-[11px] text-foreground/55">
               🎂 {target.birth_month}월 {target.birth_day}일 생일
@@ -703,5 +692,292 @@ function ComposeModal({
         </div>
       </motion.div>
     </motion.div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 관리자 — birthday_registry 일괄 등록/관리
+// ─────────────────────────────────────────────
+
+const GRADE_OPTIONS = [
+  { value: 0, label: "교사" },
+  { value: 1, label: "1학년" },
+  { value: 2, label: "2학년" },
+  { value: 3, label: "3학년" },
+];
+const CLASS_OPTIONS = [
+  { value: 0, label: "해당없음" },
+  { value: 1, label: "1반" },
+  { value: 2, label: "2반" },
+  { value: 3, label: "3반" },
+  { value: 4, label: "4반" },
+  { value: 5, label: "5반" },
+  { value: 6, label: "6반" },
+  { value: 7, label: "7반" },
+];
+const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1);
+const DAY_OPTIONS = Array.from({ length: 31 }, (_, i) => i + 1);
+
+function AdminRegistrySection() {
+  const [grade, setGrade] = useState<number>(1);
+  const [classNum, setClassNum] = useState<number>(1);
+  const [name, setName] = useState("");
+  const [birthMonth, setBirthMonth] = useState<number>(1);
+  const [birthDay, setBirthDay] = useState<number>(1);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [registry, setRegistry] = useState<BirthdayRegistryRow[]>([]);
+  const [registryLoading, setRegistryLoading] = useState(true);
+  const [toast, setToast] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadRegistry = useCallback(async () => {
+    setRegistryLoading(true);
+    const { data, error: e } = await supabase
+      .from("birthday_registry")
+      .select("*")
+      .order("grade", { ascending: true })
+      .order("class", { ascending: true })
+      .order("name", { ascending: true });
+    if (e) {
+      console.error("[admin/registry] 목록 조회 실패", e);
+    }
+    setRegistry((data ?? []) as BirthdayRegistryRow[]);
+    setRegistryLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void loadRegistry();
+  }, [loadRegistry]);
+
+  // 학년이 0(교사) 으로 바뀌면 반은 자동으로 0(해당없음).
+  useEffect(() => {
+    if (grade === 0 && classNum !== 0) setClassNum(0);
+  }, [grade, classNum]);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 2200);
+  }
+
+  async function submit() {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError("이름을 입력해주세요.");
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    const { error: e } = await supabase.from("birthday_registry").insert({
+      grade,
+      class: classNum,
+      name: trimmedName,
+      birth_month: birthMonth,
+      birth_day: birthDay,
+    });
+    setSubmitting(false);
+    if (e) {
+      console.error("[admin/registry] 등록 실패", e);
+      setError(`등록에 실패했어요: ${e.message}`);
+      return;
+    }
+    showToast(`✅ ${trimmedName} 등록 완료`);
+    // 같은 반 연속 입력 편의 — 학년/반은 유지, 이름·월·일만 초기화
+    setName("");
+    setBirthMonth(1);
+    setBirthDay(1);
+    await loadRegistry();
+  }
+
+  async function remove(id: number) {
+    if (!window.confirm("이 항목을 삭제할까요?")) return;
+    const { error: e } = await supabase
+      .from("birthday_registry")
+      .delete()
+      .eq("id", id);
+    if (e) {
+      console.error("[admin/registry] 삭제 실패", e);
+      showToast("삭제에 실패했어요");
+      return;
+    }
+    showToast("삭제되었어요");
+    await loadRegistry();
+  }
+
+  return (
+    <section className="mt-10 rounded-2xl border border-violet-200 bg-violet-50/50 p-4 dark:border-violet-500/30 dark:bg-violet-500/[0.06] md:p-5">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="rounded-full bg-violet-500 px-2 py-0.5 text-[10px] font-bold text-white">
+          ADMIN
+        </span>
+        <h2 className="text-base font-extrabold tracking-tight text-violet-700 dark:text-violet-200 md:text-lg">
+          🎂 생일 등록
+        </h2>
+      </div>
+      <p className="mb-4 text-xs text-foreground/55">
+        학번 기반으로 학생·교사 생일을 일괄 등록합니다. 등록된 생일은 배너와
+        목록에 자동 노출돼요.
+      </p>
+
+      {/* 입력 폼 */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <Select
+          label="학년"
+          value={grade}
+          onChange={setGrade}
+          options={GRADE_OPTIONS}
+        />
+        <Select
+          label="반"
+          value={classNum}
+          onChange={setClassNum}
+          options={CLASS_OPTIONS}
+          disabled={grade === 0}
+        />
+        <label className="col-span-2 flex flex-col gap-1 text-[11px] font-bold text-foreground/65 sm:col-span-1">
+          <span>이름</span>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              setError(null);
+            }}
+            placeholder="예: 아이유"
+            maxLength={20}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500 dark:border-white/10 dark:bg-white/[0.04]"
+          />
+        </label>
+        <Select
+          label="생일 월"
+          value={birthMonth}
+          onChange={setBirthMonth}
+          options={MONTH_OPTIONS.map((m) => ({ value: m, label: `${m}월` }))}
+        />
+        <Select
+          label="생일 일"
+          value={birthDay}
+          onChange={setBirthDay}
+          options={DAY_OPTIONS.map((d) => ({ value: d, label: `${d}일` }))}
+        />
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <span className={cn("text-[11px]", error ? "text-rose-500" : "text-foreground/45")}>
+          {error ?? "학년/반은 등록 후에도 유지됩니다."}
+        </span>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={submitting || !name.trim()}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-white transition-opacity",
+            "bg-violet-600 hover:bg-violet-700",
+            "disabled:cursor-not-allowed disabled:opacity-50",
+          )}
+        >
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          {submitting ? "등록 중…" : "등록"}
+        </button>
+      </div>
+
+      {/* 토스트 */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            transition={{ duration: 0.2 }}
+            className="pointer-events-none fixed inset-x-0 bottom-10 z-50 flex justify-center px-4"
+          >
+            <div className="rounded-full border border-violet-400/30 bg-violet-600/95 px-4 py-2 text-xs font-semibold text-white shadow-xl backdrop-blur-md">
+              {toast}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 등록된 목록 */}
+      <div className="mt-6">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="text-sm font-bold text-foreground/80">등록된 생일</span>
+          <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[11px] font-bold tabular-nums text-foreground/70">
+            {registry.length}명
+          </span>
+        </div>
+        {registryLoading ? (
+          <ul className="flex flex-col gap-1.5">
+            {[0, 1, 2].map((i) => (
+              <li
+                key={i}
+                className="h-9 animate-pulse rounded-lg bg-foreground/5"
+                aria-hidden
+              />
+            ))}
+          </ul>
+        ) : registry.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-gray-200 px-4 py-5 text-center text-xs text-foreground/45 dark:border-white/[0.08]">
+            아직 등록된 항목이 없어요.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {registry.map((r) => (
+              <li
+                key={r.id}
+                className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-white/[0.07] dark:bg-[#16162a]"
+              >
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                  {registryDisplayName(r)}
+                </span>
+                <span className="shrink-0 text-[11px] tabular-nums text-foreground/60">
+                  {r.birth_month}월 {r.birth_day}일
+                </span>
+                <button
+                  type="button"
+                  onClick={() => remove(r.id)}
+                  aria-label="삭제"
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-foreground/45 transition-colors hover:bg-rose-500/10 hover:text-rose-500"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function Select<T extends number>({
+  label,
+  value,
+  onChange,
+  options,
+  disabled,
+}: {
+  label: string;
+  value: T;
+  onChange: (next: T) => void;
+  options: Array<{ value: T; label: string }>;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-[11px] font-bold text-foreground/65">
+      <span>{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value) as T)}
+        disabled={disabled}
+        className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm outline-none focus:border-violet-500 disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04]"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

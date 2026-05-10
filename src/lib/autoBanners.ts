@@ -2,7 +2,7 @@
 // 학사일정 기반 자동 배너 생성 — DB 불필요, 코드에서 동적 생성
 
 import { SCHOOL_SCHEDULE } from '@/data/schoolSchedule';
-import { supabase } from '@/lib/supabase';
+import { fetchBirthdaysOnDays } from '@/lib/birthdays';
 
 export interface AutoBanner {
   id: string;
@@ -148,6 +148,10 @@ export function getAutoBanners(): AutoBanner[] {
 // ─── 오늘 생일자 배너 (Supabase 비동기 조회) ───
 // getAutoBanners() 가 동기라서 별도 비동기 함수로 분리.
 // BannerSlider 가 useEffect 로 fetch 해서 slides 에 합친다.
+//
+// 생일자는 두 출처를 합친다:
+//   1) profiles  — 실제 가입 유저의 nickname
+//   2) birthday_registry — 관리자 등록 (학년/반/이름 또는 교사)
 export async function getBirthdayBanners(): Promise<AutoBanner[]> {
   const kst = new Date(
     new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }),
@@ -156,23 +160,8 @@ export async function getBirthdayBanners(): Promise<AutoBanner[]> {
   const day = kst.getDate();
 
   try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('nickname')
-      .eq('birth_month', month)
-      .eq('birth_day', day)
-      .limit(50);
-
-    if (error) {
-      console.error('[getBirthdayBanners] 조회 실패', error);
-      return [];
-    }
-    if (!data || data.length === 0) return [];
-
-    const names = (data as Array<{ nickname: string | null }>)
-      .map((r) => (r.nickname ?? '').trim())
-      .filter((n) => n.length > 0);
-
+    const people = await fetchBirthdaysOnDays([{ month, day }]);
+    const names = people.map((p) => p.displayName).filter((n) => n.length > 0);
     if (names.length === 0) return [];
 
     let description: string;

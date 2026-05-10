@@ -1,7 +1,7 @@
 // src/lib/autoBanners.ts
 // 학사일정 기반 자동 배너 생성 — DB 불필요, 코드에서 동적 생성
 
-import { SCHOOL_SCHEDULE, type ScheduleEvent } from '@/data/schoolSchedule';
+import { SCHOOL_SCHEDULE } from '@/data/schoolSchedule';
 
 export interface AutoBanner {
   id: string;

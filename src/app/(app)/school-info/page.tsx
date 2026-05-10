@@ -382,6 +382,11 @@ function FacilityTab({
             <h3 className="font-semibold text-gray-700 border-b pb-2 mb-3">
               {building.name} {floor.floor}
             </h3>
+            {floor.rooms.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-sm text-gray-400">
+                교실 정보 없음
+              </div>
+            ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {floor.rooms.map((room, idx) => {
                 const roomKey = room.room || room.name;
@@ -411,6 +416,7 @@ function FacilityTab({
                 );
               })}
             </div>
+            )}
           </section>
         ))}
       </div>

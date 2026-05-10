@@ -133,16 +133,7 @@ export const buildings: Building[] = [
       },
       {
         floor: "2F",
-        rooms: [
-          { room: "", name: "3-1", type: "교실" },
-          { room: "", name: "3-2", type: "교실" },
-          { room: "", name: "3-3", type: "교실" },
-          { room: "", name: "3-4", type: "교실" },
-          { room: "", name: "3-5", type: "교실" },
-          { room: "", name: "3-6", type: "교실" },
-          { room: "", name: "3-7", type: "교실" },
-          { room: "", name: "교무실 (3)", type: "교무실", highlight: true }
-        ]
+        rooms: []
       },
       {
         floor: "1F",
@@ -196,20 +187,31 @@ export const buildings: Building[] = [
       {
         floor: "3F",
         rooms: [
-          { room: "", name: "특별교실", type: "특별실" }
+          { room: "", name: "3-1", type: "교실" },
+          { room: "", name: "3-2", type: "교실" },
+          { room: "", name: "3-3", type: "교실" },
+          { room: "", name: "3-4", type: "교실" }
         ]
       },
       {
         floor: "2F",
         rooms: [
           { room: "", name: "3학년실", type: "교무실", highlight: true },
+          { room: "", name: "3-5", type: "교실" },
+          { room: "", name: "3-6", type: "교실" },
+          { room: "", name: "3-7", type: "교실" },
           { room: "", name: "특별교실", type: "특별실" }
         ]
       },
       {
         floor: "1F",
         rooms: [
-          { room: "", name: "3.1사랑", type: "특별실" }
+          { room: "", name: "3.1사랑", type: "교실" },
+          { room: "", name: "세미나실", type: "특별실" },
+          { room: "", name: "공용학습실", type: "특별실" },
+          { room: "", name: "세미나실", type: "특별실" },
+          { room: "", name: "진로진학실", type: "행정실" },
+          { room: "", name: "미디어창작실", type: "특별실" }
         ]
       }
     ]

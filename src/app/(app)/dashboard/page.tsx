@@ -753,7 +753,7 @@ function TrendingSearchCard() {
                   {t.keyword}
                 </span>
                 {t.count > 0 && (
-                  <span className="hidden shrink-0 text-[9.5px] tabular-nums text-gray-400 sm:inline">
+                  <span className="shrink-0 text-[9.5px] tabular-nums text-gray-400">
                     {t.count.toLocaleString()}
                   </span>
                 )}

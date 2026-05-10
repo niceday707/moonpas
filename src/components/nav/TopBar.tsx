@@ -4,13 +4,13 @@
 // 태블릿/모바일 → 우측 슬라이드 전체화면 드로어 메뉴
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { GraduationCap, ChevronDown, PenSquare, Menu, X, Search, Bell, Eye } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useNotifications } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
-import { getBoardCounts, getTodayPostCount, type BoardType } from "@/lib/board";
+import { getBoardLatestDates, getTodayPostCount, type BoardType } from "@/lib/board";
 import { logSearch, normalizeKeyword } from "@/lib/search-log";
 
 // ── 메뉴 정의 ───────────────────────────────────────────────────────────
@@ -101,14 +101,43 @@ function itemKey(item: NavItem): string {
   return isBoardItem(item) ? `b:${item.boardType}` : `l:${item.href}`;
 }
 
-function itemCount(
+// 뱃지 자체를 표시하지 않는 정적 페이지 — 시간표/평가일정/쌤 어디계세요?/입시 나침반/선택과목 가이드
+const STATIC_NO_BADGE_HREFS = new Set<string>([
+  "/timetable",
+  "/exam-schedule",
+  "/school-info",
+]);
+const STATIC_NO_BADGE_BOARD_TYPES = new Set<BoardType>([
+  "college", // 입시 나침반
+  "curriculum", // 선택과목 가이드
+]);
+
+const NEW_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24시간
+
+function isWithin24h(iso: string | undefined): boolean {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t < NEW_THRESHOLD_MS;
+}
+
+/**
+ * 메뉴 항목에 NEW(N) 뱃지를 표시할지 판단.
+ * - 정적 페이지(시간표/평가일정/쌤 어디계세요?/입시 나침반/선택과목 가이드)는 항상 false.
+ * - 게시판: posts 의 board_type 별 최신 created_at 이 24h 이내일 때만 true.
+ * - 학교공지/문태소식/가정통신문/행사갤러리: school_notices source 별 최신 created_at 24h 이내.
+ */
+function itemIsNew(
   item: NavItem,
-  counts: Partial<Record<BoardType, number>>,
-  noticeCounts: Record<string, number>,
-): number | null {
-  if (isBoardItem(item)) return counts[item.boardType] ?? 0;
-  const nc = noticeCounts[item.href];
-  return nc !== undefined ? nc : null;
+  boardLatest: Partial<Record<BoardType, string>>,
+  noticeLatest: Record<string, string>,
+): boolean {
+  if (isBoardItem(item)) {
+    if (STATIC_NO_BADGE_BOARD_TYPES.has(item.boardType)) return false;
+    return isWithin24h(boardLatest[item.boardType]);
+  }
+  if (STATIC_NO_BADGE_HREFS.has(item.href)) return false;
+  return isWithin24h(noticeLatest[item.href]);
 }
 
 const SINGLE_NAV = [{ href: "/profile", label: "내 프로필" }];
@@ -130,10 +159,13 @@ export function TopBar() {
   const [searchQuery, setSearchQuery] = useState("");
   // 모바일/태블릿 헤더의 돋보기 버튼으로 토글되는 슬라이드다운 검색 패널.
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
-  const [counts, setCounts] = useState<Partial<Record<BoardType, number>>>({});
-  const [noticeCounts, setNoticeCounts] = useState<Record<string, number>>({});
+  const [boardLatest, setBoardLatest] = useState<Partial<Record<BoardType, string>>>({});
+  const [noticeLatest, setNoticeLatest] = useState<Record<string, string>>({});
   const [todayCount, setTodayCount] = useState(0);
   const [todayVisitors, setTodayVisitors] = useState<number | null>(null);
+  // 모바일 상단바 스크롤 hide/show — true 이면 위로 슬라이드되어 숨김 상태.
+  const [hidden, setHidden] = useState(false);
+  const lastScrollY = useRef(0);
   const { unreadCount } = useNotifications();
 
   // localStorage 에서 열림 카테고리 복원 (마운트 1회)
@@ -149,11 +181,12 @@ export function TopBar() {
     }
   }, []);
 
-  // Supabase posts 테이블에서 board_type 별 카운트 + 오늘 작성된 글 수 (마운트 1회)
+  // Supabase posts 테이블에서 board_type 별 최신 글 시각 + 오늘 작성된 글 수 (마운트 1회)
+  // 메가메뉴 NEW(N) 뱃지 — 24h 이내 작성된 글이 있으면 빨간 N 표시.
   useEffect(() => {
     let active = true;
-    getBoardCounts().then((c) => {
-      if (active) setCounts(c);
+    getBoardLatestDates().then((m) => {
+      if (active) setBoardLatest(m);
     });
     getTodayPostCount().then((n) => {
       if (active) setTodayCount(n);
@@ -163,26 +196,45 @@ export function TopBar() {
     };
   }, []);
 
-  // school_notices 소스별 카운트 — 메가메뉴 학교공지/문태소식/가정통신문/행사갤러리 숫자 배지용
+  // school_notices 소스별 최신 글 시각 — 학교공지/문태소식/가정통신문/행사갤러리 NEW 뱃지용
   useEffect(() => {
     let active = true;
     fetch("/api/school-notices?counts=true", { cache: "no-store" })
       .then((r) => r.json())
       .then((json: unknown) => {
         if (!active) return;
-        const j = json as { ok?: boolean; counts?: Record<string, number> };
-        if (j.ok && j.counts) {
-          const map: Record<string, number> = {};
-          for (const [source, count] of Object.entries(j.counts)) {
-            map[`/notices/${source}`] = count;
+        const j = json as { ok?: boolean; latest?: Record<string, string> };
+        if (j.ok && j.latest) {
+          const map: Record<string, string> = {};
+          for (const [source, iso] of Object.entries(j.latest)) {
+            map[`/notices/${source}`] = iso;
           }
-          setNoticeCounts(map);
+          setNoticeLatest(map);
         }
       })
       .catch(() => {});
     return () => {
       active = false;
     };
+  }, []);
+
+  // 모바일 스크롤 방향 감지 — 아래로 스크롤하면 상단바 숨김, 위로 스크롤하면 표시.
+  // 최상단(< 50px)에서는 항상 표시. 미세한 흔들림(<10px) 무시.
+  useEffect(() => {
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (y < 50) {
+        setHidden(false);
+        lastScrollY.current = y;
+        return;
+      }
+      const delta = y - lastScrollY.current;
+      if (Math.abs(delta) < 10) return;
+      setHidden(delta > 0);
+      lastScrollY.current = y;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   // 오늘 방문자 수 — 마운트 시 + 5분마다 refetch
@@ -261,7 +313,17 @@ export function TopBar() {
   return (
     <div>
       {/* ── 상단 고정 영역 (슬림바 + 헤더) ── */}
-      <div className="sticky top-0 z-40">
+      {/*
+        모바일(md 미만)에서 스크롤 방향에 따라 슬라이드 hide/show.
+        - max-md:-translate-y-full: 모바일에서만 위로 숨김
+        - md 이상에서는 어떤 상태든 항상 표시 (translate 클래스가 적용되지 않음)
+      */}
+      <div
+        className={cn(
+          "sticky top-0 z-40 transition-transform duration-300 ease-in-out",
+          hidden && "max-md:-translate-y-full",
+        )}
+      >
         {/* 슬림바 — 데스크톱 전용 */}
         <div className="hidden border-b border-gray-200 bg-gray-50 px-4 py-1 text-[11px] text-gray-500 dark:border-white/[0.06] dark:bg-[#0d0d1a] dark:text-gray-400 lg:block">
           <div className="mx-auto flex max-w-screen-xl items-center justify-between">
@@ -561,7 +623,7 @@ export function TopBar() {
                               <ul>
                                 {nav.items.map((item) => {
                                   const href = itemHref(item);
-                                  const cnt = itemCount(item, counts, noticeCounts);
+                                  const fresh = itemIsNew(item, boardLatest, noticeLatest);
                                   return (
                                     <li key={itemKey(item)}>
                                       <Link
@@ -575,9 +637,12 @@ export function TopBar() {
                                         )}
                                       >
                                         <span className="font-medium">{item.label}</span>
-                                        {cnt !== null && (
-                                          <span className="text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
-                                            {cnt.toLocaleString()}
+                                        {fresh && (
+                                          <span
+                                            aria-label="24시간 이내 새 글"
+                                            className="flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold leading-none text-white"
+                                          >
+                                            N
                                           </span>
                                         )}
                                       </Link>
@@ -635,7 +700,7 @@ export function TopBar() {
                 <ul className="space-y-1">
                   {nav.items.map((item) => {
                     const href = itemHref(item);
-                    const cnt = itemCount(item, counts, noticeCounts);
+                    const fresh = itemIsNew(item, boardLatest, noticeLatest);
                     const isActive = pathname.startsWith(href);
                     return (
                       <li key={itemKey(item)}>
@@ -649,16 +714,12 @@ export function TopBar() {
                           )}
                         >
                           <span className="truncate">{item.label}</span>
-                          {cnt !== null && (
+                          {fresh && (
                             <span
-                              className={cn(
-                                "shrink-0 text-[11px] tabular-nums transition-colors",
-                                isActive
-                                  ? "text-violet-500/80 dark:text-violet-400/70"
-                                  : "text-gray-400 group-hover:text-violet-500 dark:text-gray-500 dark:group-hover:text-violet-400",
-                              )}
+                              aria-label="24시간 이내 새 글"
+                              className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold leading-none text-white"
                             >
-                              {cnt.toLocaleString()}
+                              N
                             </span>
                           )}
                         </Link>

@@ -958,6 +958,29 @@ export async function getBoardCounts(): Promise<Partial<Record<BoardType, number
   return counts;
 }
 
+/**
+ * board_type 별 가장 최근 글의 created_at(ISO 문자열) — TopBar 메가메뉴 NEW 뱃지용.
+ * 24시간 이내 새 글 여부를 클라이언트에서 비교하기 위해 사용한다.
+ */
+export async function getBoardLatestDates(): Promise<Partial<Record<BoardType, string>>> {
+  const { data, error } = await supabase
+    .from("posts")
+    .select("board_type, created_at")
+    .order("created_at", { ascending: false });
+  if (error || !data) {
+    if (error) console.error("[getBoardLatestDates] 실패", error);
+    return {};
+  }
+  const latest: Partial<Record<BoardType, string>> = {};
+  for (const row of data as Array<{ board_type: BoardType; created_at: string }>) {
+    // order desc 이므로 board_type 별 첫 등장이 최신값.
+    if (latest[row.board_type] === undefined) {
+      latest[row.board_type] = row.created_at;
+    }
+  }
+  return latest;
+}
+
 // ─────────────────────────────────────────────────────────
 // 나눔장터 — content 안에 { condition, description } JSON
 // ─────────────────────────────────────────────────────────

@@ -147,7 +147,8 @@ async function getCountsAndRespond(): Promise<NextResponse> {
 
   const { data, error } = await client
     .from("school_notices")
-    .select("source");
+    .select("source, created_at")
+    .order("created_at", { ascending: false });
 
   if (error) {
     return NextResponse.json(
@@ -157,12 +158,18 @@ async function getCountsAndRespond(): Promise<NextResponse> {
   }
 
   const counts: Record<string, number> = {};
-  for (const row of (data ?? []) as Array<{ source: string }>) {
+  // source 별 최신 created_at — TopBar NEW 뱃지(24h 이내) 판정용
+  const latest: Record<string, string> = {};
+  for (const row of (data ?? []) as Array<{ source: string; created_at: string }>) {
     counts[row.source] = (counts[row.source] ?? 0) + 1;
+    // order desc 이므로 source 별 첫 등장이 최신값.
+    if (latest[row.source] === undefined) {
+      latest[row.source] = row.created_at;
+    }
   }
 
   return NextResponse.json(
-    { ok: true, counts },
+    { ok: true, counts, latest },
     {
       status: 200,
       headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },

@@ -37,7 +37,6 @@ import {
   type Challenge,
   type ChallengeParticipant,
   type ChallengeStatsForChallenge,
-  type ChallengeTagKey,
 } from "@/lib/challenge";
 
 const TAG_DEF_BY_KEY = new Map(CHALLENGE_TAGS.map((t) => [t.key, t]));
@@ -488,6 +487,3 @@ async function fetchTimelinePosts(challengeId: string): Promise<TimelinePost[]> 
       author: r.author,
     }));
 }
-
-// PostRow 미사용 안전 import 처리 — 타입 체크용
-type _UnusedPostRow = PostRow;

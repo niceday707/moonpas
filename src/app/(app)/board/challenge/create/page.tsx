@@ -13,7 +13,6 @@ import { useSupabaseProfile } from "@/lib/supabase-profile";
 import { cn } from "@/lib/utils";
 import {
   CHALLENGE_TAGS,
-  CHALLENGE_TAG_STYLE,
   createChallenge,
   inviteToChallenge,
   type ChallengeTagKey,

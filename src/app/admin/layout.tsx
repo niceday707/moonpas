@@ -3,7 +3,7 @@
 // 관리자 영역 레이아웃 — 좌측 사이드바 + 권한 체크.
 // (app) 라우트 그룹 바깥이라 일반 TopBar/BottomNav 는 적용되지 않는다.
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -14,7 +14,6 @@ import {
   ArrowLeft,
   GraduationCap,
   Loader2,
-  Lock,
   Menu,
   X,
   ImageIcon,
@@ -37,6 +36,7 @@ const NAV_ITEMS = [
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, loading: userLoading } = useSupabaseUser();
   const [authState, setAuthState] = useState<AdminAuthState>("loading");
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -68,47 +68,27 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     };
   }, [user, userLoading]);
 
+  // 권한 없으면 자동 리다이렉트 — 미로그인 → /login, 로그인했지만 admin 아님 → /dashboard
+  useEffect(() => {
+    if (authState === "unauthenticated") {
+      router.replace("/login");
+    } else if (authState === "forbidden") {
+      router.replace("/dashboard");
+    }
+  }, [authState, router]);
+
   // 페이지 이동 시 모바일 드로어 자동 닫기
   useEffect(() => {
     setDrawerOpen(false);
   }, [pathname]);
 
-  if (authState === "loading") {
+  if (authState !== "ok") {
     return (
       <div className="grid min-h-screen place-items-center bg-[#0f0f1a] text-white">
         <div className="flex items-center gap-2 text-sm text-white/60">
           <Loader2 className="h-4 w-4 animate-spin" />
-          관리자 권한 확인 중...
+          {authState === "loading" ? "관리자 권한 확인 중..." : "이동 중..."}
         </div>
-      </div>
-    );
-  }
-
-  if (authState !== "ok") {
-    return (
-      <div className="grid min-h-screen place-items-center bg-[#0f0f1a] px-4 text-white">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-          className="w-full max-w-sm rounded-2xl border border-white/10 bg-white/[0.04] p-8 text-center backdrop-blur-xl"
-        >
-          <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-xl bg-violet-600/20 text-violet-300">
-            <Lock className="h-5 w-5" />
-          </div>
-          <h1 className="text-lg font-bold">권한이 없습니다</h1>
-          <p className="mt-2 text-xs leading-relaxed text-white/60">
-            {authState === "unauthenticated"
-              ? "관리자 페이지에 접근하려면 먼저 로그인해야 합니다."
-              : "이 페이지는 관리자 계정만 이용할 수 있습니다."}
-          </p>
-          <Link
-            href="/dashboard"
-            className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700"
-          >
-            대시보드로 이동
-          </Link>
-        </motion.div>
       </div>
     );
   }

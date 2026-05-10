@@ -7,11 +7,11 @@
 //      급식 → 배너 → 문튜브 → 최신글 → 프로필/로그인 → 실시간검색 → HOT → 공지
 //  · 태블릿 (md ~ lg 미만): 배너(전체 너비) → 그 아래 2단 (가운데 flex-1 | 우측 280px)
 //      가운데: 급식 → 학사일정 → 다음시험 → 문튜브 → 최신글
-//      우측 : 최신 공지 → 인기글
+//      우측 : 프로필/로그인 → 실시간 검색어 → 최신 공지 → 인기글
 //  · 데스크톱 (lg 이상): 배너(전체 너비) → 그 아래 3단 (좌측 280px | 가운데 flex-1 | 우측 300px)
 //      좌측 : 급식 → 학사일정 → 다음시험
 //      가운데: 문튜브 → 최신글
-//      우측 : 최신 공지 → 인기글
+//      우측 : 프로필/로그인 → 실시간 검색어 → 최신 공지 → 인기글
 //
 // 배너는 모바일에선 1컬럼 안에 인라인으로, md+ 에선 max-w-screen-xl 컨테이너 폭을 그대로 차지하는
 // 전체 너비 슬라이더로 노출된다. 중복 렌더 방지를 위해 모바일은 `md:hidden`, md+ 는 `hidden md:flex`
@@ -1341,8 +1341,10 @@ export default function DashboardPage() {
             <LatestFeedCard posts={latestPosts} loading={latestLoading} />
           </main>
 
-          {/* 우측 사이드바 — 280px 고정. 최종 순서: 최신 공지 → 인기글 */}
+          {/* 우측 사이드바 — 280px 고정. 최종 순서: 프로필/로그인 → 실시간 검색어 → 최신 공지 → 인기글 */}
           <aside className="flex w-[280px] shrink-0 flex-col gap-4">
+            {profileOrLogin}
+            <TrendingSearchCard />
             <NoticesCard notices={unifiedNotices} loading={noticeLoading} />
             <HotPostsCard posts={hotPosts} loading={hotLoading} />
           </aside>
@@ -1363,8 +1365,10 @@ export default function DashboardPage() {
             <LatestFeedCard posts={latestPosts} loading={latestLoading} />
           </main>
 
-          {/* 우측 사이드바 — 300px 고정. 최종 순서: 최신 공지 → 인기글 */}
+          {/* 우측 사이드바 — 300px 고정. 최종 순서: 프로필/로그인 → 실시간 검색어 → 최신 공지 → 인기글 */}
           <aside className="flex w-[300px] shrink-0 flex-col gap-4">
+            {profileOrLogin}
+            <TrendingSearchCard />
             <NoticesCard notices={unifiedNotices} loading={noticeLoading} />
             <HotPostsCard posts={hotPosts} loading={hotLoading} />
           </aside>

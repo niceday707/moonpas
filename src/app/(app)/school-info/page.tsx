@@ -32,8 +32,10 @@ const TYPE_DOT: Record<RoomType, string> = {
   기타: "bg-yellow-500",
 };
 
-// 그룹 표시 순서 (교무실 → 학년실 순)
+// 그룹 표시 순서 (교장실 → 교무실 → 학년실 → … → 이사장실)
+// 교장실은 isSchoolHead로 분리되어 상단 카드에만 노출되므로 그룹은 비어 자동 생략됨.
 const OFFICE_ORDER = [
+  "교장실",
   "교무실",
   "1학년실",
   "2학년실",
@@ -43,6 +45,8 @@ const OFFICE_ORDER = [
   "보건실",
   "상담실",
   "도서관",
+  "행정실",
+  "이사장실",
 ];
 
 // "B동 1F" → "B", "1F"  /  "도서관 2F" → "library", "2F"  /  "별관동 2F" → "annex", "2F"

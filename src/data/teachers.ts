@@ -78,4 +78,15 @@ export const teachers: Teacher[] = [
 
   // ========== 보건실 (B101) B동 1F - 1명 ==========
   { name: "민혜정", subject: "보건", office: "보건실", officeRoom: "B101", officeLocation: "B동 1F", role: "보건교사" },
+
+  // ========== 행정실 (A동 1층) - 6명 ==========
+  { name: "강태규", subject: "행정", office: "행정실", officeRoom: "A동 1F", officeLocation: "A동 1F", role: "행정실장" },
+  { name: "정종문", subject: "행정", office: "행정실", officeRoom: "A동 1F", officeLocation: "A동 1F", role: "행정팀장" },
+  { name: "강태환", subject: "행정", office: "행정실", officeRoom: "A동 1F", officeLocation: "A동 1F" },
+  { name: "정경태", subject: "행정", office: "행정실", officeRoom: "A동 1F", officeLocation: "A동 1F" },
+  { name: "윤선영", subject: "행정", office: "행정실", officeRoom: "A동 1F", officeLocation: "A동 1F" },
+  { name: "양준모", subject: "행정", office: "행정실", officeRoom: "A동 1F", officeLocation: "A동 1F" },
+
+  // ========== 이사장실 (A동 2층) - 1명 ==========
+  { name: "문익수", subject: "이사장", office: "이사장실", officeRoom: "A동 2F", officeLocation: "A동 2F", role: "이사장" },
 ];

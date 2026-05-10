@@ -49,6 +49,7 @@ import {
   STUDY_POST_CATEGORY_STYLE,
   STUDY_SUBJECT_TAG_LABEL,
   STUDY_SUBJECT_TAG_STYLE,
+  createComment,
   deleteComment,
   deletePost,
   getPost,
@@ -148,6 +149,10 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
   const [liked, setLiked] = useState(false);
   const [shareToast, setShareToast] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
+  // "누구일까요?" — 정답 공개 모달 상태
+  const [revealOpen, setRevealOpen] = useState(false);
+  const [revealName, setRevealName] = useState("");
+  const [revealing, setRevealing] = useState(false);
   const viewCounted = useRef(false);
   const commentsEndRef = useRef<HTMLDivElement>(null);
 
@@ -232,6 +237,7 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
   const isStudy = boardType === "study";
   const isAlumni = boardType === "alumni";
   const isSenior = boardType === "senior";
+  const isGuessWho = boardType === "guess_who";
   const lostInfo = isLost ? parseLostContent(post.content) : null;
   const marketInfo: MarketContent | null = isMarket
     ? parseMarketContent(post.content)
@@ -354,6 +360,36 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
     }
     if (result.kind === "copied" || result.kind === "error") {
       window.setTimeout(() => setShareToast(null), 2200);
+    }
+  }
+
+  // "누구일까요?" — 정답 공개: status=resolved 로 변경 + 정답 댓글 자동 등록
+  async function handleReveal() {
+    if (!post || !user || revealing) return;
+    const name = revealName.trim();
+    if (!name) {
+      window.alert("정답을 입력해주세요.");
+      return;
+    }
+    setRevealing(true);
+    const { error } = await setPostStatus(post.id, "resolved");
+    if (error) {
+      setRevealing(false);
+      window.alert("정답 공개에 실패했어요.\n" + error);
+      return;
+    }
+    const { error: cErr } = await createComment({
+      authorId: user.id,
+      postId: post.id,
+      content: `🎉 정답 공개! 저는 ${name}입니다!`,
+    });
+    setRevealing(false);
+    setPost({ ...post, status: "resolved" });
+    setRevealOpen(false);
+    setRevealName("");
+    await refreshComments();
+    if (cErr) {
+      window.alert("정답 댓글 등록에 실패했어요.\n" + cErr);
     }
   }
 
@@ -510,7 +546,21 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
               문튜브
             </span>
           )}
+          {isGuessWho && post.status === "resolved" && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-600 ring-1 ring-inset ring-emerald-500/30 dark:text-emerald-300">
+              ✅ 정답 공개됨
+            </span>
+          )}
         </div>
+
+        {/* "누구일까요?" — 정답 공개 배너 */}
+        {isGuessWho && post.status === "resolved" && (
+          <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/[0.08] dark:text-emerald-300">
+            <CheckCircle2 className="h-4 w-4" />
+            정답이 공개되었습니다!
+          </div>
+        )}
+
         <h1 className="mt-1 text-xl font-extrabold leading-snug text-gray-900 dark:text-white">
           {post.title}
         </h1>
@@ -587,6 +637,15 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
                 {post.status === "resolved" ? "다시 찾는중으로" : "찾았어요로 변경"}
               </button>
             )}
+            {isOwner && isGuessWho && post.status !== "resolved" && (
+              <button
+                type="button"
+                onClick={() => setRevealOpen(true)}
+                className="flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20"
+              >
+                🎉 정답 공개하기
+              </button>
+            )}
             {isOwner && isMarket && (
               <button
                 type="button"
@@ -645,7 +704,10 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
         ) : post.image_url ? (
           <ImageLightbox
             src={post.image_url}
-            className="mt-4 max-h-96 w-full rounded-lg object-contain"
+            className={cn(
+              "mt-4 w-full rounded-lg object-contain",
+              isGuessWho ? "max-h-[500px] rounded-2xl" : "max-h-96",
+            )}
           />
         ) : null}
 
@@ -866,6 +928,55 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
         endRef={commentsEndRef}
       />
 
+      {/* "누구일까요?" — 정답 공개 모달 */}
+      {revealOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-white/10 dark:bg-[#16162a]">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">🎉</span>
+              <h3 className="text-base font-extrabold text-gray-900 dark:text-white">
+                정답을 입력해주세요
+              </h3>
+            </div>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              공개하면 글이 &lsquo;정답 공개&rsquo; 상태로 바뀌고, 정답이 댓글로 자동 등록돼요.
+            </p>
+            <input
+              type="text"
+              value={revealName}
+              onChange={(e) => setRevealName(e.target.value)}
+              placeholder="이름 (예: 홍길동)"
+              maxLength={30}
+              autoFocus
+              disabled={revealing}
+              className="mt-4 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setRevealOpen(false);
+                  setRevealName("");
+                }}
+                disabled={revealing}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 transition hover:bg-gray-50 disabled:opacity-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/[0.05]"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleReveal}
+                disabled={revealing || !revealName.trim()}
+                className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {revealing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                공개하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 공유 결과 토스트 — 입력바 위에 띄움 */}
       <AnimatePresenceToast message={shareToast} />
 
@@ -884,7 +995,13 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
           />
         }
         theme="light"
-        placeholder={isQa ? "답변을 입력하세요..." : "댓글을 입력하세요..."}
+        placeholder={
+          isQa
+            ? "답변을 입력하세요..."
+            : isGuessWho
+            ? "이 학생은 누구일까요? 이름을 맞춰보세요!"
+            : "댓글을 입력하세요..."
+        }
         enableMentions
         actorNickname={profile?.nickname ?? null}
         onFocus={scrollToLatestComment}
@@ -1149,8 +1266,19 @@ function CommentItem({
     }
   };
 
+  // "누구일까요?" 게시판에서 선생님(교사/관리자) 댓글 강조
+  const isGuessWhoTeacher =
+    boardType === "guess_who" &&
+    (comment.author?.role === "teacher" || comment.author?.role === "admin");
+
   return (
-    <div className={cn(isReply && "py-2")}>
+    <div
+      className={cn(
+        isReply && "py-2",
+        isGuessWhoTeacher &&
+          "rounded-lg border-l-4 border-amber-400 bg-amber-50 px-3 py-2 dark:bg-amber-900/10",
+      )}
+    >
       <div className="flex items-center gap-2 text-[11px] text-gray-500">
         <UserAvatar
           nickname={comment.author?.nickname}
@@ -1164,6 +1292,11 @@ function CommentItem({
         >
           {displayAuthorNameFor({ boardType, author: comment.author })}
         </NicknameButton>
+        {isGuessWhoTeacher && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+            🧑‍🏫 선생님
+          </span>
+        )}
         {shouldShowAuthorBadgeFor(boardType) && comment.author && (
           <Badge role={comment.author.role} className="text-[9px] py-0 px-1.5" />
         )}

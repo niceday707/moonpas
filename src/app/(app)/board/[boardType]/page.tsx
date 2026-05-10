@@ -47,6 +47,7 @@ import { NewsIntro } from "@/components/board/NewsIntro";
 import { AlumniNewsIntro } from "@/components/board/AlumniNewsIntro";
 import { ResourcesIntro } from "@/components/board/ResourcesIntro";
 import { SeniorIntro } from "@/components/board/SeniorIntro";
+import { GuessWhoIntro } from "@/components/board/GuessWhoIntro";
 // StudyIntro 는 신규 학습게시판 도입으로 제거 (구 스터디 모집 안내) — 잔존 import 제거.
 import { YoutubeIntro } from "@/components/board/YoutubeIntro";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
@@ -125,10 +126,6 @@ const VALID_BOARDS = Object.keys(BOARD_LABEL) as BoardType[];
 // 준비 중 게시판 — TopBar 메뉴는 노출하되 클릭 시 ComingSoon 안내만 표시.
 // study 는 023 마이그레이션 이후 정식 학습게시판으로 활성화됨 (COMING_SOON 에서 제거).
 const COMING_SOON_BOARDS: Record<string, { title: string; subtitle?: string }> = {
-  who_am_i: {
-    title: "누구일까요? 🕵️‍♂️",
-    subtitle: "친구들과 추리로 즐기는 코너를 곧 오픈해요!",
-  },
   campus_story: {
     title: "캠퍼스 스토리",
     subtitle: "선배들의 대학 캠퍼스 이야기를 모아드릴게요.",
@@ -336,6 +333,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
   const isAlumniNews = boardType === "alumni_news";
   const isAlumni = boardType === "alumni";
   const isSenior = boardType === "senior";
+  const isGuessWho = boardType === "guess_who";
   // 모집중/마감 필터를 지원하는 게시판 — 분실물·나눔장터만 (구 study 모집은 폐기).
   const supportsStatusFilter = isLost || isMarket;
 
@@ -599,7 +597,8 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     isYoutube ||
     isResources ||
     isNews ||
-    isAlumniNews;
+    isAlumniNews ||
+    isGuessWho;
     // 학습게시판은 자체 안내 배너 + 3 행 필터를 별도 슬롯에 렌더 — hasIntro 계산에선 제외.
 
   // 챌린지 v2 — 챌린지 게시판은 글 목록이 아닌 챌린지 카드 목록 UI 로 완전 분기.
@@ -648,6 +647,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
       )}
       {isNews && <NewsIntro />}
       {isAlumniNews && <AlumniNewsIntro />}
+      {isGuessWho && <GuessWhoIntro />}
 
       {/* 헤더 — 인트로가 있으면 압축, 없으면 표준 */}
       <div className={cn("flex items-end justify-between", hasIntro ? "mt-2 mb-3" : "mb-4")}>
@@ -824,6 +824,8 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
         <AlumniList posts={posts} />
       ) : isSenior ? (
         <SeniorGrid posts={posts} />
+      ) : isGuessWho ? (
+        <GuessWhoGrid posts={posts} />
       ) : (
         <DefaultList
           posts={posts}
@@ -2235,6 +2237,70 @@ function ChallengeCard({
         </button>
       )}
     </div>
+  );
+}
+
+// ── "누구일까요?" 카드 그리드 — 인스타 스타일 ────────────────
+function GuessWhoGrid({ posts }: { posts: PostRow[] }) {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      {posts.map((post) => (
+        <GuessWhoCard key={post.id} post={post} />
+      ))}
+    </div>
+  );
+}
+
+function GuessWhoCard({ post }: { post: PostRow }) {
+  const isResolved = post.status === "resolved";
+  const nickname = post.author?.nickname ?? "익명";
+  return (
+    <Link
+      href={`/board/guess_who/${post.id}`}
+      className="group relative block overflow-hidden rounded-xl bg-gray-100 ring-1 ring-inset ring-black/5 transition-all hover:scale-[1.02] hover:shadow-lg dark:bg-white/[0.04] dark:ring-white/[0.06]"
+    >
+      <div className="relative aspect-square w-full overflow-hidden">
+        {post.image_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={post.image_url}
+            alt=""
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            loading="lazy"
+          />
+        ) : (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-purple-500 via-fuchsia-500 to-pink-500 p-3 text-white">
+            <span className="text-3xl">🎭</span>
+            <span className="line-clamp-3 text-center text-[11px] font-bold leading-tight">
+              {post.title}
+            </span>
+          </div>
+        )}
+
+        {/* 정답 공개 뱃지 */}
+        {isResolved && (
+          <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-emerald-500/95 px-2 py-0.5 text-[10px] font-bold text-white shadow ring-1 ring-inset ring-white/30 backdrop-blur-sm">
+            ✅ 정답 공개
+          </span>
+        )}
+
+        {/* 댓글 수 — 우상단 */}
+        <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-bold text-white ring-1 ring-inset ring-white/20 backdrop-blur-sm">
+          <MessageSquare className="h-3 w-3" />
+          {post.comment_count}
+        </span>
+
+        {/* 닉네임 + 시간 오버레이 */}
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent px-3 pb-2 pt-6">
+          <p className="line-clamp-1 text-[12px] font-semibold text-white drop-shadow">
+            {nickname}
+          </p>
+          <p className="text-[10px] text-white/85 drop-shadow">
+            {relativeTime(post.created_at)}
+          </p>
+        </div>
+      </div>
+    </Link>
   );
 }
 

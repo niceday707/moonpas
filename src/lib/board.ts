@@ -32,6 +32,7 @@ export type BoardType =
   | "event_praise" // 칭찬합시다
   | "event_study" // 공부 인증
   | "event_quiz" // 오늘의 퀴즈
+  | "guess_who" // 누구일까요? (사진 + 댓글로 이름 맞추기)
   | "anonymous"; // 문태 에타 (완전 익명 게시판)
 
 export const BOARD_LABEL: Record<BoardType, string> = {
@@ -57,6 +58,7 @@ export const BOARD_LABEL: Record<BoardType, string> = {
   event_praise: "칭찬합시다",
   event_study: "공부 인증",
   event_quiz: "오늘의 퀴즈",
+  guess_who: "누구일까요?",
   anonymous: "문태 에타",
 };
 

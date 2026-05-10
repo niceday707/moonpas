@@ -416,6 +416,7 @@ function WriteInner() {
   const isStudy = boardType === "study";
   const isAlumni = boardType === "alumni";
   const isSenior = boardType === "senior";
+  const isGuessWho = boardType === "guess_who";
 
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -466,13 +467,18 @@ function WriteInner() {
       setError("제목을 입력해주세요.");
       return;
     }
-    if (!content.trim()) {
+    if (!content.trim() && !isGuessWho) {
       setError("내용을 입력해주세요.");
       return;
     }
     // 챌린지는 이미지 필수 — 새 파일이거나 기존 이미지가 있어야 함
     if (isChallenge && !imageFile && !imagePreview) {
       setError("챌린지 게시판은 인증샷 이미지가 필요해요.");
+      return;
+    }
+    // "누구일까요?" 도 사진 필수
+    if (isGuessWho && !imageFile && !imagePreview) {
+      setError("내 사진을 올려주세요!");
       return;
     }
     // 챌린지는 카테고리 필수 (단, 학생 개설 챌린지(custom)는 카테고리 자동 처리되므로 예외)
@@ -755,7 +761,7 @@ function WriteInner() {
         )}
         <div>
           <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
-            {isIssue ? "토론 주제" : isQa ? "질문 제목" : "제목"}
+            {isIssue ? "토론 주제" : isQa ? "질문 제목" : isGuessWho ? "힌트 (제목)" : "제목"}
           </label>
           <input
             type="text"
@@ -766,6 +772,8 @@ function WriteInner() {
                 ? "예) 야자 시간 자유롭게 선택할 수 있게 해야 한다"
                 : isQa
                 ? "예) 함수의 극한 lim 풀이 도와주세요"
+                : isGuessWho
+                ? "힌트를 적어주세요! (예: 2학년, 축구를 좋아해요)"
                 : "제목을 입력해주세요"
             }
             maxLength={100}
@@ -1272,6 +1280,8 @@ function WriteInner() {
               ? "후배에게 한마디"
               : isSenior
               ? "후기 본문"
+              : isGuessWho
+              ? "추가 힌트"
               : "내용"}
           </label>
           <textarea
@@ -1296,6 +1306,8 @@ function WriteInner() {
                 ? "재학생들에게 들려주고 싶은 이야기를 자유롭게 적어주세요."
                 : isSenior
                 ? "지원 동기, 면접 준비, 합격 비결 등 자세히 적어주세요."
+                : isGuessWho
+                ? "추가 힌트나 하고 싶은 말을 적어주세요"
                 : "내용을 입력해주세요"
             }
             rows={10}
@@ -1304,10 +1316,14 @@ function WriteInner() {
           />
         </div>
 
-        {/* 이미지 첨부 — 챌린지는 필수, 그 외에는 선택 */}
+        {/* 이미지 첨부 — 챌린지/누구일까요는 필수, 그 외에는 선택 */}
         <div>
           <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
-            {isChallenge ? "인증샷 (필수)" : "이미지 첨부 (선택)"}
+            {isChallenge
+              ? "인증샷 (필수)"
+              : isGuessWho
+              ? "📸 내 사진 올리기 (필수)"
+              : "이미지 첨부 (선택)"}
           </label>
           <input
             type="file"
@@ -1336,7 +1352,8 @@ function WriteInner() {
           )}
         </div>
 
-        {/* PDF 첨부 — 모든 게시판에서 선택사항 */}
+        {/* PDF 첨부 — 모든 게시판에서 선택사항 (누구일까요? 제외) */}
+        {!isGuessWho && (
         <div>
           <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
             PDF 첨부 (선택)
@@ -1376,6 +1393,7 @@ function WriteInner() {
             </div>
           )}
         </div>
+        )}
 
         {error && <p className="text-xs text-red-500">{error}</p>}
 

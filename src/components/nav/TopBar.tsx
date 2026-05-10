@@ -51,8 +51,7 @@ const MEGA_NAV: NavGroup[] = [
     label: "문태 이벤트 ✨",
     items: [
       { boardType: "event_quiz", label: "오늘의 퀴즈" },
-      // who_am_i: 신규 board_type, 준비 중 안내 페이지로 분기.
-      { boardType: "who_am_i" as BoardType, label: "누구일까요? 🕵️‍♂️" },
+      { boardType: "guess_who", label: "누구일까요? 🎭" },
       { boardType: "event_praise", label: "칭찬합시다" },
       { boardType: "event_member", label: "회원 참여방" },
       { href: "/birthday", label: "오늘의 생일 🎂" },

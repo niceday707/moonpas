@@ -47,6 +47,7 @@ import { SchoolCalendar } from "@/components/SchoolCalendar";
 import { Badge, type Role } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useAuth, attemptGoogleLogin } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 import {
   createInitialProfile,
   pickDisplayName,
@@ -1190,6 +1191,89 @@ export default function DashboardPage() {
     if (!user) {
       return { ok: false as const, message: "로그인이 필요합니다." };
     }
+
+    // 초대 코드 흐름 — sessionStorage 에 코드가 있으면 consume_invite_code RPC 로
+    // 코드 소비 + 프로필 생성을 한 번에 처리. 역할은 서버가 코드의 role 로 강제한다
+    // (클라이언트가 sessionStorage 의 inviteRole 을 변조해도 무력화됨).
+    const inviteCode =
+      typeof window !== "undefined"
+        ? sessionStorage.getItem("inviteCode")?.toLowerCase() ?? null
+        : null;
+
+    if (inviteCode) {
+      const { data, error } = await supabase.rpc("consume_invite_code", {
+        p_code: inviteCode,
+        p_nickname: nickname,
+      });
+      if (error) {
+        console.error("[dashboard] consume_invite_code 실패", error);
+        return {
+          ok: false as const,
+          message: "저장에 실패했어요. 잠시 후 다시 시도해주세요.",
+        };
+      }
+      const result = data as
+        | { ok: true; role: string }
+        | {
+            ok: false;
+            reason:
+              | "unauthorized"
+              | "invalid_nickname"
+              | "profile_exists"
+              | "nickname_taken"
+              | "invalid_or_used"
+              | "conflict";
+          };
+      if (!result?.ok) {
+        if (result?.reason === "nickname_taken") {
+          return {
+            ok: false as const,
+            message: "이미 사용 중인 닉네임이에요.",
+          };
+        }
+        if (result?.reason === "invalid_or_used") {
+          // 사용 불가/만료된 코드 — sessionStorage 정리하고 로그인으로 되돌림
+          if (typeof window !== "undefined") {
+            sessionStorage.removeItem("inviteCode");
+            sessionStorage.removeItem("inviteRole");
+          }
+          return {
+            ok: false as const,
+            message:
+              "초대 코드가 더 이상 유효하지 않습니다. 다시 로그인해주세요.",
+          };
+        }
+        if (result?.reason === "profile_exists") {
+          if (typeof window !== "undefined") {
+            sessionStorage.removeItem("inviteCode");
+            sessionStorage.removeItem("inviteRole");
+          }
+          await refetch();
+          setSetupOpen(false);
+          return {
+            ok: false as const,
+            message:
+              "이미 등록된 프로필이 있어요. 잠시 후 새로고침하면 정상으로 보여요.",
+          };
+        }
+        return {
+          ok: false as const,
+          message: "저장에 실패했어요. 잠시 후 다시 시도해주세요.",
+        };
+      }
+
+      // 성공 — sessionStorage 정리
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("inviteCode");
+        sessionStorage.removeItem("inviteRole");
+      }
+      setInviteRole(null);
+      await refetch();
+      setSetupOpen(false);
+      return { ok: true as const };
+    }
+
+    // 일반 가입 (학교 도메인 Google 계정) — 기존 흐름 유지
     const finalRole: Role = inviteRole ?? role;
     // INSERT-only — 이미 row 가 있으면 23505 로 거부되어 nickname/role 덮어쓰기를 차단한다.
     const { error, alreadyExists } = await createInitialProfile(

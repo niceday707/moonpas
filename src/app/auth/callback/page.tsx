@@ -28,24 +28,11 @@ export default function AuthCallbackPage() {
           ? sessionStorage.getItem(SS_INVITE_CODE)?.toLowerCase() ?? null
           : null;
 
-      // 초대 코드 사용자: 도메인 체크 건너뜀 + used_count 증가
+      // 초대 코드 사용자: 도메인 체크 건너뜀.
+      // 실제 코드 소비(used 마킹) + 역할 부여는 dashboard 의 닉네임 모달 제출 시점에
+      // consume_invite_code RPC 가 원자적으로 처리한다 — 여기서 코드를 소진하면
+      // 닉네임 모달 미완료 시 "코드만 소진" 사고가 발생함.
       if (inviteCode) {
-        try {
-          const { data: code } = await supabase
-            .from("invite_codes")
-            .select("id, used_count")
-            .eq("code", inviteCode)
-            .maybeSingle();
-          if (code) {
-            await supabase
-              .from("invite_codes")
-              .update({ used_count: (code.used_count ?? 0) + 1 })
-              .eq("id", code.id);
-          }
-        } catch (err) {
-          console.error("[auth/callback] invite used_count 증가 실패", err);
-        }
-        sessionStorage.removeItem(SS_INVITE_CODE);
         router.replace("/dashboard");
         return;
       }

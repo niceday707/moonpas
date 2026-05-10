@@ -58,25 +58,10 @@ export default function LoginPage() {
             ? sessionStorage.getItem(SS_INVITE_CODE)?.toLowerCase() ?? null
             : null;
 
-        // 초대 코드 사용자: 도메인 체크 건너뜀 + used_count 증가
+        // 초대 코드 사용자: 도메인 체크 건너뜀.
+        // 코드 소비는 dashboard 의 닉네임 제출 시점에 consume_invite_code RPC 로 수행.
+        // (sessionStorage 의 inviteCode 는 dashboard 가 직접 읽어 RPC 에 전달)
         if (inviteCode) {
-          try {
-            const { data: code } = await supabase
-              .from("invite_codes")
-              .select("id, used_count")
-              .eq("code", inviteCode)
-              .maybeSingle();
-            if (code) {
-              await supabase
-                .from("invite_codes")
-                .update({ used_count: (code.used_count ?? 0) + 1 })
-                .eq("id", code.id);
-            }
-          } catch (err) {
-            console.error("[invite] used_count 증가 실패", err);
-          }
-          // 사용 후 정리 (role 은 닉네임 모달에서 읽고 삭제)
-          sessionStorage.removeItem(SS_INVITE_CODE);
           router.push("/dashboard");
           return;
         }
@@ -342,31 +327,39 @@ function InviteCodeModal({
     setLocalError(null);
 
     try {
-      // invite_codes 테이블 조회
-      const { data, error: dbError } = await supabase
-        .from("invite_codes")
-        .select("id, code, role, max_uses, used_count, expires_at")
-        .eq("code", code)
-        .maybeSingle();
+      // 서버 RPC 로 사전 검증 — RLS 로 invite_codes 직접 SELECT 는 차단되어 있음.
+      // 실제 코드 소비/프로필 생성은 OAuth 후 consume_invite_code RPC 가 담당.
+      const { data, error: rpcError } = await supabase.rpc(
+        "validate_invite_code",
+        { p_code: code },
+      );
 
-      if (dbError) {
-        console.error("[invite] 조회 실패", dbError);
+      if (rpcError) {
+        console.error("[invite] validate RPC 실패", rpcError);
         setLocalError("코드 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
         setSubmitting(false);
         return;
       }
 
-      const valid =
-        !!data &&
-        (data.max_uses == null || (data.used_count ?? 0) < data.max_uses) &&
-        (!data.expires_at || new Date(data.expires_at).getTime() > Date.now());
+      const result = data as
+        | { valid: true; role: InviteRole; expires_at: string | null }
+        | { valid: false; reason: "not_found" | "used" | "expired" }
+        | null;
 
-      if (!valid) {
+      if (!result || !result.valid) {
         bumpAttempts();
         const r = readLockoutMs();
         if (r > 0) {
           setLockoutRemain(r);
           setLocalError("너무 많이 시도했습니다. 10분 후 다시 시도해주세요.");
+        } else if (result && "reason" in result) {
+          if (result.reason === "used") {
+            setLocalError("이미 사용된 초대 코드입니다.");
+          } else if (result.reason === "expired") {
+            setLocalError("만료된 초대 코드입니다.");
+          } else {
+            setLocalError("잘못된 초대 코드입니다.");
+          }
         } else {
           setLocalError("잘못된 초대 코드입니다.");
         }
@@ -376,7 +369,8 @@ function InviteCodeModal({
 
       // 검증 통과 — 실패 카운터 초기화 + sessionStorage 저장
       clearAttempts();
-      const role: InviteRole = (data!.role as InviteRole) ?? "parent";
+      // 표시용 role 힌트만 저장 (실제 부여 role 은 서버 consume RPC 가 강제).
+      const role: InviteRole = (result.role as InviteRole) ?? "parent";
       sessionStorage.setItem(SS_INVITE_CODE, code);
       sessionStorage.setItem(SS_INVITE_ROLE, role);
 

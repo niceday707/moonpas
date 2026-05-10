@@ -320,8 +320,8 @@ export function TopBar() {
       */}
       <div
         className={cn(
-          "sticky top-0 z-40 transition-transform duration-300 ease-in-out",
-          hidden && "max-md:-translate-y-full",
+          "sticky top-0 z-40 transition-transform duration-300 ease-in-out md:translate-y-0",
+          hidden && "-translate-y-full",
         )}
       >
         {/* 슬림바 — 데스크톱 전용 */}

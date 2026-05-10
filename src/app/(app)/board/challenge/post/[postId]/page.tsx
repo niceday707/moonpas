@@ -10,13 +10,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Loader2, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Pencil, Share2, Trash2 } from "lucide-react";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { Badge } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { PostComments } from "@/components/comments/PostComments";
 import { deletePost } from "@/lib/board";
+import { buildPostShareUrl, sharePost } from "@/lib/share";
 import { supabase } from "@/lib/supabase";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
 import type { Role } from "@/components/ui/Badge";
@@ -135,6 +136,18 @@ function ChallengePostInner() {
     }, 700);
   }
 
+  async function handleShare() {
+    if (!post) return;
+    const url = buildPostShareUrl("challenge", post.id);
+    const result = await sharePost({ title: post.title, url });
+    if (result.kind === "copied") {
+      showToast("ok", "링크가 복사되었습니다");
+    } else if (result.kind === "error") {
+      showToast("err", result.message);
+    }
+    // shared / cancelled 는 별도 토스트 없이 자연스럽게 종료
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-violet-500">
@@ -207,17 +220,44 @@ function ChallengePostInner() {
             </div>
           </div>
 
-          {canDelete && (
+          {/* 액션 — 공유(전체) | 수정 / 삭제(본인 또는 admin) */}
+          <div className="flex shrink-0 items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setConfirmOpen(true)}
-              disabled={deleting}
-              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100 disabled:opacity-50 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
+              onClick={handleShare}
+              aria-label="공유"
+              className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-600 transition-colors hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]"
             >
-              <Trash2 className="h-3.5 w-3.5" />
-              삭제
+              <Share2 className="h-3.5 w-3.5" />
+              공유
             </button>
-          )}
+
+            {canDelete && (
+              <Link
+                href={
+                  post.challenge_id
+                    ? `/board/challenge/write?challengeId=${post.challenge_id}&id=${post.id}`
+                    : `/board/challenge/write?id=${post.id}`
+                }
+                className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-600 transition-colors hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/20"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                수정
+              </Link>
+            )}
+
+            {canDelete && (
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(true)}
+                disabled={deleting}
+                className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100 disabled:opacity-50 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                삭제
+              </button>
+            )}
+          </div>
         </header>
 
         {/* 제목 */}

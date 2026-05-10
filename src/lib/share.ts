@@ -1,11 +1,13 @@
 // 게시글 공유 — Web Share API 사용, 미지원 시 클립보드 복사 폴백.
 // 호출자가 토스트 메시지를 띄울 수 있도록 결과 종류를 반환한다.
 
+import { postDetailHref } from "@/lib/board";
+
 const PROD_ORIGIN = "https://moonpas.kr";
 
 /** 절대 URL 빌드 — moonpas.kr 도메인 고정 (공유 링크는 프로덕션 도메인이어야 함) */
 export function buildPostShareUrl(boardType: string, postId: string): string {
-  return `${PROD_ORIGIN}/board/${boardType}/${postId}`;
+  return `${PROD_ORIGIN}${postDetailHref(boardType, postId)}`;
 }
 
 export type ShareResult =

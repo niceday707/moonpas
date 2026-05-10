@@ -12,7 +12,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { BOARD_LABEL, type BoardType } from "@/lib/board";
+import { BOARD_LABEL, postDetailHref, type BoardType } from "@/lib/board";
 import { cn } from "@/lib/utils";
 
 type AdminRole = "student" | "teacher" | "parent" | "alumni" | "admin";
@@ -303,7 +303,7 @@ export default function AdminDashboardPage() {
               {posts.map((p) => (
                 <li key={p.id}>
                   <Link
-                    href={`/board/${p.board_type}/${p.id}`}
+                    href={postDetailHref(p.board_type, p.id)}
                     className="flex items-center gap-3 px-5 py-3 text-sm transition hover:bg-white/[0.02]"
                   >
                     <div className="min-w-0 flex-1">

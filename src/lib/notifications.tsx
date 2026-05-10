@@ -17,6 +17,7 @@ import {
   type ReactNode,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import { postDetailHref } from "@/lib/board";
 import { useSupabaseUser } from "@/lib/supabase-profile";
 
 // ── 타입 ─────────────────────────────────────────────────────────────
@@ -244,7 +245,7 @@ export function getNotificationHref(n: AppNotification): string {
     return n.postId ? `/board/challenge/${n.postId}` : "/board/challenge";
   }
   if (n.postId && n.boardType) {
-    return `/board/${n.boardType}/${n.postId}`;
+    return postDetailHref(n.boardType, n.postId);
   }
   return "/dashboard";
 }

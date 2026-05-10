@@ -9,7 +9,7 @@ import { ArrowLeft } from "lucide-react";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { Badge } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import { listPostsByAuthor, type PostRow } from "@/lib/board";
+import { listPostsByAuthor, postDetailHref, type PostRow } from "@/lib/board";
 import { BOARD_LABEL } from "@/lib/board";
 import { getPublicProfile, type PublicProfile } from "@/lib/supabase-profile";
 
@@ -102,7 +102,7 @@ function UserPostsInner() {
           {posts.map((p) => (
             <li key={p.id}>
               <Link
-                href={`/board/${p.board_type}/${p.id}`}
+                href={postDetailHref(p.board_type, p.id)}
                 className="flex items-center gap-2 px-4 py-3 transition-colors hover:bg-foreground/5"
               >
                 <span className="shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 dark:text-violet-300">

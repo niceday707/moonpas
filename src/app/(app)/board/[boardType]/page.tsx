@@ -83,6 +83,7 @@ import {
   parseResourceContent,
   parseSeniorContent,
   parseYoutubeContent,
+  postDetailHref,
   youtubeThumbUrl,
   STUDY_GRADE_LABEL,
   STUDY_POST_CATEGORY_LABEL,
@@ -1021,7 +1022,7 @@ function DefaultList({
           return (
             <li key={post.id}>
               <Link
-                href={`/board/${boardType}/${post.id}`}
+                href={postDetailHref(boardType, post.id)}
                 className={cn(
                   "flex items-start gap-3 px-4 py-3 transition-colors",
                   pinned

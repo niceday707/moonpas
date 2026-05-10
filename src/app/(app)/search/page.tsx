@@ -9,7 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Search as SearchIcon, Loader2 } from "lucide-react";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { NicknameButton } from "@/components/profile/NicknameButton";
-import { BOARD_LABEL, searchAllPosts, type PostRow } from "@/lib/board";
+import { BOARD_LABEL, postDetailHref, searchAllPosts, type PostRow } from "@/lib/board";
 import { displayAuthorNameFor } from "@/lib/author-display";
 import { logSearch, normalizeKeyword } from "@/lib/search-log";
 
@@ -171,7 +171,7 @@ function SearchResults({
         {posts.map((p) => (
           <li key={p.id}>
             <Link
-              href={`/board/${p.board_type}/${p.id}`}
+              href={postDetailHref(p.board_type, p.id)}
               className="flex flex-col gap-1 px-4 py-3 transition-colors hover:bg-foreground/5 sm:flex-row sm:items-center sm:gap-3"
             >
               <span className="shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 dark:text-violet-300">

@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { BOARD_LABEL, type BoardType } from "@/lib/board";
+import { BOARD_LABEL, postDetailHref, type BoardType } from "@/lib/board";
 import { cn } from "@/lib/utils";
 
 type AdminPost = {
@@ -213,7 +213,7 @@ export default function AdminPostsPage() {
                     >
                       <td className="max-w-md px-5 py-3">
                         <Link
-                          href={`/board/${p.board_type}/${p.id}`}
+                          href={postDetailHref(p.board_type, p.id)}
                           className="block truncate font-medium text-white transition hover:text-violet-300"
                         >
                           {p.title}
@@ -255,7 +255,7 @@ export default function AdminPostsPage() {
               {posts.map((p) => (
                 <li key={p.id} className="px-4 py-3">
                   <Link
-                    href={`/board/${p.board_type}/${p.id}`}
+                    href={postDetailHref(p.board_type, p.id)}
                     className="block text-sm font-semibold text-white transition hover:text-violet-300"
                   >
                     {p.title}

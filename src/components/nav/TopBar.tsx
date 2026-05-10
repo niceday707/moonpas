@@ -56,6 +56,7 @@ const MEGA_NAV: NavGroup[] = [
       { boardType: "event_praise", label: "칭찬합시다" },
       { boardType: "event_member", label: "회원 참여방" },
       { href: "/birthday", label: "오늘의 생일 🎂" },
+      { boardType: "news", label: "문태 뉴스" },
     ],
   },
   {
@@ -78,7 +79,7 @@ const MEGA_NAV: NavGroup[] = [
       { boardType: "campus_story" as BoardType, label: "캠퍼스 스토리" },
       { boardType: "senior", label: "면접·입시 후기" },
       { boardType: "insight" as BoardType, label: "인사이트" },
-      { boardType: "news", label: "문태 뉴스" },
+      { boardType: "alumni_news", label: "동문 뉴스" },
     ],
   },
   {

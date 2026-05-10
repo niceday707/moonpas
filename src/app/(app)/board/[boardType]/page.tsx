@@ -44,6 +44,7 @@ import { CollegeIntro } from "@/components/board/CollegeIntro";
 import { CurriculumIntro } from "@/components/board/CurriculumIntro";
 import { CouncilIntro } from "@/components/board/CouncilIntro";
 import { NewsIntro } from "@/components/board/NewsIntro";
+import { AlumniNewsIntro } from "@/components/board/AlumniNewsIntro";
 import { ResourcesIntro } from "@/components/board/ResourcesIntro";
 import { SeniorIntro } from "@/components/board/SeniorIntro";
 // StudyIntro 는 신규 학습게시판 도입으로 제거 (구 스터디 모집 안내) — 잔존 import 제거.
@@ -332,6 +333,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
   const isResources = boardType === "resources";
   const isStudy = boardType === "study";
   const isNews = boardType === "news";
+  const isAlumniNews = boardType === "alumni_news";
   const isAlumni = boardType === "alumni";
   const isSenior = boardType === "senior";
   // 모집중/마감 필터를 지원하는 게시판 — 분실물·나눔장터만 (구 study 모집은 폐기).
@@ -596,7 +598,8 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     isSenior ||
     isYoutube ||
     isResources ||
-    isNews;
+    isNews ||
+    isAlumniNews;
     // 학습게시판은 자체 안내 배너 + 3 행 필터를 별도 슬롯에 렌더 — hasIntro 계산에선 제외.
 
   // 챌린지 v2 — 챌린지 게시판은 글 목록이 아닌 챌린지 카드 목록 UI 로 완전 분기.
@@ -644,6 +647,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
         />
       )}
       {isNews && <NewsIntro />}
+      {isAlumniNews && <AlumniNewsIntro />}
 
       {/* 헤더 — 인트로가 있으면 압축, 없으면 표준 */}
       <div className={cn("flex items-end justify-between", hasIntro ? "mt-2 mb-3" : "mb-4")}>

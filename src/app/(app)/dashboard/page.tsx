@@ -93,6 +93,7 @@ const BOARD_BADGE_COLOR: Record<BoardType, string> = {
   resources: "text-indigo-500 bg-indigo-50 dark:bg-indigo-900/20",
   news: "text-amber-700 bg-amber-50 dark:bg-amber-900/20",
   alumni: "text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20",
+  alumni_news: "text-violet-600 bg-violet-50 dark:bg-violet-900/20",
   senior: "text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20",
   event_member: "text-violet-600 bg-violet-50 dark:bg-violet-900/20",
   event_find: "text-orange-500 bg-orange-50 dark:bg-orange-900/20",

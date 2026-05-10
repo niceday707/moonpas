@@ -61,6 +61,7 @@ const MEGA_NAV: NavGroup[] = [
     items: [
       { href: "/timetable", label: "시간표" },
       { href: "/exam-schedule", label: "평가일정 📝" },
+      { href: "/school-info", label: "쌤 어디계세요? 🏫" },
       { boardType: "youtube", label: "문튜브" },
       { boardType: "resources", label: "학습 자료실" },
       { boardType: "debate", label: "이슈토론" },

@@ -918,7 +918,7 @@ function LatestFeedCard({
           최신 글
         </div>
         <Link
-          href="/board/free"
+          href="/board"
           className="text-xs text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-200"
         >
           전체보기 →

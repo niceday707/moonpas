@@ -3,7 +3,7 @@
 // 챌린지 상세 페이지 — /board/challenge/[challengeId]
 // 히어로(개설자/태그/설명/참여자) → 주간 랭킹 → 인증 타임라인 그리드 순.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   Calendar,
   Camera,
+  Eye,
   Flame,
   Loader2,
   Trophy,
@@ -30,6 +31,7 @@ import {
   getChallenge,
   getChallengeParticipants,
   getChallengeStatsForChallenge,
+  incrementChallengeView,
   joinChallenge,
   leaveChallenge,
   parseTags,
@@ -64,6 +66,7 @@ function ChallengeDetailInner() {
   const [posts, setPosts] = useState<TimelinePost[]>([]);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const viewCounted = useRef(false);
 
   useEffect(() => {
     if (!challengeId) return;
@@ -82,6 +85,13 @@ function ChallengeDetailInner() {
       setPosts(ps);
       setLoading(false);
     });
+
+    // 조회수 +1 (마운트 1회)
+    if (!viewCounted.current) {
+      viewCounted.current = true;
+      incrementChallengeView(challengeId);
+    }
+
     return () => {
       active = false;
     };
@@ -241,6 +251,10 @@ function ChallengeDetailInner() {
               {participants.length}명
             </strong>{" "}
             참여 중
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <Eye className="h-3.5 w-3.5" />
+            {challenge.view_count.toLocaleString()}
           </span>
           <span className="inline-flex items-center gap-1">
             <Calendar className="h-3.5 w-3.5" />

@@ -34,6 +34,9 @@ const DURATION_OPTIONS: { value: number; label: string }[] = [
   { value: 9999, label: "무제한" },
 ];
 
+const DURATION_CUSTOM_MIN = 1;
+const DURATION_CUSTOM_MAX = 365;
+
 interface InvitedFriend {
   id: string;
   nickname: string;
@@ -59,6 +62,8 @@ function ChallengeCreateInner() {
   const [emoji, setEmoji] = useState("🔥");
   const [tags, setTags] = useState<ChallengeTagKey[]>([]);
   const [duration, setDuration] = useState<number>(14);
+  const [customDuration, setCustomDuration] = useState<string>("");
+  const [isCustomDuration, setIsCustomDuration] = useState<boolean>(false);
   const [isPublic, setIsPublic] = useState(true);
 
   const [invited, setInvited] = useState<InvitedFriend[]>([]);
@@ -127,12 +132,31 @@ function ChallengeCreateInner() {
       setError("로그인이 필요합니다.");
       return;
     }
+
+    // 직접 입력 모드면 customDuration 을 검증해서 days 결정
+    let days = duration;
+    if (isCustomDuration) {
+      const n = Number(customDuration);
+      if (
+        !Number.isFinite(n) ||
+        !Number.isInteger(n) ||
+        n < DURATION_CUSTOM_MIN ||
+        n > DURATION_CUSTOM_MAX
+      ) {
+        setError(
+          `기간을 ${DURATION_CUSTOM_MIN}~${DURATION_CUSTOM_MAX} 사이의 숫자로 입력해주세요.`,
+        );
+        return;
+      }
+      days = n;
+    }
+
     setSubmitting(true);
     const { id, error: e } = await createChallenge({
       title: title.trim(),
       description: description.trim() || undefined,
       emoji,
-      duration_days: duration,
+      duration_days: days,
       is_public: isPublic,
       tags,
     });
@@ -276,14 +300,17 @@ function ChallengeCreateInner() {
           <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
             기간
           </label>
-          <div className="mt-1.5 grid grid-cols-4 gap-2">
+          <div className="mt-1.5 grid grid-cols-5 gap-2">
             {DURATION_OPTIONS.map((opt) => {
-              const active = duration === opt.value;
+              const active = !isCustomDuration && duration === opt.value;
               return (
                 <button
                   key={opt.value}
                   type="button"
-                  onClick={() => setDuration(opt.value)}
+                  onClick={() => {
+                    setIsCustomDuration(false);
+                    setDuration(opt.value);
+                  }}
                   disabled={submitting}
                   className={cn(
                     "rounded-xl border px-3 py-2.5 text-sm font-semibold transition disabled:opacity-50",
@@ -296,7 +323,38 @@ function ChallengeCreateInner() {
                 </button>
               );
             })}
+            <button
+              type="button"
+              onClick={() => setIsCustomDuration(true)}
+              disabled={submitting}
+              className={cn(
+                "rounded-xl border px-3 py-2.5 text-sm font-semibold transition disabled:opacity-50",
+                isCustomDuration
+                  ? "border-violet-500 bg-violet-500/15 text-violet-700 dark:text-violet-200"
+                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]",
+              )}
+            >
+              직접 입력
+            </button>
           </div>
+          {isCustomDuration && (
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="number"
+                inputMode="numeric"
+                min={DURATION_CUSTOM_MIN}
+                max={DURATION_CUSTOM_MAX}
+                value={customDuration}
+                onChange={(e) => setCustomDuration(e.target.value)}
+                placeholder="일수 입력"
+                disabled={submitting}
+                className="w-32 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+              />
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                일 ({DURATION_CUSTOM_MIN}~{DURATION_CUSTOM_MAX})
+              </span>
+            </div>
+          )}
         </div>
 
         {/* 6. 공개 설정 */}

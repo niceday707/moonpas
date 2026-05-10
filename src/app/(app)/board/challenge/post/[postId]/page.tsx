@@ -6,17 +6,17 @@
 // 인증 글 상세는 literal `post/` 디렉토리 아래에 별도 라우트로 둔다.
 // 본인/관리자만 보이는 삭제 버튼 + 확인 모달 + 토스트 포함.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Loader2, Pencil, Share2, Trash2 } from "lucide-react";
+import { ArrowLeft, Eye, Loader2, Pencil, Share2, Trash2 } from "lucide-react";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { Badge } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { PostComments } from "@/components/comments/PostComments";
-import { deletePost } from "@/lib/board";
+import { deletePost, incrementViewCount } from "@/lib/board";
 import { buildPostShareUrl, sharePost } from "@/lib/share";
 import { supabase } from "@/lib/supabase";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
@@ -30,6 +30,7 @@ type ChallengePost = {
   title: string;
   content: string;
   image_url: string | null;
+  view_count: number;
   created_at: string;
   author: {
     id: string;
@@ -63,6 +64,7 @@ function ChallengePostInner() {
   const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(
     null,
   );
+  const viewCounted = useRef(false);
 
   useEffect(() => {
     if (!postId) return;
@@ -72,7 +74,7 @@ function ChallengePostInner() {
     supabase
       .from("posts")
       .select(
-        "id, author_id, challenge_id, title, content, image_url, created_at, board_type, author:profiles!author_id ( id, nickname, role, avatar_url )",
+        "id, author_id, challenge_id, title, content, image_url, view_count, created_at, board_type, author:profiles!author_id ( id, nickname, role, avatar_url )",
       )
       .eq("id", postId)
       .maybeSingle()
@@ -97,6 +99,7 @@ function ChallengePostInner() {
               title: row.title,
               content: row.content,
               image_url: row.image_url,
+              view_count: row.view_count ?? 0,
               created_at: row.created_at,
               author,
             });
@@ -104,6 +107,12 @@ function ChallengePostInner() {
         }
         setLoading(false);
       });
+
+    // 조회수 +1 (마운트 1회) — 다른 게시판 상세와 동일한 RPC 사용
+    if (!viewCounted.current) {
+      viewCounted.current = true;
+      incrementViewCount(postId);
+    }
 
     return () => {
       active = false;
@@ -214,8 +223,13 @@ function ChallengePostInner() {
                   <Badge role={post.author.role} className="text-[9px] py-0 px-1.5" />
                 )}
               </div>
-              <p className="text-[11px] text-gray-400">
-                {formatDateTime(post.created_at)}
+              <p className="flex items-center gap-1.5 text-[11px] text-gray-400">
+                <span>{formatDateTime(post.created_at)}</span>
+                <span className="text-gray-300">·</span>
+                <span className="inline-flex items-center gap-0.5">
+                  <Eye className="h-3 w-3" />
+                  {post.view_count.toLocaleString()}
+                </span>
               </p>
             </div>
           </div>

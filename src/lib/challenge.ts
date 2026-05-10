@@ -130,6 +130,7 @@ export interface Challenge {
   is_public: boolean;
   is_active: boolean;
   image_url: string | null;
+  view_count: number;
   created_at: string;
   updated_at: string;
   creator?: {
@@ -165,6 +166,7 @@ interface RawChallenge {
   is_public: boolean;
   is_active: boolean;
   image_url: string | null;
+  view_count: number | null;
   created_at: string;
   updated_at: string;
   creator?:
@@ -175,7 +177,7 @@ interface RawChallenge {
 const CHALLENGE_SELECT = `
   id, creator_id, title, description, emoji, category,
   duration_days, start_date, max_participants,
-  is_official, is_public, is_active, image_url,
+  is_official, is_public, is_active, image_url, view_count,
   created_at, updated_at,
   creator:profiles!creator_id ( id, nickname, role, avatar_url )
 `;
@@ -266,6 +268,7 @@ export async function listChallenges(filter?: {
   const counts = await fetchParticipantCounts(rows.map((r) => r.id));
   return rows.map((r) => ({
     ...r,
+    view_count: r.view_count ?? 0,
     participant_count: counts.get(r.id) ?? 0,
   }));
 }
@@ -286,8 +289,21 @@ export async function getChallenge(
   const row = data as unknown as RawChallenge;
   return {
     ...row,
+    view_count: row.view_count ?? 0,
     participant_count: counts.get(challengeId) ?? 0,
   };
+}
+
+/** 챌린지 상세 조회수 +1 (security definer RPC). 실패해도 페이지 로딩 영향 없음. */
+export async function incrementChallengeView(
+  challengeId: string,
+): Promise<void> {
+  const { error } = await supabase.rpc("increment_challenge_view", {
+    c_id: challengeId,
+  });
+  if (error) {
+    console.warn("[incrementChallengeView] 실패", error);
+  }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -527,7 +543,11 @@ export async function getMyPendingInvites(): Promise<PendingInvite[]> {
         created_at: r.created_at,
         responded_at: r.responded_at,
       },
-      challenge: { ...r.challenge, participant_count: 0 },
+      challenge: {
+        ...r.challenge,
+        view_count: r.challenge.view_count ?? 0,
+        participant_count: 0,
+      },
       inviter: { nickname: r.inviter?.nickname ?? "(알수없음)" },
     });
   }

@@ -4,14 +4,14 @@
 //
 // 반응형 3-tier 레이아웃:
 //  · 모바일 (md 미만): 1컬럼 세로 스택
-//      급식 → 배너 → 문튜브 → 최신글 → 프로필/로그인 → 실시간검색 → HOT → 공지 → 바로가기
+//      급식 → 배너 → 문튜브 → 최신글 → 프로필/로그인 → 실시간검색 → HOT → 공지
 //  · 태블릿 (md ~ lg 미만): 배너(전체 너비) → 그 아래 2단 (가운데 flex-1 | 우측 280px)
 //      가운데: 급식 → 문튜브 → 최신글
-//      우측 : 프로필 → 실시간검색 → HOT → 공지 → 바로가기
+//      우측 : 최신 공지 → 인기글
 //  · 데스크톱 (lg 이상): 배너(전체 너비) → 그 아래 3단 (좌측 280px | 가운데 flex-1 | 우측 300px)
 //      좌측 : 급식 (+ 추후 학사일정 캘린더)
 //      가운데: 문튜브 → 최신글
-//      우측 : 프로필 → 실시간검색 → HOT → 공지 → 바로가기
+//      우측 : 최신 공지 → 인기글
 //
 // 배너는 모바일에선 1컬럼 안에 인라인으로, md+ 에선 max-w-screen-xl 컨테이너 폭을 그대로 차지하는
 // 전체 너비 슬라이더로 노출된다. 중복 렌더 방지를 위해 모바일은 `md:hidden`, md+ 는 `hidden md:flex`
@@ -792,66 +792,6 @@ function TrendingSearchCard() {
   );
 }
 
-const SHORTCUT_ITEMS = [
-  {
-    href: "/board/college",
-    label: "2028 대입",
-    icon: GraduationCap,
-    color: "text-violet-600 bg-violet-50 dark:bg-violet-900/20",
-  },
-  {
-    href: "/board/curriculum",
-    label: "과목 가이드",
-    icon: BookOpen,
-    color: "text-green-600 bg-green-50 dark:bg-green-900/20",
-  },
-  {
-    href: "/board/youtube",
-    label: "문튜브",
-    icon: PlayCircle,
-    color: "text-red-500 bg-red-50 dark:bg-red-900/20",
-  },
-  {
-    href: "/board/notice",
-    label: "공지사항",
-    icon: Bell,
-    color: "text-amber-500 bg-amber-50 dark:bg-amber-900/20",
-  },
-] as const;
-
-function ShortcutsCard() {
-  return (
-    <Card>
-      <SectionHead
-        icon={ChevronRight}
-        title="바로가기"
-        iconColor="text-gray-500"
-      />
-      <div className="grid grid-cols-2 gap-1.5 p-3">
-        {SHORTCUT_ITEMS.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="flex flex-col items-center gap-1.5 rounded-xl py-3 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.03]"
-            >
-              <span
-                className={`grid h-8 w-8 place-items-center rounded-lg ${item.color}`}
-              >
-                <Icon className="h-4 w-4" />
-              </span>
-              <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300">
-                {item.label}
-              </span>
-            </Link>
-          );
-        })}
-      </div>
-    </Card>
-  );
-}
-
 function GoogleLoginCard() {
   return (
     <Card>
@@ -1365,7 +1305,7 @@ export default function DashboardPage() {
       {/* ─────────────────────────────────────────────────────────────
           모바일 (md 미만): 1단 세로 스택
           순서: 급식 → 배너 → 문튜브 → 최신 글 → 프로필/로그인 →
-                실시간검색 → HOT → 공지 → 바로가기
+                실시간검색 → HOT → 공지
           ───────────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-4 md:hidden">
         <MealCard />
@@ -1378,7 +1318,6 @@ export default function DashboardPage() {
         <TrendingSearchCard />
         <HotPostsCard posts={hotPosts} loading={hotLoading} />
         <NoticesCard notices={unifiedNotices} loading={noticeLoading} />
-        <ShortcutsCard />
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
@@ -1403,12 +1342,10 @@ export default function DashboardPage() {
             <LatestFeedCard posts={latestPosts} loading={latestLoading} />
           </main>
 
-          {/* 우측 사이드바 — 280px 고정 (공지는 좌측/메인으로 이동했으므로 제거) */}
+          {/* 우측 사이드바 — 280px 고정. 최종 순서: 최신 공지 → 인기글 */}
           <aside className="flex w-[280px] shrink-0 flex-col gap-4">
-            {profileOrLogin}
-            <TrendingSearchCard />
+            <NoticesCard notices={unifiedNotices} loading={noticeLoading} />
             <HotPostsCard posts={hotPosts} loading={hotLoading} />
-            <ShortcutsCard />
           </aside>
         </div>
 
@@ -1428,12 +1365,10 @@ export default function DashboardPage() {
             <LatestFeedCard posts={latestPosts} loading={latestLoading} />
           </main>
 
-          {/* 우측 사이드바 — 300px 고정 (공지는 좌측으로 이동했으므로 제거) */}
+          {/* 우측 사이드바 — 300px 고정. 최종 순서: 최신 공지 → 인기글 */}
           <aside className="flex w-[300px] shrink-0 flex-col gap-4">
-            {profileOrLogin}
-            <TrendingSearchCard />
+            <NoticesCard notices={unifiedNotices} loading={noticeLoading} />
             <HotPostsCard posts={hotPosts} loading={hotLoading} />
-            <ShortcutsCard />
           </aside>
         </div>
       </div>

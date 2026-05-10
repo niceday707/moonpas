@@ -73,7 +73,29 @@ import {
   SCHOOL_NOTICE_SOURCE_META,
   type SchoolNoticeSource,
 } from "@/lib/schoolNotices";
+import {
+  ALLOWED_DOMAIN,
+  ALLOWED_STUDENT_PREFIXES,
+} from "@/lib/auth-const";
 import { cn } from "@/lib/utils";
+
+// ── 역할 자동 결정 ─────────────────────────────────────────
+// 사용자가 직접 역할을 고를 수 없도록 — 이메일 기반으로 자동 부여한다.
+//   · mt24/mt25/mt26 + @moontae.hs.jne.kr → student (재학생)
+//   · mt 로 시작하지 않는 + @moontae.hs.jne.kr → teacher (교사)
+//   · 그 외 → student (안전 기본값. 실제로 도달하면 callback 단에서 이미 차단됨)
+//   · 초대 코드 가입은 이 함수를 거치지 않고 consume_invite_code RPC 가 서버에서 강제한다.
+function deriveRoleFromEmail(email: string | null | undefined): Role {
+  if (!email) return "student";
+  const at = email.indexOf("@");
+  if (at < 0) return "student";
+  const local = email.slice(0, at).toLowerCase();
+  const domain = email.slice(at + 1).toLowerCase();
+  if (domain !== ALLOWED_DOMAIN) return "student";
+  if (ALLOWED_STUDENT_PREFIXES.some((p) => local.startsWith(p))) return "student";
+  if (!local.startsWith("mt")) return "teacher";
+  return "student";
+}
 
 // ── 상수 ──────────────────────────────────────────────────
 
@@ -1187,7 +1209,7 @@ export default function DashboardPage() {
     }
   }, [user, profile, profileError, profileLoading]);
 
-  async function handleSubmitNickname(nickname: string, role: Role) {
+  async function handleSubmitNickname(nickname: string) {
     if (!user) {
       return { ok: false as const, message: "로그인이 필요합니다." };
     }
@@ -1273,8 +1295,9 @@ export default function DashboardPage() {
       return { ok: true as const };
     }
 
-    // 일반 가입 (학교 도메인 Google 계정) — 기존 흐름 유지
-    const finalRole: Role = inviteRole ?? role;
+    // 일반 가입 (학교 도메인 Google 계정) — 역할은 이메일 기반으로 자동 결정.
+    // 사용자가 모달에서 역할을 고를 수 없으므로 클라이언트가 변조할 수 없다.
+    const finalRole: Role = inviteRole ?? deriveRoleFromEmail(user.email);
     // INSERT-only — 이미 row 가 있으면 23505 로 거부되어 nickname/role 덮어쓰기를 차단한다.
     const { error, alreadyExists } = await createInitialProfile(
       user.id,
@@ -1525,12 +1548,10 @@ export default function DashboardPage() {
         문파스 MoonPas · 문태고등학교 커뮤니티 · 함께 나누고, 함께 성장하는 공간
       </div>
 
-      {/* 닉네임 최초 설정 모달 */}
+      {/* 닉네임 최초 설정 모달 — 역할은 이메일/초대코드 기반으로 자동 부여 */}
       <NicknameSetupModal
         open={setupOpen}
         defaultNickname={pickDisplayName(user)}
-        defaultRole={inviteRole ?? "student"}
-        roleLocked={!!inviteRole}
         onSubmit={handleSubmitNickname}
       />
     </motion.div>

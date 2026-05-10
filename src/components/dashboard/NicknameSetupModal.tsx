@@ -1,9 +1,12 @@
 "use client";
 
+// 최초 가입 닉네임 설정 모달.
+// 역할(role) 은 사용자가 고를 수 없다 — 호출 측(dashboard)이 이메일/초대코드 기반으로 자동 결정한다.
+// (admin 만 회원관리 페이지에서 역할을 변경할 수 있음)
+
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Sparkles } from "lucide-react";
-import type { Role } from "@/components/ui/Badge";
 import { normalizeNickname } from "@/lib/supabase-profile";
 
 // 한글 완성형 + 영문 + 숫자 + 공백, 2~10자 (공백은 정규화 후 허용)
@@ -13,39 +16,25 @@ export type NicknameSubmitResult =
   | { ok: true }
   | { ok: false; message: string };
 
-const ROLE_OPTIONS: { value: Role; label: string; desc: string }[] = [
-  { value: "student", label: "재학생", desc: "문태고 학생" },
-  { value: "teacher", label: "교사", desc: "문태고 선생님" },
-  { value: "parent", label: "학부모", desc: "재학생 보호자" },
-  { value: "alumni", label: "졸업생", desc: "문태고 졸업생" },
-];
-
 export function NicknameSetupModal({
   open,
   defaultNickname,
-  defaultRole = "student",
-  roleLocked = false,
   onSubmit,
 }: {
   open: boolean;
   defaultNickname: string;
-  defaultRole?: Role;
-  /** 초대 코드 등으로 역할이 미리 정해진 경우 변경 불가 */
-  roleLocked?: boolean;
-  onSubmit: (nickname: string, role: Role) => Promise<NicknameSubmitResult>;
+  onSubmit: (nickname: string) => Promise<NicknameSubmitResult>;
 }) {
   const [value, setValue] = useState(defaultNickname);
-  const [role, setRole] = useState<Role>(defaultRole);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (open) {
       setValue(defaultNickname);
-      setRole(defaultRole);
       setError(null);
     }
-  }, [open, defaultNickname, defaultRole]);
+  }, [open, defaultNickname]);
 
   async function handleSubmit() {
     // 앞뒤 공백 + 연속 공백 정리 후 검증.
@@ -60,7 +49,7 @@ export function NicknameSetupModal({
     }
     setSubmitting(true);
     setError(null);
-    const res = await onSubmit(trimmed, role);
+    const res = await onSubmit(trimmed);
     setSubmitting(false);
     if (!res.ok) setError(res.message);
   }
@@ -88,9 +77,11 @@ export function NicknameSetupModal({
                 환영합니다
               </span>
             </div>
-            <h2 className="text-lg font-bold text-white">프로필을 설정해주세요</h2>
+            <h2 className="text-lg font-bold text-white">닉네임을 정해주세요</h2>
             <p className="mt-1 text-xs leading-relaxed text-white/60">
-              커뮤니티에서 사용할 닉네임과 역할을 골라주세요. 나중에 프로필에서 변경할 수 있어요.
+              커뮤니티에서 사용할 닉네임이에요. 나중에 프로필에서 변경할 수 있어요.
+              <br />
+              역할(학생/교사/학부모/졸업생)은 가입 경로에 따라 자동으로 설정됩니다.
             </p>
 
             <label className="mt-5 block text-[11px] font-semibold uppercase tracking-widest text-white/50">
@@ -109,42 +100,6 @@ export function NicknameSetupModal({
               disabled={submitting}
               className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-violet-500 focus:outline-none disabled:opacity-50"
             />
-
-            <label className="mt-4 block text-[11px] font-semibold uppercase tracking-widest text-white/50">
-              역할
-              {roleLocked && (
-                <span className="ml-2 text-[10px] font-normal normal-case tracking-normal text-violet-400">
-                  · 초대 코드로 자동 설정
-                </span>
-              )}
-            </label>
-            <div className="mt-1.5 grid grid-cols-2 gap-2">
-              {ROLE_OPTIONS.map((opt) => {
-                const active = role === opt.value;
-                const disabled = submitting || (roleLocked && !active);
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => {
-                      if (roleLocked) return;
-                      setRole(opt.value);
-                    }}
-                    disabled={disabled}
-                    className={
-                      "rounded-xl border px-3 py-2.5 text-left transition " +
-                      (active
-                        ? "border-violet-500 bg-violet-500/15"
-                        : "border-white/10 bg-white/5 hover:bg-white/10") +
-                      (disabled ? " disabled:cursor-not-allowed disabled:opacity-40" : "")
-                    }
-                  >
-                    <div className="text-sm font-bold text-white">{opt.label}</div>
-                    <div className="text-[10px] text-white/50">{opt.desc}</div>
-                  </button>
-                );
-              })}
-            </div>
 
             {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
 

@@ -1,9 +1,23 @@
 "use client";
 
-// 회원 관리 — 회원 목록, 역할 변경, 검색, 페이지네이션
+// 회원 관리 — 회원 목록(닉네임/이메일/실명/역할/가입일), 역할 변경, 검색, 페이지네이션.
+//
+// 데이터 소스:
+//   - GET /api/admin/users (서비스 키로 auth.users 의 email/이름을 profiles 에 머지)
+//     → 500명 규모를 가정하고 한 번에 받아온 뒤 클라이언트에서 검색/페이징.
+//   - 역할 변경: profiles 테이블 직접 UPDATE (DB 트리거가 admin 권한 검증).
+//
+// 역할 변경 권한은 RLS + BEFORE UPDATE 트리거(026 마이그레이션)로 강제된다.
+
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Users, Search, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Users,
+  Search,
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +45,8 @@ type MemberRow = {
   nickname: string;
   role: AdminRole;
   created_at: string;
+  email: string | null;
+  name: string | null;
 };
 
 const PER_PAGE = 20;
@@ -47,61 +63,92 @@ export default function AdminUsersPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [rows, setRows] = useState<MemberRow[]>([]);
-  const [total, setTotal] = useState(0);
+  const [allRows, setAllRows] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
 
   // 검색어 디바운스
   useEffect(() => {
     const t = setTimeout(() => {
-      setDebouncedSearch(search.trim());
+      setDebouncedSearch(search.trim().toLowerCase());
       setPage(1);
     }, 300);
     return () => clearTimeout(t);
   }, [search]);
 
+  // 마운트 시 전체 회원 목록을 한 번 끌어옴 (~500명 규모).
   useEffect(() => {
     let active = true;
 
     async function load() {
       setLoading(true);
-      const from = (page - 1) * PER_PAGE;
-      const to = from + PER_PAGE - 1;
-
-      let query = supabase
-        .from("profiles")
-        .select("id, nickname, role, created_at", { count: "exact" })
-        .order("created_at", { ascending: false })
-        .range(from, to);
-
-      if (debouncedSearch) {
-        query = query.ilike("nickname", `%${debouncedSearch}%`);
+      setLoadError(null);
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) {
+          throw new Error("로그인이 필요합니다.");
+        }
+        const res = await fetch("/api/admin/users", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const json = (await res.json()) as
+          | { ok: true; users: MemberRow[] }
+          | { ok: false; error: string };
+        if (!res.ok || !("ok" in json) || !json.ok) {
+          throw new Error(("error" in json && json.error) || `HTTP ${res.status}`);
+        }
+        if (!active) return;
+        setAllRows(json.users);
+      } catch (e) {
+        if (!active) return;
+        const msg = e instanceof Error ? e.message : "불러오기에 실패했습니다.";
+        console.error("[admin/users] 조회 실패", e);
+        setLoadError(msg);
+        setAllRows([]);
+      } finally {
+        if (active) setLoading(false);
       }
-
-      const { data, count, error } = await query;
-      if (!active) return;
-      if (error) {
-        console.error("[admin/users] 조회 실패", error);
-        setRows([]);
-        setTotal(0);
-      } else {
-        setRows((data ?? []) as MemberRow[]);
-        setTotal(count ?? 0);
-      }
-      setLoading(false);
     }
 
     load();
     return () => {
       active = false;
     };
-  }, [debouncedSearch, page]);
+  }, []);
 
+  // 검색 (닉네임 / 이메일 / 실명) — 클라이언트 사이드.
+  const filteredRows = useMemo(() => {
+    if (!debouncedSearch) return allRows;
+    return allRows.filter((r) => {
+      const hay = [
+        r.nickname?.toLowerCase() ?? "",
+        r.email?.toLowerCase() ?? "",
+        r.name?.toLowerCase() ?? "",
+      ].join("\n");
+      return hay.includes(debouncedSearch);
+    });
+  }, [allRows, debouncedSearch]);
+
+  const total = filteredRows.length;
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(total / PER_PAGE)),
     [total],
   );
+
+  // 페이지가 범위를 벗어나면 클램프
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const pageRows = useMemo(() => {
+    const from = (page - 1) * PER_PAGE;
+    return filteredRows.slice(from, from + PER_PAGE);
+  }, [filteredRows, page]);
 
   async function handleRoleChange(userId: string, role: AdminRole) {
     setUpdating(userId);
@@ -113,7 +160,7 @@ export default function AdminUsersPage() {
       console.error("[admin/users] 역할 변경 실패", error);
       window.alert("역할 변경에 실패했습니다.\n" + error.message);
     } else {
-      setRows((prev) =>
+      setAllRows((prev) =>
         prev.map((r) => (r.id === userId ? { ...r, role } : r)),
       );
     }
@@ -128,8 +175,7 @@ export default function AdminUsersPage() {
           회원 관리
         </h1>
         <p className="mt-1 text-xs text-white/50">
-          닉네임, 역할, 가입일을 확인하고 역할을 변경할 수 있습니다. (이메일은 Supabase
-          대시보드에서 확인)
+          닉네임 · 이메일 · 실명 · 역할 · 가입일을 확인하고 역할을 변경할 수 있습니다.
         </p>
       </div>
 
@@ -141,7 +187,7 @@ export default function AdminUsersPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="닉네임으로 검색"
+            placeholder="닉네임 · 이메일 · 실명으로 검색"
             className="w-full bg-transparent px-3 text-sm text-white outline-none placeholder:text-white/30"
           />
         </div>
@@ -161,7 +207,12 @@ export default function AdminUsersPage() {
           <div className="grid place-items-center py-20 text-xs text-white/40">
             <Loader2 className="h-5 w-5 animate-spin" />
           </div>
-        ) : rows.length === 0 ? (
+        ) : loadError ? (
+          <div className="py-20 text-center text-xs text-rose-300">
+            불러오기에 실패했습니다.
+            <p className="mt-1 text-white/50">{loadError}</p>
+          </div>
+        ) : pageRows.length === 0 ? (
           <div className="py-20 text-center text-xs text-white/40">
             {debouncedSearch
               ? `"${debouncedSearch}" 검색 결과가 없습니다.`
@@ -169,31 +220,44 @@ export default function AdminUsersPage() {
           </div>
         ) : (
           <>
+            {/* 데스크톱 테이블 */}
             <div className="hidden md:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-white/[0.05] text-left text-[11px] font-semibold uppercase tracking-wider text-white/40">
-                    <th className="px-5 py-3">닉네임</th>
-                    <th className="px-5 py-3">역할</th>
-                    <th className="px-5 py-3">가입일</th>
-                    <th className="px-5 py-3 text-right">역할 변경</th>
+                    <th className="px-4 py-3">닉네임</th>
+                    <th className="px-4 py-3">이메일</th>
+                    <th className="px-4 py-3">실명</th>
+                    <th className="px-4 py-3">역할</th>
+                    <th className="px-4 py-3">가입일</th>
+                    <th className="px-4 py-3 text-right">역할 변경</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((m) => (
+                  {pageRows.map((m) => (
                     <tr
                       key={m.id}
                       className="border-b border-white/[0.04] last:border-b-0"
                     >
-                      <td className="px-5 py-3">
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-2.5">
-                          <div className="grid h-8 w-8 place-items-center rounded-lg bg-[linear-gradient(135deg,#7c3aed,#06b6d4)] text-xs font-bold text-white">
+                          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[linear-gradient(135deg,#7c3aed,#06b6d4)] text-xs font-bold text-white">
                             {m.nickname.charAt(0)}
                           </div>
                           <span className="font-semibold">{m.nickname}</span>
                         </div>
                       </td>
-                      <td className="px-5 py-3">
+                      <td className="px-4 py-3 text-xs text-white/70">
+                        {m.email ? (
+                          <span className="break-all">{m.email}</span>
+                        ) : (
+                          <span className="text-white/30">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-white/70">
+                        {m.name ?? <span className="text-white/30">—</span>}
+                      </td>
+                      <td className="px-4 py-3">
                         <span
                           className={cn(
                             "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset",
@@ -203,10 +267,10 @@ export default function AdminUsersPage() {
                           {ROLE_LABEL[m.role]}
                         </span>
                       </td>
-                      <td className="px-5 py-3 text-xs text-white/60">
+                      <td className="px-4 py-3 text-xs text-white/60">
                         {formatDate(m.created_at)}
                       </td>
-                      <td className="px-5 py-3 text-right">
+                      <td className="px-4 py-3 text-right">
                         <select
                           value={m.role}
                           disabled={updating === m.id}
@@ -228,16 +292,30 @@ export default function AdminUsersPage() {
               </table>
             </div>
 
-            {/* 모바일 카드 뷰 */}
+            {/* 모바일 카드 뷰 — 이메일/실명을 작게 함께 표시 */}
             <ul className="divide-y divide-white/[0.04] md:hidden">
-              {rows.map((m) => (
+              {pageRows.map((m) => (
                 <li key={m.id} className="px-4 py-3">
                   <div className="flex items-center gap-2.5">
                     <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[linear-gradient(135deg,#7c3aed,#06b6d4)] text-xs font-bold text-white">
                       {m.nickname.charAt(0)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{m.nickname}</p>
+                      <p className="flex items-center gap-1.5">
+                        <span className="truncate text-sm font-semibold">
+                          {m.nickname}
+                        </span>
+                        {m.name && (
+                          <span className="shrink-0 text-[10px] text-white/40">
+                            · {m.name}
+                          </span>
+                        )}
+                      </p>
+                      {m.email && (
+                        <p className="truncate text-[11px] text-white/50">
+                          {m.email}
+                        </p>
+                      )}
                       <p className="text-[11px] text-white/40">
                         {formatDate(m.created_at)}
                       </p>

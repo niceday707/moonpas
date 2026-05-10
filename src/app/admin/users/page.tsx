@@ -9,14 +9,16 @@
 //
 // 역할 변경 권한은 RLS + BEFORE UPDATE 트리거(026 마이그레이션)로 강제된다.
 
-import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Users,
   Search,
   Loader2,
   ChevronLeft,
   ChevronRight,
+  Check,
+  AlertTriangle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -67,6 +69,20 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
+
+  // 토스트 — 역할 변경 결과 안내 (성공/실패)
+  const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function showToast(message: string, tone: "success" | "error") {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ message, tone });
+    toastTimerRef.current = setTimeout(() => setToast(null), 1800);
+  }
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   // 검색어 디바운스
   useEffect(() => {
@@ -158,11 +174,12 @@ export default function AdminUsersPage() {
       .eq("id", userId);
     if (error) {
       console.error("[admin/users] 역할 변경 실패", error);
-      window.alert("역할 변경에 실패했습니다.\n" + error.message);
+      showToast("역할 변경에 실패했습니다.", "error");
     } else {
       setAllRows((prev) =>
         prev.map((r) => (r.id === userId ? { ...r, role } : r)),
       );
+      showToast("역할이 변경되었습니다.", "success");
     }
     setUpdating(null);
   }
@@ -361,6 +378,33 @@ export default function AdminUsersPage() {
           onChange={setPage}
         />
       )}
+
+      {/* 토스트 — 역할 변경 결과 */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ duration: 0.22 }}
+            className={cn(
+              "fixed bottom-8 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-2.5 text-sm shadow-lg ring-1",
+              toast.tone === "success"
+                ? "bg-gray-800 text-white ring-emerald-400/30"
+                : "bg-gray-800 text-white ring-rose-400/40",
+            )}
+            role="status"
+            aria-live="polite"
+          >
+            {toast.tone === "success" ? (
+              <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
+            )}
+            {toast.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

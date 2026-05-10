@@ -10,7 +10,11 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { ALLOWED_DOMAIN, SS_INVITE_CODE } from "@/lib/auth-const";
+import {
+  ALLOWED_DOMAIN,
+  ALLOWED_STUDENT_PREFIXES,
+  SS_INVITE_CODE,
+} from "@/lib/auth-const";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
@@ -41,10 +45,26 @@ export default function AuthCallbackPage() {
       if (!userEmail.endsWith(`@${ALLOWED_DOMAIN}`)) {
         await supabase.auth.signOut();
         setError(
-          `@${ALLOWED_DOMAIN} 학교 이메일만 로그인할 수 있습니다.\n(입력된 이메일: ${userEmail})\n잠시 후 로그인 페이지로 이동합니다…`
+          `@${ALLOWED_DOMAIN} 학교 이메일만 로그인할 수 있습니다.\n(입력된 이메일: ${userEmail})\n학부모/졸업생은 초대 코드가 필요합니다.\n잠시 후 로그인 페이지로 이동합니다…`
         );
         setTimeout(() => router.replace("/login"), 2500);
         return;
+      }
+
+      // 학교 도메인 사용자: 학생(mt~)은 재학생 학번만 허용, 그 외는 교사로 간주
+      const localPart = userEmail.slice(0, userEmail.indexOf("@")).toLowerCase();
+      if (localPart.startsWith("mt")) {
+        const isCurrentStudent = ALLOWED_STUDENT_PREFIXES.some((p) =>
+          localPart.startsWith(p)
+        );
+        if (!isCurrentStudent) {
+          await supabase.auth.signOut();
+          setError(
+            "졸업생은 초대 코드가 필요합니다.\n담당 선생님께 초대 코드를 요청하세요.\n잠시 후 로그인 페이지로 이동합니다…"
+          );
+          setTimeout(() => router.replace("/login"), 2500);
+          return;
+        }
       }
 
       router.replace("/dashboard");

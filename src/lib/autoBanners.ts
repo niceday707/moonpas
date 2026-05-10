@@ -2,6 +2,7 @@
 // 학사일정 기반 자동 배너 생성 — DB 불필요, 코드에서 동적 생성
 
 import { SCHOOL_SCHEDULE } from '@/data/schoolSchedule';
+import { supabase } from '@/lib/supabase';
 
 export interface AutoBanner {
   id: string;
@@ -9,7 +10,7 @@ export interface AutoBanner {
   description: string;
   link: string | null;
   image_url: null;
-  banner_type: 'auto_exam' | 'auto_event';
+  banner_type: 'auto_exam' | 'auto_event' | 'auto_birthday';
   gradient: string;
   emoji: string;
   dday: number;
@@ -142,4 +143,65 @@ export function getAutoBanners(): AutoBanner[] {
   if (eventBanner) banners.push(eventBanner);
 
   return banners;
+}
+
+// ─── 오늘 생일자 배너 (Supabase 비동기 조회) ───
+// getAutoBanners() 가 동기라서 별도 비동기 함수로 분리.
+// BannerSlider 가 useEffect 로 fetch 해서 slides 에 합친다.
+export async function getBirthdayBanners(): Promise<AutoBanner[]> {
+  const kst = new Date(
+    new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }),
+  );
+  const month = kst.getMonth() + 1;
+  const day = kst.getDate();
+
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('nickname')
+      .eq('birth_month', month)
+      .eq('birth_day', day)
+      .limit(50);
+
+    if (error) {
+      console.error('[getBirthdayBanners] 조회 실패', error);
+      return [];
+    }
+    if (!data || data.length === 0) return [];
+
+    const names = (data as Array<{ nickname: string | null }>)
+      .map((r) => (r.nickname ?? '').trim())
+      .filter((n) => n.length > 0);
+
+    if (names.length === 0) return [];
+
+    let description: string;
+    if (names.length === 1) {
+      description = `${names[0]}님의 생일입니다! 클릭해서 축하 메시지를 남겨주세요 🎉`;
+    } else if (names.length === 2) {
+      description = `${names[0]}, ${names[1]}님의 생일입니다! 클릭해서 축하 메시지를 남겨주세요 🎉`;
+    } else {
+      description = `${names[0]} 외 ${names.length - 1}명의 생일입니다! 클릭해서 축하 메시지를 남겨주세요 🎉`;
+    }
+
+    const mm = String(month).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
+
+    return [
+      {
+        id: `auto_birthday_${mm}_${dd}`,
+        title: '🎂 오늘의 생일',
+        description,
+        link: '/birthday',
+        image_url: null,
+        banner_type: 'auto_birthday',
+        gradient: 'from-pink-500 via-rose-400 to-yellow-400',
+        emoji: '🎂',
+        dday: 0,
+      },
+    ];
+  } catch (e) {
+    console.error('[getBirthdayBanners] 예외', e);
+    return [];
+  }
 }

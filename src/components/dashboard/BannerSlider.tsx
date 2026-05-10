@@ -12,7 +12,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { listActiveBanners, type Banner } from "@/lib/banners";
-import { getAutoBanners, type AutoBanner } from "@/lib/autoBanners";
+import {
+  getAutoBanners,
+  getBirthdayBanners,
+  type AutoBanner,
+} from "@/lib/autoBanners";
 
 const SWIPE_THRESHOLD = 50; // px
 const SLIDE_INTERVAL_MS = 4000;
@@ -24,6 +28,7 @@ type Slide =
 
 export function BannerSlider() {
   const [manualBanners, setManualBanners] = useState<Banner[]>([]);
+  const [birthdayBanners, setBirthdayBanners] = useState<AutoBanner[]>([]);
   const [loading, setLoading] = useState(true);
   const [current, setCurrent] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -47,12 +52,29 @@ export function BannerSlider() {
     };
   }, []);
 
+  // 생일 배너 로드 (비동기 — Supabase 조회)
+  useEffect(() => {
+    let cancelled = false;
+    getBirthdayBanners()
+      .then((data) => {
+        if (cancelled) return;
+        setBirthdayBanners(data);
+      })
+      .catch(() => {
+        // 실패해도 다른 배너는 정상 노출
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // 자동 배너 + 수동 배너 합치기 (자동 배너를 앞에 배치 — 시험/행사 정보가 가장 시급)
   const slides = useMemo<Slide[]>(() => {
     const auto = getAutoBanners().map<Slide>((b) => ({ kind: "auto", data: b }));
+    const birthday = birthdayBanners.map<Slide>((b) => ({ kind: "auto", data: b }));
     const manual = manualBanners.map<Slide>((b) => ({ kind: "manual", data: b }));
-    return [...auto, ...manual];
-  }, [manualBanners]);
+    return [...auto, ...birthday, ...manual];
+  }, [manualBanners, birthdayBanners]);
 
   const total = slides.length;
 

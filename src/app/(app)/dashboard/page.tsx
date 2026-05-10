@@ -36,6 +36,7 @@ import {
   Pin,
 } from "lucide-react";
 import { BannerSlider } from "@/components/dashboard/BannerSlider";
+import { BirthdayCelebration } from "@/components/dashboard/BirthdayCelebration";
 import { ExamWidget } from "@/components/dashboard/ExamWidget";
 import { NicknameSetupModal } from "@/components/dashboard/NicknameSetupModal";
 import { PushNotificationBanner } from "@/components/dashboard/PushNotificationBanner";
@@ -1301,6 +1302,14 @@ export default function DashboardPage() {
     >
       {/* 푸시 알림 권한 배너 — 로그인 사용자에게만 표시 */}
       {isLoggedIn && user && <PushNotificationBanner userId={user.id} />}
+
+      {/* 본인 생일 당일 1회 — confetti + 오버레이 */}
+      {profile && (
+        <BirthdayCelebration
+          birthMonth={profile.birth_month}
+          birthDay={profile.birth_day}
+        />
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
           모바일 (md 미만): 1단 세로 스택

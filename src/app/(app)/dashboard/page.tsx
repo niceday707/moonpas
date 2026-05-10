@@ -36,6 +36,7 @@ import {
   Pin,
 } from "lucide-react";
 import { BannerSlider } from "@/components/dashboard/BannerSlider";
+import { ExamWidget } from "@/components/dashboard/ExamWidget";
 import { NicknameSetupModal } from "@/components/dashboard/NicknameSetupModal";
 import { PushNotificationBanner } from "@/components/dashboard/PushNotificationBanner";
 import { NicknameButton } from "@/components/profile/NicknameButton";
@@ -1260,6 +1261,7 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-4 md:hidden">
         <MealCard />
         <SchoolCalendar />
+        <ExamWidget />
         <BannerSlider />
         <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
         <LatestFeedCard posts={latestPosts} loading={latestLoading} />
@@ -1286,6 +1288,7 @@ export default function DashboardPage() {
           <main className="flex min-w-0 flex-1 flex-col gap-4">
             <MealCard />
             <SchoolCalendar />
+            <ExamWidget />
             <NoticesCard notices={unifiedNotices} loading={noticeLoading} />
             <MoonTubeStrip videos={youtubeItems} loading={youtubeLoading} />
             <LatestFeedCard posts={latestPosts} loading={latestLoading} />
@@ -1306,6 +1309,7 @@ export default function DashboardPage() {
           <aside className="flex w-[280px] shrink-0 flex-col gap-4">
             <MealCard />
             <SchoolCalendar />
+            <ExamWidget />
             <NoticesCard notices={unifiedNotices} loading={noticeLoading} />
           </aside>
 

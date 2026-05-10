@@ -58,6 +58,7 @@ const MEGA_NAV: NavGroup[] = [
     label: "재학생 🎧",
     items: [
       { href: "/timetable", label: "시간표" },
+      { href: "/exam-schedule", label: "평가일정 📝" },
       { boardType: "youtube", label: "문튜브" },
       { boardType: "resources", label: "학습 자료실" },
       { boardType: "debate", label: "이슈토론" },

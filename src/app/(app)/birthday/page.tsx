@@ -43,14 +43,20 @@ type BirthdayMessage = {
   } | null;
 };
 
-// 표시 윈도우 — D-2, D-1, 오늘, D+1
-const DAY_DELTAS = [-2, -1, 0, 1];
+// 표시 윈도우 — 모레(D-2) → 내일(D-1) → 오늘 → 어제(D+1)
+// delta = 오늘과의 일수 차이. 음수가 과거(이미 지난 생일), 양수가 미래(다가올 생일).
+//   delta = -1 → 어제 → "D+1" (1일 지남)
+//   delta =  0 → 오늘 → "오늘"
+//   delta =  1 → 내일 → "D-1" (1일 남음)
+//   delta =  2 → 모레 → "D-2" (2일 남음)
+// 화면 표시는 가장 먼 미래(D-2)부터 어제(D+1) 순서로 위→아래.
+const DAY_DELTAS = [2, 1, 0, -1];
 
 const DELTA_LABEL: Record<number, string> = {
-  [-2]: "D-2",
-  [-1]: "D-1",
+  [-1]: "D+1",
   [0]: "오늘",
-  [1]: "D+1",
+  [1]: "D-1",
+  [2]: "D-2",
 };
 
 function formatRelative(iso: string): string {
@@ -298,8 +304,10 @@ function BirthdayShell() {
         <MonthList people={monthPeople} loading={loading} todayDay={day} />
       </section>
 
-      {/* 관리자 — birthday_registry 일괄 등록/관리 */}
-      {isAdmin && <AdminRegistrySection />}
+      {/* 생일 일괄 등록 — 모든 로그인 사용자 노출. 본인 등록만 보임(admin 은 전체) */}
+      {user && (
+        <RegistrySection userId={user.id} isAdmin={isAdmin} />
+      )}
     </div>
   );
 }
@@ -682,7 +690,13 @@ const CLASS_OPTIONS = [
 const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1);
 const DAY_OPTIONS = Array.from({ length: 31 }, (_, i) => i + 1);
 
-function AdminRegistrySection() {
+function RegistrySection({
+  userId,
+  isAdmin,
+}: {
+  userId: string;
+  isAdmin: boolean;
+}) {
   const [grade, setGrade] = useState<number>(1);
   const [classNum, setClassNum] = useState<number>(1);
   const [name, setName] = useState("");
@@ -698,20 +712,29 @@ function AdminRegistrySection() {
   const isCustom = grade === 99;
   const isTeacher = grade === 0;
 
+  /**
+   * 목록 조회.
+   *   admin → 전체
+   *   일반 → 본인이 등록한 것(created_by = user.id)만
+   */
   const loadRegistry = useCallback(async () => {
     setRegistryLoading(true);
-    const { data, error: e } = await supabase
+    let query = supabase
       .from("birthday_registry")
       .select("*")
       .order("grade", { ascending: true })
       .order("class", { ascending: true })
       .order("name", { ascending: true });
+    if (!isAdmin) {
+      query = query.eq("created_by", userId);
+    }
+    const { data, error: e } = await query;
     if (e) {
-      console.error("[admin/registry] 목록 조회 실패", e);
+      console.error("[registry] 목록 조회 실패", e);
     }
     setRegistry((data ?? []) as BirthdayRegistryRow[]);
     setRegistryLoading(false);
-  }, []);
+  }, [isAdmin, userId]);
 
   useEffect(() => {
     void loadRegistry();
@@ -741,10 +764,11 @@ function AdminRegistrySection() {
       name: trimmedName,
       birth_month: birthMonth,
       birth_day: birthDay,
+      created_by: userId,
     });
     setSubmitting(false);
     if (e) {
-      console.error("[admin/registry] 등록 실패", e);
+      console.error("[registry] 등록 실패", e);
       setError(`등록에 실패했어요: ${e.message}`);
       return;
     }
@@ -753,17 +777,19 @@ function AdminRegistrySection() {
     setName("");
     setBirthMonth(1);
     setBirthDay(1);
+    // 방금 등록한 항목이 즉시 보이도록 refetch
     await loadRegistry();
   }
 
   async function remove(id: number) {
+    if (!isAdmin) return;
     if (!window.confirm("이 항목을 삭제할까요?")) return;
     const { error: e } = await supabase
       .from("birthday_registry")
       .delete()
       .eq("id", id);
     if (e) {
-      console.error("[admin/registry] 삭제 실패", e);
+      console.error("[registry] 삭제 실패", e);
       showToast("삭제에 실패했어요");
       return;
     }
@@ -774,11 +800,8 @@ function AdminRegistrySection() {
   return (
     <section className="mt-10 rounded-2xl border border-violet-200 bg-violet-50/50 p-4 dark:border-violet-500/30 dark:bg-violet-500/[0.06] md:p-5">
       <div className="mb-3 flex items-center gap-2">
-        <span className="rounded-full bg-violet-500 px-2 py-0.5 text-[10px] font-bold text-white">
-          ADMIN
-        </span>
         <h2 className="text-base font-extrabold tracking-tight text-violet-700 dark:text-violet-200 md:text-lg">
-          🎂 생일 등록
+          🎂 생일 일괄 등록
         </h2>
       </div>
       <p className="mb-4 text-xs text-foreground/55">
@@ -889,10 +912,12 @@ function AdminRegistrySection() {
         )}
       </AnimatePresence>
 
-      {/* 등록된 목록 */}
+      {/* 등록된 목록 — admin: 전체 / 일반: 본인 등록만 */}
       <div className="mt-6">
         <div className="mb-2 flex items-center gap-2">
-          <span className="text-sm font-bold text-foreground/80">등록된 생일</span>
+          <span className="text-sm font-bold text-foreground/80">
+            {isAdmin ? "등록된 생일" : "내가 등록한 생일"}
+          </span>
           <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[11px] font-bold tabular-nums text-foreground/70">
             {registry.length}명
           </span>
@@ -909,7 +934,9 @@ function AdminRegistrySection() {
           </ul>
         ) : registry.length === 0 ? (
           <p className="rounded-xl border border-dashed border-gray-200 px-4 py-5 text-center text-xs text-foreground/45 dark:border-white/[0.08]">
-            아직 등록된 항목이 없어요.
+            {isAdmin
+              ? "아직 등록된 항목이 없어요."
+              : "아직 내가 등록한 항목이 없어요."}
           </p>
         ) : (
           <ul className="flex flex-col gap-1.5">
@@ -924,14 +951,16 @@ function AdminRegistrySection() {
                 <span className="shrink-0 text-[11px] tabular-nums text-foreground/60">
                   {r.birth_month}월 {r.birth_day}일
                 </span>
-                <button
-                  type="button"
-                  onClick={() => remove(r.id)}
-                  aria-label="삭제"
-                  className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-foreground/45 transition-colors hover:bg-rose-500/10 hover:text-rose-500"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => remove(r.id)}
+                    aria-label="삭제"
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-foreground/45 transition-colors hover:bg-rose-500/10 hover:text-rose-500"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </li>
             ))}
           </ul>

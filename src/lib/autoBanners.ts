@@ -153,7 +153,8 @@ export function getAutoBanners(): AutoBanner[] {
 //   1) profiles  — 실제 가입 유저의 nickname
 //   2) birthday_registry — 관리자 등록 (학년/반/이름 또는 교사)
 //
-// 노출 기간: D-2 ~ D+1 의 4일 윈도우 안에 누구라도 생일이면 배너 노출.
+// 노출 기간: D-2(모레) ~ D+1(어제) 의 4일 윈도우 안에 누구라도 생일이면 배너 노출.
+//   delta = -1 (어제) ~ 2 (모레)
 export async function getBirthdayBanners(): Promise<AutoBanner[]> {
   const kst = new Date(
     new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }),
@@ -162,7 +163,7 @@ export async function getBirthdayBanners(): Promise<AutoBanner[]> {
   const day = kst.getDate();
 
   try {
-    const days = getKstDayRange([-2, -1, 0, 1]);
+    const days = getKstDayRange([-1, 0, 1, 2]);
     const people = await fetchBirthdaysOnDays(days);
     const names = people.map((p) => p.displayName).filter((n) => n.length > 0);
     if (names.length === 0) return [];

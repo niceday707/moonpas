@@ -17,13 +17,15 @@ import {
 } from "@/lib/birthdays";
 import { cn } from "@/lib/utils";
 
-const DELTAS = [-2, -1, 0, 1];
+// D-2(모레) → D-1(내일) → 오늘 → D+1(어제) 순서로 위→아래 표시.
+// delta 양수 = 미래(다가올 생일), 음수 = 과거(이미 지난 생일).
+const DELTAS = [2, 1, 0, -1];
 
 const LABEL_BY_DELTA: Record<number, string> = {
-  [-2]: "D-2",
-  [-1]: "D-1",
+  [-1]: "D+1",
   [0]: "오늘",
-  [1]: "D+1",
+  [1]: "D-1",
+  [2]: "D-2",
 };
 
 type WindowEntry = { delta: number; month: number; day: number };

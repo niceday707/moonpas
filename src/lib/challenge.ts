@@ -306,6 +306,31 @@ export async function incrementChallengeView(
   }
 }
 
+/**
+ * 챌린지의 "메인 공지 글" id 조회 — 댓글(토론) 섹션 앵커로 사용.
+ *   메인 글 = board_type='challenge' AND challenge_id=$1 AND post_category IS NULL
+ *   (인증 글은 post_category 가 'attendance'/'study_cert'/'exercise' 로 채워져 있음)
+ *   없으면 null. 챌린지 생성 이전 레거시 데이터에서는 null 일 수 있다.
+ */
+export async function getChallengeMainPostId(
+  challengeId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("posts")
+    .select("id")
+    .eq("board_type", "challenge")
+    .eq("challenge_id", challengeId)
+    .is("post_category", null)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.warn("[getChallengeMainPostId] 실패", error);
+    return null;
+  }
+  return (data as { id: string } | null)?.id ?? null;
+}
+
 // ─────────────────────────────────────────────────────────
 // 생성 / 참여 / 탈퇴
 // ─────────────────────────────────────────────────────────
@@ -365,6 +390,25 @@ export async function createChallenge(input: {
     });
   if (pErr) {
     console.warn("[createChallenge] 자동 참여 INSERT 실패", pErr);
+  }
+
+  // 메인 공지 글 자동 INSERT — 최신글 피드 노출 + 댓글(토론) 앵커.
+  //   · post_category 는 NULL 로 둔다 (인증 글은 'attendance'/'study_cert'/'exercise').
+  //     postDetailHref 는 challenge_id 가 있고 post_category 가 NULL 이면 챌린지 상세로 라우팅.
+  //   · 인증 타임라인에는 노출되지 않도록 fetchTimelinePosts 가 post_category IS NOT NULL 로 필터.
+  const mainContent =
+    rawDesc.length > 0 ? rawDesc : `${input.title.trim()} 챌린지가 시작되었어요!`;
+  const { error: mainErr } = await supabase.from("posts").insert({
+    author_id: uid,
+    board_type: "challenge",
+    title: input.title.trim(),
+    content: mainContent,
+    image_url: input.image_url ?? null,
+    challenge_id: data.id,
+    post_category: null,
+  });
+  if (mainErr) {
+    console.warn("[createChallenge] 메인 공지 글 INSERT 실패", mainErr);
   }
 
   return { id: data.id, error: null };

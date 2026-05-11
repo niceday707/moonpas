@@ -487,7 +487,10 @@ function MyPostList({ posts }: { posts: PostRow[] | null }) {
       {posts.map((p) => (
         <li key={p.id}>
           <Link
-            href={postDetailHref(p.board_type, p.id)}
+            href={postDetailHref(p.board_type, p.id, {
+              challengeId: p.challenge_id,
+              postCategory: p.post_category,
+            })}
             className="glass block rounded-2xl p-4 transition-shadow hover:shadow-[0_6px_20px_rgba(124,58,237,0.2)]"
           >
             <div className="mb-1 flex items-center gap-2 text-[11px] text-foreground/55">
@@ -530,7 +533,12 @@ function MyCommentList({ comments }: { comments: UserCommentRow[] | null }) {
     <ul className="flex flex-col gap-2">
       {comments.map((c) => {
         const targetLabel = c.post ? BOARD_LABEL[c.post.board_type] : "댓글";
-        const href = c.post ? postDetailHref(c.post.board_type, c.post.id) : "#";
+        const href = c.post
+          ? postDetailHref(c.post.board_type, c.post.id, {
+              challengeId: c.post.challenge_id,
+              postCategory: c.post.post_category,
+            })
+          : "#";
         return (
           <li key={c.id}>
             <Link href={href} className="glass block rounded-2xl p-4">

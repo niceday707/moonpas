@@ -9,12 +9,27 @@ import type { Role } from "@/components/ui/Badge";
 
 /**
  * 게시글 상세 페이지 URL.
- * 챌린지 인증 글은 /board/challenge/[challengeId] 라우트와 충돌하므로
- * 별도 라우트(/board/challenge/post/[postId])로 보낸다.
- * 그 외는 /board/[boardType]/[postId].
+ *
+ *  · 챌린지 "메인" 글 — 챌린지 생성 시 자동 INSERT 되는 공지성 글.
+ *      challenge_id 가 있고 post_category 가 NULL 이면 main 으로 판정 →
+ *      /board/challenge/{challengeId} 챌린지 상세로 이동.
+ *  · 챌린지 "인증(proof)" 글 — post_category 가 'attendance'/'study_cert'/'exercise'.
+ *      → /board/challenge/post/{postId} 인증 글 상세로 이동.
+ *  · opts 미전달이거나 challenge_id 가 없으면 안전한 기본값으로 인증 글 상세로 보낸다
+ *    (기존 호출 사이트와 호환).
+ *  · 그 외 board 는 /board/{boardType}/{postId}.
  */
-export function postDetailHref(boardType: string, postId: string): string {
-  if (boardType === "challenge") return `/board/challenge/post/${postId}`;
+export function postDetailHref(
+  boardType: string,
+  postId: string,
+  opts?: { challengeId?: string | null; postCategory?: string | null },
+): string {
+  if (boardType === "challenge") {
+    if (opts?.challengeId && !opts.postCategory) {
+      return `/board/challenge/${opts.challengeId}`;
+    }
+    return `/board/challenge/post/${postId}`;
+  }
   return `/board/${boardType}/${postId}`;
 }
 
@@ -187,6 +202,8 @@ export type PostRow = {
   // 챌린지 전용 — 그 외에는 null/undefined.
   challenge_status: ChallengeStatus | null;
   challenge_rejected_reason: string | null;
+  /** 챌린지 글이 어느 챌린지에 속하는지 — 그 외 board_type 에서는 null. */
+  challenge_id: string | null;
 };
 
 export type CommentRow = {
@@ -233,6 +250,7 @@ const POST_SELECT = `
   id, author_id, board_type, title, content, image_url, file_url, file_name,
   view_count, like_count, is_pinned, status, vote_a, vote_b, created_at, updated_at,
   grade, subject_tag, post_category, challenge_status, challenge_rejected_reason,
+  challenge_id,
   author:profiles!author_id ( id, nickname, role, avatar_url ),
   comments_aggregate:comments(count)
 `;
@@ -247,6 +265,7 @@ type RawPost = Omit<
   | "vote_b"
   | "challenge_status"
   | "challenge_rejected_reason"
+  | "challenge_id"
 > & {
   is_pinned: boolean | null;
   status: PostStatus | null;
@@ -254,6 +273,7 @@ type RawPost = Omit<
   vote_b: number | null;
   challenge_status: ChallengeStatus | null;
   challenge_rejected_reason: string | null;
+  challenge_id: string | null;
   author: {
     id: string;
     nickname: string;
@@ -296,6 +316,7 @@ function normalizePost(raw: RawPost, currentUserId: string | null): PostRow {
     // challenge_status 가 NULL/미적용 환경이면 'approved' 로 간주 (DEFAULT 값과 동일).
     challenge_status: (raw.challenge_status as ChallengeStatus | null) ?? "approved",
     challenge_rejected_reason: raw.challenge_rejected_reason ?? null,
+    challenge_id: raw.challenge_id ?? null,
   };
 }
 
@@ -1796,6 +1817,7 @@ function anonPostToPostRow(r: AnonPostRpc): PostRow {
     // 익명 게시판은 챌린지가 아니므로 챌린지 상태도 null.
     challenge_status: null,
     challenge_rejected_reason: null,
+    challenge_id: null,
   };
 }
 
@@ -2416,6 +2438,8 @@ export type UserCommentRow = CommentRow & {
     id: string;
     title: string;
     board_type: BoardType;
+    challenge_id: string | null;
+    post_category: string | null;
   } | null;
 };
 
@@ -2428,7 +2452,7 @@ export async function getUserComments(
     .select(
       `id, post_id, parent_id, author_id, content, created_at,
        author:profiles!author_id ( id, nickname, role, avatar_url ),
-       post:posts!post_id ( id, title, board_type, author_id )`,
+       post:posts!post_id ( id, title, board_type, author_id, challenge_id, post_category )`,
     )
     .eq("author_id", userId)
     .order("created_at", { ascending: false })
@@ -2440,7 +2464,14 @@ export async function getUserComments(
 
   type Raw = RawComment & {
     post:
-      | { id: string; title: string; board_type: BoardType; author_id: string }
+      | {
+          id: string;
+          title: string;
+          board_type: BoardType;
+          author_id: string;
+          challenge_id: string | null;
+          post_category: string | null;
+        }
       | null;
   };
 
@@ -2455,6 +2486,8 @@ export async function getUserComments(
             id: row.post.id,
             title: row.post.title,
             board_type: row.post.board_type,
+            challenge_id: row.post.challenge_id ?? null,
+            post_category: row.post.post_category ?? null,
           }
         : null,
     };

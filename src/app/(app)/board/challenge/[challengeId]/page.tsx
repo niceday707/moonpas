@@ -20,6 +20,7 @@ import {
 import { AuthGate } from "@/components/auth/AuthGate";
 import { Badge } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
+import { PostComments } from "@/components/comments/PostComments";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
@@ -29,6 +30,7 @@ import {
   CHALLENGE_TAG_STYLE,
   formatChallengeDuration,
   getChallenge,
+  getChallengeMainPostId,
   getChallengeParticipants,
   getChallengeStatsForChallenge,
   incrementChallengeView,
@@ -57,13 +59,16 @@ export default function ChallengeDetailPage() {
 function ChallengeDetailInner() {
   const params = useParams<{ challengeId: string }>();
   const challengeId = params.challengeId;
-  const { user } = useSupabaseProfile();
+  const { user, profile } = useSupabaseProfile();
 
   const [challenge, setChallenge] = useState<Challenge | null>(null);
   const [loading, setLoading] = useState(true);
   const [participants, setParticipants] = useState<ChallengeParticipant[]>([]);
   const [stats, setStats] = useState<ChallengeStatsForChallenge | null>(null);
   const [posts, setPosts] = useState<TimelinePost[]>([]);
+  // 댓글(토론) 앵커가 될 메인 공지 글 id — 챌린지 생성 시 자동 INSERT 되는 글.
+  // 레거시(메인 글 미존재) 챌린지에서는 null. 그 경우 댓글 섹션은 렌더하지 않는다.
+  const [mainPostId, setMainPostId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const viewCounted = useRef(false);
@@ -77,12 +82,14 @@ function ChallengeDetailInner() {
       getChallengeParticipants(challengeId),
       getChallengeStatsForChallenge(challengeId),
       fetchTimelinePosts(challengeId),
-    ]).then(([c, parts, s, ps]) => {
+      getChallengeMainPostId(challengeId),
+    ]).then(([c, parts, s, ps, mainId]) => {
       if (!active) return;
       setChallenge(c);
       setParticipants(parts);
       setStats(s);
       setPosts(ps);
+      setMainPostId(mainId);
       setLoading(false);
     });
 
@@ -194,8 +201,8 @@ function ChallengeDetailInner() {
                 </span>
               )}
             </div>
-            {/* 개설자 */}
-            <div className="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            {/* 개설자 + 날짜 + 조회수 */}
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
               <UserAvatar
                 size="xs"
                 nickname={challenge.creator?.nickname}
@@ -209,7 +216,12 @@ function ChallengeDetailInner() {
                 <Badge role={challenge.creator.role} className="text-[9px] py-0 px-1.5" />
               )}
               <span>·</span>
-              <span>{formatYmd(challenge.created_at)}</span>
+              <span className="tabular-nums">{formatYmd(challenge.created_at)}</span>
+              <span>·</span>
+              <span className="inline-flex items-center gap-0.5">
+                <Eye className="h-3 w-3" />
+                {challenge.view_count.toLocaleString()}
+              </span>
             </div>
           </div>
         </div>
@@ -243,7 +255,7 @@ function ChallengeDetailInner() {
           </p>
         )}
 
-        {/* 정보 라인 */}
+        {/* 정보 라인 — 조회수는 위 작성자 라인으로 이동 */}
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500 dark:text-gray-400">
           <span className="inline-flex items-center gap-1">
             <Users className="h-3.5 w-3.5" />
@@ -251,10 +263,6 @@ function ChallengeDetailInner() {
               {participants.length}명
             </strong>{" "}
             참여 중
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <Eye className="h-3.5 w-3.5" />
-            {challenge.view_count.toLocaleString()}
           </span>
           <span className="inline-flex items-center gap-1">
             <Calendar className="h-3.5 w-3.5" />
@@ -398,6 +406,29 @@ function ChallengeDetailInner() {
           </div>
         )}
       </section>
+
+      {/* 댓글(토론) — 메인 공지 글이 있는 경우에만 노출.
+          PostComments 가 하단 고정 입력바를 마운트하므로 페이지 하단 여백을 늘려준다. */}
+      {mainPostId && (
+        <section
+          className="mt-6"
+          style={{ paddingBottom: "calc(8rem + env(safe-area-inset-bottom))" }}
+        >
+          <h2 className="mb-2 text-sm font-bold text-gray-800 dark:text-gray-100">
+            💬 댓글
+          </h2>
+          <PostComments
+            postId={mainPostId}
+            boardType="challenge"
+            currentUserId={user?.id ?? null}
+            composerProfile={{
+              nickname: profile?.nickname ?? null,
+              role: profile?.role ?? null,
+              avatarUrl: profile?.avatar_url ?? null,
+            }}
+          />
+        </section>
+      )}
     </motion.div>
   );
 }
@@ -479,13 +510,16 @@ function relativeTime(iso: string): string {
 }
 
 async function fetchTimelinePosts(challengeId: string): Promise<TimelinePost[]> {
+  // 인증 글만 조회 — post_category 가 'attendance'/'study_cert'/'exercise' 인 것.
+  // 메인 공지 글(post_category IS NULL) 은 타임라인에서 제외.
   const { data, error } = await supabase
     .from("posts")
     .select(
-      "id, author_id, title, image_url, created_at, challenge_status, author:profiles!author_id ( id, nickname, role, avatar_url )",
+      "id, author_id, title, image_url, created_at, challenge_status, post_category, author:profiles!author_id ( id, nickname, role, avatar_url )",
     )
     .eq("board_type", "challenge")
     .eq("challenge_id", challengeId)
+    .not("post_category", "is", null)
     .order("created_at", { ascending: false })
     .limit(60);
   if (error || !data) {

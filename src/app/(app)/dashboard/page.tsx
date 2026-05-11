@@ -311,7 +311,10 @@ function HotPostList({
       {posts.map((p, i) => (
         <li key={p.id}>
           <Link
-            href={postDetailHref(p.board_type, p.id)}
+            href={postDetailHref(p.board_type, p.id, {
+              challengeId: p.challenge_id,
+              postCategory: p.post_category,
+            })}
             className="flex items-start gap-2.5 px-4 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]"
           >
             <span
@@ -611,7 +614,10 @@ function LatestFeedList({
       {posts.map((p) => (
         <li key={p.id}>
           <Link
-            href={postDetailHref(p.board_type, p.id)}
+            href={postDetailHref(p.board_type, p.id, {
+              challengeId: p.challenge_id,
+              postCategory: p.post_category,
+            })}
             className="flex items-center gap-2.5 px-4 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02] sm:gap-3"
           >
             {/* 게시판 뱃지 */}

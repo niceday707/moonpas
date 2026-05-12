@@ -102,14 +102,13 @@ type NotificationSettings = {
   onComment: boolean;
   onReply: boolean;
   onLike: boolean;
+  // 레거시 — 코드/DB 에서 키는 유지하지만 UI 에서는 더 이상 노출하지 않는다.
   onNotice: boolean;
-  // 028 추가 — 게시판별 새 글 알림.
-  // onNotice 는 하위호환을 위해 유지하지만 새 코드는 onSchoolNotice 사용.
+  // 게시판 새 글 알림 — 카테고리 4개 (커뮤니티/이벤트/재학생/교우).
   onCommunity: boolean;
-  onEta: boolean;
-  onChallenge: boolean;
+  onEvent: boolean;
+  onStudent: boolean;
   onAlumni: boolean;
-  onSchoolNotice: boolean;
 };
 
 const DEFAULT_SETTINGS: NotificationSettings = {
@@ -118,10 +117,9 @@ const DEFAULT_SETTINGS: NotificationSettings = {
   onLike: true,
   onNotice: true,
   onCommunity: true,
-  onEta: true,
-  onChallenge: true,
+  onEvent: true,
+  onStudent: true,
   onAlumni: true,
-  onSchoolNotice: true,
 };
 
 async function recipientAllows(
@@ -322,10 +320,10 @@ export async function notifyLike(input: {
 }
 
 // ─────────────────────────────────────────────────────────
-// 4) 공지사항 알림 — fan-out (레거시, onSchoolNotice 키 사용)
+// 4) 공지사항 알림 — fan-out (레거시)
 //    profiles 의 본인 제외 최대 500명에게 알림.
-//    하위호환을 위해 함수는 유지하되 필터 키만 onSchoolNotice 로 갱신.
-//    신규 호출부는 notifyNewPost 사용 권장.
+//    현재 호출처 없음 (WriteShell 은 notifyNewPost 사용) — 하위호환을 위해 유지.
+//    필터는 레거시 onNotice 키 기준.
 // ─────────────────────────────────────────────────────────
 
 const NOTICE_FAN_OUT_LIMIT = 500;
@@ -353,7 +351,7 @@ export async function notifyNotice(input: {
       id: string;
       notification_settings: Partial<NotificationSettings> | null;
     }>)
-      .filter((r) => r.notification_settings?.onSchoolNotice ?? DEFAULT_SETTINGS.onSchoolNotice)
+      .filter((r) => r.notification_settings?.onNotice ?? DEFAULT_SETTINGS.onNotice)
       .map((r) => r.id);
     if (targets.length === 0) return;
 
@@ -388,30 +386,44 @@ export function getBoardNotificationKey(
   boardType: string,
 ): keyof NotificationSettings | null {
   switch (boardType) {
-    // 커뮤니티 — 자유롭게 글이 쌓이는 게시판
+    // ── 커뮤니티: 문태챌린지, 문태에타, 학습게시판, 자유게시판, 나눔장터, 분실물센터, 학생자치회, 이슈토론, Q&A ──
+    case "challenge":
+    case "anonymous":
+    case "study":
     case "free":
-    case "lost":
     case "market":
+    case "lost":
+    case "council":
     case "debate":
     case "qa":
-    case "guess_who":
       return "onCommunity";
-    // 문태 에타 (완전 익명 게시판)
-    case "anonymous":
-      return "onEta";
-    // 학생 챌린지 — 챌린지 메인 글 + 인증 글 모두 포함
-    case "challenge":
-      return "onChallenge";
-    // 문태 교우 (졸업생 관련 게시판)
+
+    // ── 문태 이벤트: 오늘의퀴즈, 누구일까요, 칭찬합시다, 회원참여방, 공부인증, 찹쌀꽈배기, 오늘의생일, 뉴스 ──
+    case "event_quiz":
+    case "guess_who":
+    case "event_praise":
+    case "event_member":
+    case "event_study":
+    case "event_find":
+    case "news":
+      return "onEvent";
+
+    // ── 재학생: 시간표, 평가일정, 별어디계세요, 문튜브, 학술자료실, 이슈토론(college), 입시나침반, 선택과목가이드 ──
+    case "college":
+    case "curriculum":
+    case "youtube":
+    case "resources":
+      return "onStudent";
+
+    // ── 문태교우: 졸업생, 동문뉴스, 선배의한마디, 캠퍼스스토리, 인사이트 ──
     case "alumni":
     case "alumni_news":
     case "senior":
+    case "campus_story":
+    case "insight":
       return "onAlumni";
-    // 학교 알림 (운영진 공지사항)
-    case "notice":
-      return "onSchoolNotice";
-    // 그 외 (college / curriculum / council / youtube / resources /
-    // study / news / event_*) — 새 글 알림 대상 아님
+
+    // notice, school_notice, parent_board 등 → 알림 안 보냄
     default:
       return null;
   }
@@ -476,7 +488,7 @@ export async function notifyNewPost(input: {
     const notifRows: NotifRow[] = targets.map((uid) => ({
       user_id:    uid,
       actor_id:   input.authorId,
-      type:       settingKey === "onSchoolNotice" ? "notice" : "post",
+      type:       "post",
       message,
       post_id:    input.postId,
       comment_id: null,

@@ -17,10 +17,9 @@ import {
   MessageCircle,
   MessageSquare,
   Heart,
-  Megaphone,
   Users,
-  EyeOff,
-  Flame,
+  PartyPopper,
+  BookOpen,
   GraduationCap,
   ChevronLeft,
   Check,
@@ -153,13 +152,12 @@ type DbSettings = {
   onComment: boolean;
   onReply: boolean;
   onLike: boolean;
-  onNotice: boolean; // 하위호환 유지 — UI 에서는 더 이상 노출하지 않음
-  // 게시판별 새 글 알림 (028)
+  onNotice: boolean; // 레거시 유지 — UI 노출 없음
+  // 게시판 새 글 알림 — 카테고리 4개
   onCommunity: boolean;
-  onEta: boolean;
-  onChallenge: boolean;
+  onEvent: boolean;
+  onStudent: boolean;
   onAlumni: boolean;
-  onSchoolNotice: boolean;
 };
 
 const DEFAULT_DB_SETTINGS: DbSettings = {
@@ -168,10 +166,9 @@ const DEFAULT_DB_SETTINGS: DbSettings = {
   onLike: true,
   onNotice: true,
   onCommunity: true,
-  onEta: true,
-  onChallenge: true,
+  onEvent: true,
+  onStudent: true,
   onAlumni: true,
-  onSchoolNotice: true,
 };
 
 /** UI 만 동작하는 채널 — 인프라 미구현이라 DB 에 저장하지 않음. */
@@ -219,10 +216,9 @@ export default function SettingsPage() {
         onLike: raw?.onLike ?? DEFAULT_DB_SETTINGS.onLike,
         onNotice: raw?.onNotice ?? DEFAULT_DB_SETTINGS.onNotice,
         onCommunity: raw?.onCommunity ?? DEFAULT_DB_SETTINGS.onCommunity,
-        onEta: raw?.onEta ?? DEFAULT_DB_SETTINGS.onEta,
-        onChallenge: raw?.onChallenge ?? DEFAULT_DB_SETTINGS.onChallenge,
+        onEvent: raw?.onEvent ?? DEFAULT_DB_SETTINGS.onEvent,
+        onStudent: raw?.onStudent ?? DEFAULT_DB_SETTINGS.onStudent,
         onAlumni: raw?.onAlumni ?? DEFAULT_DB_SETTINGS.onAlumni,
-        onSchoolNotice: raw?.onSchoolNotice ?? DEFAULT_DB_SETTINGS.onSchoolNotice,
       });
       setHydrated(true);
     })();
@@ -365,29 +361,29 @@ export default function SettingsPage() {
             iconColor="text-violet-500"
             iconBg="bg-violet-50 dark:bg-violet-900/20"
             title="커뮤니티 새 글"
-            desc="자유게시판, 누구일까요 등 새 글 알림"
+            desc="챌린지, 에타, 자유게시판, 학습게시판, 나눔장터, 분실물센터, 학생자치회 새 글 알림"
             checked={dbSettings.onCommunity}
             onChange={() => toggleDb("onCommunity")}
             disabled={disabled}
           />
           <SettingRow
-            icon={EyeOff}
-            iconColor="text-gray-500"
-            iconBg="bg-gray-100 dark:bg-gray-700/30"
-            title="문태 에타 새 글"
-            desc="문태 에타에 새 글이 올라오면 알려줘요"
-            checked={dbSettings.onEta}
-            onChange={() => toggleDb("onEta")}
+            icon={PartyPopper}
+            iconColor="text-pink-500"
+            iconBg="bg-pink-50 dark:bg-pink-900/20"
+            title="문태 이벤트 새 글"
+            desc="오늘의 퀴즈, 누구일까요, 칭찬합시다, 회원 참여방 새 글 알림"
+            checked={dbSettings.onEvent}
+            onChange={() => toggleDb("onEvent")}
             disabled={disabled}
           />
           <SettingRow
-            icon={Flame}
-            iconColor="text-orange-500"
-            iconBg="bg-orange-50 dark:bg-orange-900/20"
-            title="학생 챌린지 새 글"
-            desc="새 챌린지나 인증글이 올라오면 알려줘요"
-            checked={dbSettings.onChallenge}
-            onChange={() => toggleDb("onChallenge")}
+            icon={BookOpen}
+            iconColor="text-emerald-500"
+            iconBg="bg-emerald-50 dark:bg-emerald-900/20"
+            title="재학생 새 글"
+            desc="대입정보, 교육과정, 문튜브, 자료실 새 글 알림"
+            checked={dbSettings.onStudent}
+            onChange={() => toggleDb("onStudent")}
             disabled={disabled}
           />
           <SettingRow
@@ -395,19 +391,9 @@ export default function SettingsPage() {
             iconColor="text-yellow-600"
             iconBg="bg-yellow-50 dark:bg-yellow-900/20"
             title="문태 교우 새 글"
-            desc="문태 교우 게시판에 새 글이 올라오면 알려줘요"
+            desc="졸업생, 동문 뉴스, 선배의 한마디 새 글 알림"
             checked={dbSettings.onAlumni}
             onChange={() => toggleDb("onAlumni")}
-            disabled={disabled}
-          />
-          <SettingRow
-            icon={Megaphone}
-            iconColor="text-amber-500"
-            iconBg="bg-amber-50 dark:bg-amber-900/20"
-            title="학교 알림 새 글"
-            desc="공지사항, 학교 알림이 올라오면 알려줘요"
-            checked={dbSettings.onSchoolNotice}
-            onChange={() => toggleDb("onSchoolNotice")}
             disabled={disabled}
           />
         </div>

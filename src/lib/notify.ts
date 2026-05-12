@@ -423,12 +423,25 @@ export async function notifyNewPost(input: {
   authorId: string;
   boardType: string;
 }): Promise<void> {
+  console.log("[notifyNewPost] 호출됨", {
+    boardType: input.boardType,
+    postId: input.postId,
+  });
   try {
     const settingKey = getBoardNotificationKey(input.boardType);
-    if (!settingKey) return;
+    if (!settingKey) {
+      console.log(
+        "[notifyNewPost] 매핑 없는 boardType, 스킵:",
+        input.boardType,
+      );
+      return;
+    }
 
     const token = await getSessionToken();
-    if (!token) return;
+    if (!token) {
+      console.error("[notifyNewPost] 세션 토큰 없음 — 알림 발송 중단");
+      return;
+    }
 
     const { data: rows, error } = await supabase
       .from("profiles")
@@ -450,7 +463,14 @@ export async function notifyNewPost(input: {
           DEFAULT_SETTINGS[settingKey],
       )
       .map((r) => r.id);
-    if (targets.length === 0) return;
+    if (targets.length === 0) {
+      console.log("[notifyNewPost] 대상자 0명", {
+        boardType: input.boardType,
+        settingKey,
+        profilesScanned: rows.length,
+      });
+      return;
+    }
 
     const message = `새 글: ${input.title}`;
     const notifRows: NotifRow[] = targets.map((uid) => ({
@@ -462,7 +482,15 @@ export async function notifyNewPost(input: {
       comment_id: null,
     }));
 
+    console.log("[notifyNewPost] createNotifications 호출 직전", {
+      settingKey,
+      targetCount: targets.length,
+    });
     const ok = await createNotifications(token, notifRows);
+    console.log("[notifyNewPost] createNotifications 결과", {
+      ok,
+      inserted: ok ? targets.length : 0,
+    });
     if (ok) {
       // /board/challenge/{postId} 는 [challengeId] 라우트와 충돌해서
       // 챌린지는 챌린지 상세로 보내는 게 자연스럽지만, fan-out 알림은

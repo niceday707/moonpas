@@ -747,6 +747,10 @@ function WriteInner({
       // boardType → 알림 키 매핑은 notify.ts 의 getBoardNotificationKey 가 담당.
       // 매핑에 없는 boardType 은 내부에서 스킵하므로 분기 없이 항상 호출.
       // 이동을 막지 않도록 await 하지 않음 — fire-and-forget.
+      console.log("[WriteShell] notifyNewPost 호출:", {
+        boardType,
+        postId: result.id,
+      });
       notifyNewPost({
         postId: result.id,
         title: title.trim(),

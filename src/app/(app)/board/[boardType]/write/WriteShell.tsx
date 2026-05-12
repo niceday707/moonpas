@@ -77,7 +77,7 @@ import {
 } from "@/lib/board";
 import { cn } from "@/lib/utils";
 import { useSupabaseProfile } from "@/lib/supabase-profile";
-import { notifyNotice } from "@/lib/notify";
+import { notifyNewPost } from "@/lib/notify";
 import {
   formatFileSize,
   uploadFile,
@@ -743,15 +743,16 @@ function WriteInner({
         return;
       }
 
-      // 공지사항 신규 등록 시 전체 사용자 알림 (최대 500명, onNotice 켠 사람만).
-      // 이동을 막지 않도록 await 하지 않음 — notify.ts 내부에서 청크 INSERT.
-      if (boardType === "notice") {
-        notifyNotice({
-          postId: result.id,
-          title: title.trim(),
-          authorId: user.id,
-        });
-      }
+      // 게시판별 새 글 알림 (최대 500명, 해당 카테고리 토글 켠 사람만).
+      // boardType → 알림 키 매핑은 notify.ts 의 getBoardNotificationKey 가 담당.
+      // 매핑에 없는 boardType 은 내부에서 스킵하므로 분기 없이 항상 호출.
+      // 이동을 막지 않도록 await 하지 않음 — fire-and-forget.
+      notifyNewPost({
+        postId: result.id,
+        title: title.trim(),
+        authorId: user.id,
+        boardType,
+      });
 
       // 챌린지 인증은 챌린지 상세 페이지(/board/challenge/{challengeId})로 복귀.
       // /board/challenge/{postId} 는 [challengeId] 라우트와 충돌해서 작동하지 않으므로

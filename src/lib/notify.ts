@@ -103,6 +103,13 @@ type NotificationSettings = {
   onReply: boolean;
   onLike: boolean;
   onNotice: boolean;
+  // 028 추가 — 게시판별 새 글 알림.
+  // onNotice 는 하위호환을 위해 유지하지만 새 코드는 onSchoolNotice 사용.
+  onCommunity: boolean;
+  onEta: boolean;
+  onChallenge: boolean;
+  onAlumni: boolean;
+  onSchoolNotice: boolean;
 };
 
 const DEFAULT_SETTINGS: NotificationSettings = {
@@ -110,6 +117,11 @@ const DEFAULT_SETTINGS: NotificationSettings = {
   onReply: true,
   onLike: true,
   onNotice: true,
+  onCommunity: true,
+  onEta: true,
+  onChallenge: true,
+  onAlumni: true,
+  onSchoolNotice: true,
 };
 
 async function recipientAllows(
@@ -310,8 +322,10 @@ export async function notifyLike(input: {
 }
 
 // ─────────────────────────────────────────────────────────
-// 4) 공지사항 알림 — fan-out
+// 4) 공지사항 알림 — fan-out (레거시, onSchoolNotice 키 사용)
 //    profiles 의 본인 제외 최대 500명에게 알림.
+//    하위호환을 위해 함수는 유지하되 필터 키만 onSchoolNotice 로 갱신.
+//    신규 호출부는 notifyNewPost 사용 권장.
 // ─────────────────────────────────────────────────────────
 
 const NOTICE_FAN_OUT_LIMIT = 500;
@@ -339,7 +353,7 @@ export async function notifyNotice(input: {
       id: string;
       notification_settings: Partial<NotificationSettings> | null;
     }>)
-      .filter((r) => r.notification_settings?.onNotice ?? DEFAULT_SETTINGS.onNotice)
+      .filter((r) => r.notification_settings?.onSchoolNotice ?? DEFAULT_SETTINGS.onSchoolNotice)
       .map((r) => r.id);
     if (targets.length === 0) return;
 
@@ -357,5 +371,109 @@ export async function notifyNotice(input: {
     if (ok) sendPush(targets, "문파스 공지", message, `/board/notice/${input.postId}`);
   } catch (e) {
     console.error("[notifyNotice] 예외", e);
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// 5) 게시판별 새 글 알림 — fan-out
+//    boardType 에 따라 notification_settings 의 어떤 키를 확인할지 매핑.
+//    매핑에 없는 boardType 은 알림 생성하지 않음.
+// ─────────────────────────────────────────────────────────
+
+/**
+ * board_type → notification_settings 키 매핑.
+ * 매핑에 없는 board_type 은 null (알림 안 보냄).
+ */
+export function getBoardNotificationKey(
+  boardType: string,
+): keyof NotificationSettings | null {
+  switch (boardType) {
+    // 커뮤니티 — 자유롭게 글이 쌓이는 게시판
+    case "free":
+    case "lost":
+    case "market":
+    case "debate":
+    case "qa":
+    case "guess_who":
+      return "onCommunity";
+    // 문태 에타 (완전 익명 게시판)
+    case "anonymous":
+      return "onEta";
+    // 학생 챌린지 — 챌린지 메인 글 + 인증 글 모두 포함
+    case "challenge":
+      return "onChallenge";
+    // 문태 교우 (졸업생 관련 게시판)
+    case "alumni":
+    case "alumni_news":
+    case "senior":
+      return "onAlumni";
+    // 학교 알림 (운영진 공지사항)
+    case "notice":
+      return "onSchoolNotice";
+    // 그 외 (college / curriculum / council / youtube / resources /
+    // study / news / event_*) — 새 글 알림 대상 아님
+    default:
+      return null;
+  }
+}
+
+export async function notifyNewPost(input: {
+  postId: string;
+  title: string;
+  authorId: string;
+  boardType: string;
+}): Promise<void> {
+  try {
+    const settingKey = getBoardNotificationKey(input.boardType);
+    if (!settingKey) return;
+
+    const token = await getSessionToken();
+    if (!token) return;
+
+    const { data: rows, error } = await supabase
+      .from("profiles")
+      .select("id, notification_settings")
+      .neq("id", input.authorId)
+      .limit(NOTICE_FAN_OUT_LIMIT);
+    if (error || !rows) {
+      if (error) console.error("[notifyNewPost] profiles 조회 실패", error);
+      return;
+    }
+
+    const targets = (rows as Array<{
+      id: string;
+      notification_settings: Partial<NotificationSettings> | null;
+    }>)
+      .filter(
+        (r) =>
+          r.notification_settings?.[settingKey] ??
+          DEFAULT_SETTINGS[settingKey],
+      )
+      .map((r) => r.id);
+    if (targets.length === 0) return;
+
+    const message = `새 글: ${input.title}`;
+    const notifRows: NotifRow[] = targets.map((uid) => ({
+      user_id:    uid,
+      actor_id:   input.authorId,
+      type:       settingKey === "onSchoolNotice" ? "notice" : "post",
+      message,
+      post_id:    input.postId,
+      comment_id: null,
+    }));
+
+    const ok = await createNotifications(token, notifRows);
+    if (ok) {
+      // /board/challenge/{postId} 는 [challengeId] 라우트와 충돌해서
+      // 챌린지는 챌린지 상세로 보내는 게 자연스럽지만, fan-out 알림은
+      // 다양한 컨텍스트(메인 글/인증 글)가 섞이므로 일반 라우팅으로 통일한다.
+      const link =
+        input.boardType === "challenge"
+          ? `/board/challenge/${input.postId}`
+          : `/board/${input.boardType}/${input.postId}`;
+      sendPush(targets, "문파스 새 글", message, link);
+    }
+  } catch (e) {
+    console.error("[notifyNewPost] 예외", e);
   }
 }

@@ -18,6 +18,7 @@ import {
   X,
   ImageIcon,
   CalendarDays,
+  Flame,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useSupabaseUser } from "@/lib/supabase-profile";
@@ -29,6 +30,7 @@ const NAV_ITEMS = [
   { href: "/admin", label: "대시보드", icon: LayoutDashboard, exact: true },
   { href: "/admin/users", label: "회원관리", icon: Users, exact: false },
   { href: "/admin/posts", label: "게시글관리", icon: FileText, exact: false },
+  { href: "/admin/challenges", label: "챌린지관리", icon: Flame, exact: false },
   { href: "/admin/banners", label: "배너관리", icon: ImageIcon, exact: false },
   { href: "/admin/dday", label: "D-Day관리", icon: CalendarDays, exact: false },
   { href: "/admin/invites", label: "초대코드", icon: Ticket, exact: false },

@@ -307,6 +307,84 @@ export async function incrementChallengeView(
 }
 
 /**
+ * 챌린지 완전 삭제 — 관련 데이터를 모두 정리한다 (관리자 전용).
+ *   1) 챌린지에 속한 모든 posts 의 id 수집
+ *   2) comments WHERE post_id IN (...) 삭제
+ *   3) notifications WHERE post_id IN (...) 삭제 (FK CASCADE 가 있어도 명시적으로 정리)
+ *   4) posts WHERE challenge_id = ? 삭제
+ *   5) challenge_participants WHERE challenge_id = ? 삭제
+ *   6) challenges WHERE id = ? 삭제
+ *
+ * 권한은 RLS + admin layout 의 role 가드로 이중 검증.
+ */
+export async function deleteChallenge(
+  challengeId: string,
+): Promise<{ error: string | null }> {
+  // 1) 관련 posts id 수집
+  const { data: postRows, error: postErr } = await supabase
+    .from("posts")
+    .select("id")
+    .eq("challenge_id", challengeId);
+  if (postErr) {
+    console.error("[deleteChallenge] posts 조회 실패", postErr);
+    return { error: postErr.message };
+  }
+  const postIds = (postRows ?? []).map((r) => (r as { id: string }).id);
+
+  if (postIds.length > 0) {
+    // 2) comments
+    const { error: cErr } = await supabase
+      .from("comments")
+      .delete()
+      .in("post_id", postIds);
+    if (cErr) {
+      console.error("[deleteChallenge] comments 삭제 실패", cErr);
+      return { error: cErr.message };
+    }
+    // 3) notifications
+    const { error: nErr } = await supabase
+      .from("notifications")
+      .delete()
+      .in("post_id", postIds);
+    if (nErr) {
+      console.error("[deleteChallenge] notifications 삭제 실패", nErr);
+      return { error: nErr.message };
+    }
+    // 4) posts
+    const { error: pErr } = await supabase
+      .from("posts")
+      .delete()
+      .in("id", postIds);
+    if (pErr) {
+      console.error("[deleteChallenge] posts 삭제 실패", pErr);
+      return { error: pErr.message };
+    }
+  }
+
+  // 5) participants
+  const { error: partErr } = await supabase
+    .from("challenge_participants")
+    .delete()
+    .eq("challenge_id", challengeId);
+  if (partErr) {
+    console.error("[deleteChallenge] participants 삭제 실패", partErr);
+    return { error: partErr.message };
+  }
+
+  // 6) challenge 본체
+  const { error: chErr } = await supabase
+    .from("challenges")
+    .delete()
+    .eq("id", challengeId);
+  if (chErr) {
+    console.error("[deleteChallenge] challenge 삭제 실패", chErr);
+    return { error: chErr.message };
+  }
+
+  return { error: null };
+}
+
+/**
  * 챌린지의 "메인 공지 글" id 조회 — 댓글(토론) 섹션 앵커로 사용.
  *   메인 글 = board_type='challenge' AND challenge_id=$1 AND post_category IS NULL
  *   (인증 글은 post_category 가 'attendance'/'study_cert'/'exercise' 로 채워져 있음)

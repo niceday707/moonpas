@@ -49,10 +49,6 @@ import {
   STUDY_POST_CATEGORY_STYLE,
   STUDY_SUBJECT_TAG_LABEL,
   STUDY_SUBJECT_TAG_STYLE,
-  TEACHER_TIP_SUBJECT_STYLE,
-  getTeacherTipDisplayLabel,
-  isTeacherTipSubject,
-  parseTeacherTipContent,
   createComment,
   deleteComment,
   deletePost,
@@ -89,8 +85,6 @@ import {
   type SeniorContent,
   type StudyContent,
   type StudyPostCategory,
-  type StudySubjectTag,
-  type TeacherTipContent,
   type YoutubeContent,
 } from "@/lib/board";
 import {
@@ -241,7 +235,6 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
   const isYoutube = boardType === "youtube";
   const isResources = boardType === "resources";
   const isStudy = boardType === "study";
-  const isTeacherTip = boardType === "teacher_tip";
   const isAlumni = boardType === "alumni";
   const isSenior = boardType === "senior";
   const isGuessWho = boardType === "guess_who";
@@ -261,9 +254,6 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
     : null;
   const studyInfo: StudyContent | null = isStudy
     ? parseStudyContent(post.content)
-    : null;
-  const teacherTipInfo: TeacherTipContent | null = isTeacherTip
-    ? parseTeacherTipContent(post.content)
     : null;
   const alumniInfo: AlumniContent | null = isAlumni
     ? parseAlumniContent(post.content)
@@ -518,29 +508,14 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
               {STUDY_GRADE_LABEL[post.grade]}
             </span>
           )}
-          {isStudy &&
-            post.subject_tag &&
-            (post.subject_tag as string) in STUDY_SUBJECT_TAG_LABEL && (
-              <span
-                className={cn(
-                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset ring-transparent",
-                  STUDY_SUBJECT_TAG_STYLE[post.subject_tag as StudySubjectTag],
-                )}
-              >
-                {STUDY_SUBJECT_TAG_LABEL[post.subject_tag as StudySubjectTag]}
-              </span>
-            )}
-          {isTeacherTip && isTeacherTipSubject(post.subject_tag) && (
+          {isStudy && post.subject_tag && (
             <span
               className={cn(
                 "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset ring-transparent",
-                TEACHER_TIP_SUBJECT_STYLE[post.subject_tag],
+                STUDY_SUBJECT_TAG_STYLE[post.subject_tag],
               )}
             >
-              {getTeacherTipDisplayLabel(
-                post.subject_tag,
-                teacherTipInfo?.customSubject,
-              )}
+              {STUDY_SUBJECT_TAG_LABEL[post.subject_tag]}
             </span>
           )}
           {isStudy && post.post_category && (
@@ -823,8 +798,6 @@ function DetailInner({ boardType, postId }: { boardType: BoardType; postId: stri
             : isStudy
             // 학습게시판: 신규는 plain text, legacy(JSON content) 는 parseStudyContent 가 description 추출
             ? (studyInfo ? studyInfo.description : extractPostBody(post.content, post.board_type))
-            : isTeacherTip && teacherTipInfo
-            ? teacherTipInfo.description
             : isAlumni && alumniInfo
             ? alumniInfo.description
             : isSenior && seniorInfo

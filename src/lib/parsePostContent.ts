@@ -70,7 +70,6 @@ export function extractPostBody(content: string, boardType?: BoardType): string 
     case "youtube":
     case "resources":
     case "study":
-    case "teacher_tip":
     case "alumni": {
       const v = asString(o.description);
       if (v !== null) return v;

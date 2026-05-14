@@ -90,11 +90,6 @@ import {
   STUDY_POST_CATEGORY_STYLE,
   STUDY_SUBJECT_TAG_LABEL,
   STUDY_SUBJECT_TAG_STYLE,
-  TEACHER_TIP_SUBJECT_LABEL,
-  TEACHER_TIP_SUBJECT_STYLE,
-  getTeacherTipDisplayLabel,
-  isTeacherTipSubject,
-  parseTeacherTipContent,
   type AlumniCategory,
   type BoardType,
   type CareerTrack,
@@ -107,7 +102,6 @@ import {
   type StudyGrade,
   type StudyPostCategory,
   type StudySubjectTag,
-  type TeacherTipSubject,
   type YoutubeCategory,
 } from "@/lib/board";
 import { ComingSoon } from "@/components/ui/ComingSoon";
@@ -366,8 +360,6 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
   const [studyGradeFilter, setStudyGradeFilter] = useState<"" | StudyGrade>("");
   const [studySubjectTagFilter, setStudySubjectTagFilter] = useState<"" | StudySubjectTag>("");
   const [studyPostCategoryFilter, setStudyPostCategoryFilter] = useState<"" | StudyPostCategory>("");
-  // 쌤 꿀팁 공유 — 교과 태그 필터 ("" = 전체).
-  const [teacherTipSubjectFilter, setTeacherTipSubjectFilter] = useState<"" | TeacherTipSubject>("");
 
   const [page, setPage] = useState(1);
   const [posts, setPosts] = useState<PostRow[]>([]);
@@ -401,7 +393,6 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     seniorTrackFilter,
     youtubeCategoryFilter,
     challengeCategoryFilter,
-    teacherTipSubjectFilter,
     boardType,
   ]);
 
@@ -431,12 +422,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
       contentLike,
       // 학습게시판 전용 — 다른 board 에서는 ""(전체) 라 필터 적용 안 됨.
       grade: isStudy && studyGradeFilter ? studyGradeFilter : null,
-      // subject_tag — study / teacher_tip 두 보드가 동일 컬럼 사용.
-      subjectTag: isStudy
-        ? (studySubjectTagFilter || null)
-        : isTeacherTip
-        ? (teacherTipSubjectFilter || null)
-        : null,
+      subjectTag: isStudy && studySubjectTagFilter ? studySubjectTagFilter : null,
       // 학습 / 챌린지 모두 post_category 컬럼을 사용 — board_type 분기.
       postCategory: isStudy
         ? (studyPostCategoryFilter || null)
@@ -468,7 +454,6 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
     studyGradeFilter,
     studySubjectTagFilter,
     studyPostCategoryFilter,
-    teacherTipSubjectFilter,
     supportsStatusFilter,
     statusFilter,
     qaSubjectFilter,
@@ -664,10 +649,9 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
         />
       )}
       {isTeacherTip && (
-        <TeacherTipBoardHeader
-          subjectFilter={teacherTipSubjectFilter}
-          onSubjectChange={setTeacherTipSubjectFilter}
-        />
+        <div className="mb-4 rounded-2xl bg-amber-50/80 px-4 py-3 text-[12.5px] leading-relaxed text-amber-900 ring-1 ring-inset ring-amber-200/70 dark:bg-amber-500/[0.08] dark:text-amber-100/90 dark:ring-amber-400/15">
+          🍯 선생님, 학생 누구나 꿀팁을 공유할 수 있는 공간입니다. 자유롭게 글을 남겨주세요!
+        </div>
       )}
       {isNews && <NewsIntro />}
       {isAlumniNews && <AlumniNewsIntro />}
@@ -811,7 +795,7 @@ function BoardListInner({ boardType }: { boardType: BoardType }) {
         <EmptyState
           boardType={boardType}
           canWrite={canWrite}
-          filtered={(supportsStatusFilter && !!statusFilter) || !!youtubeCategoryFilter || !!resourceFilter || !!studyGradeFilter || !!studySubjectTagFilter || !!studyPostCategoryFilter || !!teacherTipSubjectFilter}
+          filtered={(supportsStatusFilter && !!statusFilter) || !!youtubeCategoryFilter || !!resourceFilter || !!studyGradeFilter || !!studySubjectTagFilter || !!studyPostCategoryFilter}
         />
       ) : isLost ? (
         <LostGrid posts={posts} />
@@ -995,10 +979,6 @@ function FilterRow<V extends string>({
 // 학습게시판 글 1 개의 [학년] [교과] [종류] 뱃지 묶음 — DefaultList 에서 호출.
 function StudyTagBadges({ post }: { post: PostRow }) {
   if (!post.grade && !post.subject_tag && !post.post_category) return null;
-  // subject_tag 가 teacher_tip 전용 키('info' 등)인 경우 study 라벨맵에 없으니 가드.
-  const subjectKey = post.subject_tag as StudySubjectTag | null;
-  const hasStudySubject =
-    subjectKey != null && subjectKey in STUDY_SUBJECT_TAG_LABEL;
   return (
     <span className="mr-1 inline-flex shrink-0 flex-wrap items-center gap-1">
       {post.grade && (
@@ -1006,14 +986,14 @@ function StudyTagBadges({ post }: { post: PostRow }) {
           {STUDY_GRADE_LABEL[post.grade]}
         </span>
       )}
-      {hasStudySubject && subjectKey && (
+      {post.subject_tag && (
         <span
           className={cn(
             "rounded px-1.5 py-0.5 text-[10px] font-bold",
-            STUDY_SUBJECT_TAG_STYLE[subjectKey],
+            STUDY_SUBJECT_TAG_STYLE[post.subject_tag],
           )}
         >
-          {STUDY_SUBJECT_TAG_LABEL[subjectKey]}
+          {STUDY_SUBJECT_TAG_LABEL[post.subject_tag]}
         </span>
       )}
       {post.post_category && (
@@ -1027,65 +1007,6 @@ function StudyTagBadges({ post }: { post: PostRow }) {
         </span>
       )}
     </span>
-  );
-}
-
-// 쌤 꿀팁 글 1 개의 [교과] 뱃지 — DefaultList 에서 boardType 분기로 호출.
-// "직접입력" 일 때는 customSubject 자유입력값을 우선 표시.
-function TeacherTipTagBadge({ post }: { post: PostRow }) {
-  if (!isTeacherTipSubject(post.subject_tag)) return null;
-  const customSubject = parseTeacherTipContent(post.content).customSubject;
-  const label = getTeacherTipDisplayLabel(post.subject_tag, customSubject);
-  return (
-    <span className="mr-1 inline-flex shrink-0 items-center">
-      <span
-        className={cn(
-          "rounded px-1.5 py-0.5 text-[10px] font-bold",
-          TEACHER_TIP_SUBJECT_STYLE[post.subject_tag],
-        )}
-      >
-        {label}
-      </span>
-    </span>
-  );
-}
-
-// 게시판별 태그 뱃지 라우터 — 학습 / 쌤 꿀팁 분기.
-function PostTagBadges({ post }: { post: PostRow }) {
-  if (post.board_type === "teacher_tip") {
-    return <TeacherTipTagBadge post={post} />;
-  }
-  return <StudyTagBadges post={post} />;
-}
-
-// 쌤 꿀팁 공유 — 안내 배너 + 교과 필터 칩 한 줄.
-const TEACHER_TIP_SUBJECT_OPTIONS: { value: "" | TeacherTipSubject; label: string }[] = [
-  { value: "", label: "전체" },
-  ...(Object.keys(TEACHER_TIP_SUBJECT_LABEL) as TeacherTipSubject[]).map((k) => ({
-    value: k,
-    label: TEACHER_TIP_SUBJECT_LABEL[k],
-  })),
-];
-
-function TeacherTipBoardHeader({
-  subjectFilter,
-  onSubjectChange,
-}: {
-  subjectFilter: "" | TeacherTipSubject;
-  onSubjectChange: (v: "" | TeacherTipSubject) => void;
-}) {
-  return (
-    <div className="mb-4 space-y-3">
-      <div className="rounded-2xl bg-amber-50/80 px-4 py-3 text-[12.5px] leading-relaxed text-amber-900 ring-1 ring-inset ring-amber-200/70 dark:bg-amber-500/[0.08] dark:text-amber-100/90 dark:ring-amber-400/15">
-        🍯 선생님이 직접 알려주시는 과목별 학습 꿀팁! 교과를 골라서 보거나 새 글로
-        후배·동료에게 노하우를 나눠주세요.
-      </div>
-      <FilterRow
-        options={TEACHER_TIP_SUBJECT_OPTIONS}
-        value={subjectFilter}
-        onChange={onSubjectChange}
-      />
-    </div>
   );
 }
 
@@ -1133,8 +1054,8 @@ function DefaultList({
                         중요
                       </span>
                     )}
-                    {/* 학습/쌤꿀팁 태그 뱃지 — 그 외 board 에서는 모두 null 이라 자동으로 미렌더 */}
-                    <PostTagBadges post={post} />
+                    {/* 학습게시판 태그 뱃지 — 그 외 board 에서는 모두 null 이라 자동으로 미렌더 */}
+                    <StudyTagBadges post={post} />
                     <span className="truncate">{post.title}</span>
                     {fresh && (
                       <span className="shrink-0 rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[9px] font-bold text-violet-600 ring-1 ring-inset ring-violet-500/30 dark:text-violet-300">

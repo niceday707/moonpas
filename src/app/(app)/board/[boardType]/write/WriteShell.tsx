@@ -50,6 +50,7 @@ import {
   parseResourceContent,
   parseSeniorContent,
   parseStudyContent,
+  parseTeacherTipContent,
   parseYoutubeContent,
   stringifyAlumniContent,
   stringifyIssueContent,
@@ -58,11 +59,13 @@ import {
   stringifyQaContent,
   stringifyResourceContent,
   stringifySeniorContent,
+  stringifyTeacherTipContent,
   stringifyYoutubeContent,
   updatePost,
   STUDY_GRADE_LABEL,
   STUDY_POST_CATEGORY_LABEL,
   STUDY_SUBJECT_TAG_LABEL,
+  TEACHER_TIP_SUBJECT_LABEL,
   type AlumniCategory,
   type BoardType,
   type CareerTrack,
@@ -73,6 +76,7 @@ import {
   type StudyGrade,
   type StudyPostCategory,
   type StudySubjectTag,
+  type TeacherTipSubject,
   type YoutubeCategory,
 } from "@/lib/board";
 import { cn } from "@/lib/utils";
@@ -171,6 +175,9 @@ function WriteInner({
   const [studyGrade, setStudyGrade] = useState<StudyGrade | "">("");
   const [studySubjectTag, setStudySubjectTag] = useState<StudySubjectTag | "">("");
   const [studyPostCategory, setStudyPostCategory] = useState<StudyPostCategory | "">("");
+  // 쌤 꿀팁 공유 — 교과 (필수) + "직접입력(etc)" 일 때만 customSubject 추가 입력.
+  const [teacherTipSubject, setTeacherTipSubject] = useState<TeacherTipSubject | "">("");
+  const [teacherTipCustomSubject, setTeacherTipCustomSubject] = useState("");
   // 챌린지 전용 — 카테고리 (등교/공부/운동) 필수. 참여 중인 카테고리만 선택 가능.
   const [challengeCategory, setChallengeCategory] = useState<ChallengeCategory | "">("");
   const [myChallengeSubs, setMyChallengeSubs] = useState<ChallengeCategory[]>([]);
@@ -255,10 +262,22 @@ function WriteInner({
           setContent(post.content);
         }
         if (post.grade) setStudyGrade(post.grade);
-        if (post.subject_tag) setStudySubjectTag(post.subject_tag);
+        // subject_tag 타입이 study/teacher_tip 두 보드 공용으로 넓어져 캐스팅 필요.
+        // 이 분기는 board_type === "study" 이므로 StudySubjectTag 만 들어옴.
+        if (post.subject_tag) {
+          setStudySubjectTag(post.subject_tag as StudySubjectTag);
+        }
         // post_category 는 챌린지와 공유 컬럼이라 union 타입 — study 분기에서는 항상 StudyPostCategory.
         if (post.post_category) {
           setStudyPostCategory(post.post_category as StudyPostCategory);
+        }
+      } else if (post.board_type === "teacher_tip") {
+        // 쌤 꿀팁: subject_tag 컬럼 + content JSON (customSubject, description)
+        const parsed = parseTeacherTipContent(post.content);
+        setContent(parsed.description);
+        setTeacherTipCustomSubject(parsed.customSubject);
+        if (post.subject_tag) {
+          setTeacherTipSubject(post.subject_tag as TeacherTipSubject);
         }
       } else if (post.board_type === "challenge") {
         // 챌린지: 카테고리는 post_category 컬럼에 저장됨.
@@ -435,6 +454,7 @@ function WriteInner({
   const isYoutube = boardType === "youtube";
   const isResources = boardType === "resources";
   const isStudy = boardType === "study";
+  const isTeacherTip = boardType === "teacher_tip";
   const isAlumni = boardType === "alumni";
   const isSenior = boardType === "senior";
   const isGuessWho = boardType === "guess_who";
@@ -544,6 +564,16 @@ function WriteInner({
         return;
       }
     }
+    if (isTeacherTip) {
+      if (!teacherTipSubject) {
+        setError("교과를 선택해주세요.");
+        return;
+      }
+      if (teacherTipSubject === "etc" && !teacherTipCustomSubject.trim()) {
+        setError("교과명을 직접 입력해주세요.");
+        return;
+      }
+    }
     if (isSenior) {
       if (!seniorUniversity.trim()) {
         setError("대학명을 입력해주세요.");
@@ -601,6 +631,13 @@ function WriteInner({
       : isStudy
       // 신규 학습게시판은 본문을 plain text 로 저장. 학년/교과/글 종류는 별도 컬럼으로.
       ? content.trim()
+      : isTeacherTip
+      // 쌤 꿀팁: subject_tag 컬럼 + content JSON (customSubject, description)
+      ? stringifyTeacherTipContent({
+          customSubject:
+            teacherTipSubject === "etc" ? teacherTipCustomSubject : "",
+          description: content,
+        })
       : isAlumni
       ? stringifyAlumniContent({
           category: alumniCategory,
@@ -690,6 +727,10 @@ function WriteInner({
               subjectTag: (studySubjectTag || null) as StudySubjectTag | null,
               postCategory: (studyPostCategory || null) as StudyPostCategory | null,
             }
+          : isTeacherTip
+          ? {
+              subjectTag: (teacherTipSubject || null) as TeacherTipSubject | null,
+            }
           : isChallenge
           ? {
               postCategory: (challengeCategory || null) as ChallengeCategory | null,
@@ -721,7 +762,12 @@ function WriteInner({
         fileName,
         // 학습게시판은 입력값 그대로, 다른 board 는 undefined → DB 단에서 NULL.
         grade: isStudy ? ((studyGrade || null) as StudyGrade | null) : undefined,
-        subjectTag: isStudy ? ((studySubjectTag || null) as StudySubjectTag | null) : undefined,
+        // subject_tag — study / teacher_tip 둘 다 사용 (같은 컬럼). board_type 분기로 의미 구분.
+        subjectTag: isStudy
+          ? ((studySubjectTag || null) as StudySubjectTag | null)
+          : isTeacherTip
+          ? ((teacherTipSubject || null) as TeacherTipSubject | null)
+          : undefined,
         postCategory: isStudy
           ? ((studyPostCategory || null) as StudyPostCategory | null)
           : undefined,
@@ -1011,6 +1057,50 @@ function WriteInner({
               }))}
               disabled={submitting}
             />
+          </div>
+        )}
+
+        {isTeacherTip && (
+          // 쌤 꿀팁 공유: 교과 1 개 필수. "직접입력(etc)" 선택 시 자유 입력 필드 추가.
+          <div className="space-y-3">
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                교과 (필수)
+              </label>
+              <select
+                value={teacherTipSubject}
+                onChange={(e) =>
+                  setTeacherTipSubject(e.target.value as TeacherTipSubject | "")
+                }
+                disabled={submitting}
+                className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+              >
+                <option value="">교과를 선택해주세요</option>
+                {(Object.keys(TEACHER_TIP_SUBJECT_LABEL) as TeacherTipSubject[]).map(
+                  (k) => (
+                    <option key={k} value={k}>
+                      {TEACHER_TIP_SUBJECT_LABEL[k]}
+                    </option>
+                  ),
+                )}
+              </select>
+            </div>
+            {teacherTipSubject === "etc" && (
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                  교과명 직접 입력 (필수)
+                </label>
+                <input
+                  type="text"
+                  value={teacherTipCustomSubject}
+                  onChange={(e) => setTeacherTipCustomSubject(e.target.value)}
+                  placeholder="예) 보건, 환경, 동아리 등"
+                  maxLength={20}
+                  disabled={submitting}
+                  className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -1328,6 +1418,8 @@ function WriteInner({
               ? "자료 설명"
               : isStudy
               ? "내용"
+              : isTeacherTip
+              ? "꿀팁 내용"
               : isAlumni
               ? "후배에게 한마디"
               : isSenior
@@ -1354,6 +1446,8 @@ function WriteInner({
                 ? "자료의 출처, 분량, 활용 팁을 적어주세요."
                 : isStudy
                 ? "질문·꿀팁·자료공유 내용을 자유롭게 적어주세요."
+                : isTeacherTip
+                ? "수업/공부 노하우, 추천 자료, 시험 팁 등을 자유롭게 적어주세요."
                 : isAlumni
                 ? "재학생들에게 들려주고 싶은 이야기를 자유롭게 적어주세요."
                 : isSenior

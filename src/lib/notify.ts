@@ -398,13 +398,14 @@ export function getBoardNotificationKey(
     case "qa":
       return "onCommunity";
 
-    // ── 문태 이벤트: 오늘의퀴즈, 누구일까요, 칭찬합시다, 회원참여방, 공부인증, 찹쌀꽈배기, 오늘의생일, 뉴스 ──
+    // ── 문태 이벤트: 누구일까요, 쌤꿀팁공유, 문태뉴스 + (잔존) 오늘의퀴즈/칭찬합시다/회원참여방/공부인증/찹쌀꽈배기 ──
     case "event_quiz":
     case "guess_who":
     case "event_praise":
     case "event_member":
     case "event_study":
     case "event_find":
+    case "teacher_tip":
     case "news":
       return "onEvent";
 

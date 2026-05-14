@@ -59,6 +59,7 @@ export type BoardType =
   | "event_study" // 공부 인증
   | "event_quiz" // 오늘의 퀴즈
   | "guess_who" // 누구일까요? (사진 + 댓글로 이름 맞추기)
+  | "teacher_tip" // 쌤 꿀팁 공유 (교과별 학습 꿀팁)
   | "anonymous"; // 문태 에타 (완전 익명 게시판)
 
 export const BOARD_LABEL: Record<BoardType, string> = {
@@ -85,6 +86,7 @@ export const BOARD_LABEL: Record<BoardType, string> = {
   event_study: "공부 인증",
   event_quiz: "오늘의 퀴즈",
   guess_who: "누구일까요?",
+  teacher_tip: "쌤 꿀팁 공유",
   anonymous: "문태 에타",
 };
 
@@ -135,6 +137,110 @@ export const STUDY_POST_CATEGORY_STYLE: Record<StudyPostCategory, string> = {
   tip:      "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200",
   share:    "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
 };
+
+// ── 쌤 꿀팁 공유(board_type='teacher_tip') 교과 태그 ────────
+// subject_tag 컬럼을 재사용 — board_type 으로 study 와 의미 분기.
+// 12 개 항목. "etc" 선택 시 customSubject 로 자유 입력값을 content JSON 에 동봉.
+export type TeacherTipSubject =
+  | "korean"
+  | "english"
+  | "math"
+  | "social"
+  | "science"
+  | "info"
+  | "chinese"
+  | "music"
+  | "art"
+  | "pe"
+  | "career"
+  | "etc";
+
+export const TEACHER_TIP_SUBJECT_LABEL: Record<TeacherTipSubject, string> = {
+  korean: "국어",
+  english: "영어",
+  math: "수학",
+  social: "사회",
+  science: "과학",
+  info: "정보",
+  chinese: "한문",
+  music: "음악",
+  art: "미술",
+  pe: "체육",
+  career: "진로",
+  etc: "직접입력",
+};
+
+export const TEACHER_TIP_SUBJECT_STYLE: Record<TeacherTipSubject, string> = {
+  korean:  "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+  english: "bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300",
+  math:    "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+  social:  "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
+  science: "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
+  info:    "bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300",
+  chinese: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+  music:   "bg-pink-100 text-pink-700 dark:bg-pink-500/15 dark:text-pink-300",
+  art:     "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
+  pe:      "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+  career:  "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300",
+  etc:     "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300",
+};
+
+const TEACHER_TIP_SUBJECT_VALUES: ReadonlySet<string> = new Set(
+  Object.keys(TEACHER_TIP_SUBJECT_LABEL),
+);
+
+export function isTeacherTipSubject(v: unknown): v is TeacherTipSubject {
+  return typeof v === "string" && TEACHER_TIP_SUBJECT_VALUES.has(v);
+}
+
+/** "직접입력(etc)" 의 자유 입력 교과명 + 본문. JSON 으로 content 컬럼에 저장. */
+export type TeacherTipContent = {
+  /** subject_tag === "etc" 일 때만 의미. 그 외에는 빈 문자열. */
+  customSubject: string;
+  description: string;
+};
+
+export function parseTeacherTipContent(content: string): TeacherTipContent {
+  try {
+    const obj: unknown = JSON.parse(content);
+    if (
+      obj &&
+      typeof obj === "object" &&
+      "description" in obj &&
+      typeof (obj as { description: unknown }).description === "string"
+    ) {
+      const o = obj as { customSubject?: unknown; description: string };
+      return {
+        customSubject:
+          typeof o.customSubject === "string" ? o.customSubject : "",
+        description: o.description,
+      };
+    }
+  } catch {
+    // 일반 텍스트
+  }
+  return { customSubject: "", description: content };
+}
+
+export function stringifyTeacherTipContent(input: TeacherTipContent): string {
+  return JSON.stringify({
+    customSubject: input.customSubject.trim(),
+    description: input.description.trim(),
+  });
+}
+
+/** 뱃지에 표시할 교과 라벨. etc + customSubject 가 있으면 자유 입력값을 우선. */
+export function getTeacherTipDisplayLabel(
+  subject: TeacherTipSubject | null | undefined,
+  customSubject?: string | null,
+): string {
+  if (!subject) return "";
+  if (subject === "etc") {
+    const trimmed = (customSubject ?? "").trim();
+    return trimmed || TEACHER_TIP_SUBJECT_LABEL.etc;
+  }
+  return TEACHER_TIP_SUBJECT_LABEL[subject];
+}
 
 // ── 챌린지(board_type='challenge') 카테고리 ─────────────────
 // post_category 컬럼을 재사용해서 저장 — 학습게시판과는 board_type 으로 분리.
@@ -195,7 +301,9 @@ export type PostRow = {
   is_mine: boolean;
   // 학습게시판 전용 — 그 외 board_type 에서는 항상 null.
   grade: StudyGrade | null;
-  subject_tag: StudySubjectTag | null;
+  // subject_tag 는 두 보드가 공유: study(StudySubjectTag 6개) / teacher_tip(TeacherTipSubject 12개).
+  // board_type 으로 분기해 의미 구분.
+  subject_tag: StudySubjectTag | TeacherTipSubject | null;
   // post_category 는 학습게시판('question'|'tip'|'share') 또는
   // 챌린지('attendance'|'study_cert'|'exercise') 두 용도로 쓰임 — board_type 으로 의미 분기.
   post_category: StudyPostCategory | ChallengeCategory | null;
@@ -310,7 +418,8 @@ function normalizePost(raw: RawPost, currentUserId: string | null): PostRow {
     comment_count: count,
     is_mine: isMine,
     grade: (raw.grade as StudyGrade | null) ?? null,
-    subject_tag: (raw.subject_tag as StudySubjectTag | null) ?? null,
+    subject_tag:
+      (raw.subject_tag as StudySubjectTag | TeacherTipSubject | null) ?? null,
     post_category:
       (raw.post_category as StudyPostCategory | ChallengeCategory | null) ?? null,
     // challenge_status 가 NULL/미적용 환경이면 'approved' 로 간주 (DEFAULT 값과 동일).
@@ -460,7 +569,8 @@ export async function listPosts(
     sortBy?: "created_at" | "like_count";
     // 학습게시판 전용 — null/undefined 면 필터 적용 안 함 ("전체" 의미).
     grade?: StudyGrade | null;
-    subjectTag?: StudySubjectTag | null;
+    // subject_tag 필터 — study(6) / teacher_tip(12) 모두 동일 컬럼 사용.
+    subjectTag?: StudySubjectTag | TeacherTipSubject | null;
     // 학습게시판은 StudyPostCategory, 챌린지는 ChallengeCategory 가 들어옴 — board_type 분기로 의미 구분.
     postCategory?: StudyPostCategory | ChallengeCategory | null;
   },
@@ -614,7 +724,8 @@ export async function createPost(input: {
   fileName?: string | null;
   // 학습게시판(board_type='study') 전용 — 다른 board 에서는 무시.
   grade?: StudyGrade | null;
-  subjectTag?: StudySubjectTag | null;
+  // subject_tag — study / teacher_tip 두 보드가 공유 (board_type 분기로 의미 구분).
+  subjectTag?: StudySubjectTag | TeacherTipSubject | null;
   postCategory?: StudyPostCategory | null;
   // 챌린지(board_type='challenge') 전용 — post_category 컬럼에 저장됨.
   challengeCategory?: ChallengeCategory | null;
@@ -643,6 +754,8 @@ export async function createPost(input: {
   // 학습게시판 외에는 태그 컬럼을 반드시 NULL 로 INSERT — 잘못된 board 에서 태그가 새지 않도록 가드.
   const isStudyBoard = input.boardType === "study";
   const isChallengeBoard = input.boardType === "challenge";
+  // 쌤 꿀팁 공유: subject_tag 컬럼만 사용 (12개 교과 + etc). grade/post_category 는 미사용.
+  const isTeacherTipBoard = input.boardType === "teacher_tip";
 
   // 등교 인증은 KST 08:10 까지만 허용.
   if (isChallengeBoard && input.challengeCategory === "attendance") {
@@ -682,7 +795,8 @@ export async function createPost(input: {
       file_url: input.fileUrl ?? null,
       file_name: input.fileName ?? null,
       grade: isStudyBoard ? (input.grade ?? null) : null,
-      subject_tag: isStudyBoard ? (input.subjectTag ?? null) : null,
+      subject_tag:
+        isStudyBoard || isTeacherTipBoard ? (input.subjectTag ?? null) : null,
       post_category: postCategoryValue,
       challenge_id: isChallengeBoard ? (input.challengeId ?? null) : null,
     })
@@ -732,7 +846,8 @@ export async function updatePost(
     fileName?: string | null;
     // 학습게시판 전용 — 다른 board 의 수정에서는 그대로 undefined 로 두면 변경되지 않음.
     grade?: StudyGrade | null;
-    subjectTag?: StudySubjectTag | null;
+    // subject_tag — study / teacher_tip 두 보드가 공유.
+    subjectTag?: StudySubjectTag | TeacherTipSubject | null;
     // 학습게시판은 StudyPostCategory, 챌린지는 ChallengeCategory 가 들어옴.
     postCategory?: StudyPostCategory | ChallengeCategory | null;
   },

@@ -127,6 +127,7 @@ const BOARD_BADGE_COLOR: Record<BoardType, string> = {
   event_study: "text-teal-500 bg-teal-50 dark:bg-teal-900/20",
   event_quiz: "text-amber-500 bg-amber-50 dark:bg-amber-900/20",
   guess_who: "text-fuchsia-500 bg-fuchsia-50 dark:bg-fuchsia-900/20",
+  teacher_tip: "text-amber-600 bg-amber-50 dark:bg-amber-900/20",
   anonymous: "text-purple-500 bg-purple-50 dark:bg-purple-900/20",
 };
 

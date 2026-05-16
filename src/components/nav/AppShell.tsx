@@ -21,9 +21,15 @@ export function isPostDetailPath(pathname: string | null): boolean {
   return !!pathname && POST_DETAIL_RE.test(pathname);
 }
 
+// /muntz: fullscreen 쇼츠 뷰어. 페이지 자체가 fixed inset-0 로 화면을 덮기 때문에
+// BottomNav 가 영상 위에 떠 있으면 몰입을 깬다.
+const FULLSCREEN_VIEWER_PATHS = new Set<string>(["/muntz"]);
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const hideBottomNav = isPostDetailPath(pathname);
+  const hideBottomNav =
+    isPostDetailPath(pathname) ||
+    (!!pathname && FULLSCREEN_VIEWER_PATHS.has(pathname));
 
   return (
     <div className="min-h-screen">

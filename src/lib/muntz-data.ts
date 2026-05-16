@@ -85,13 +85,16 @@ export type MuntzItem = {
   reviewStatus?: MuntzReviewStatus;
 };
 
-// ─── 자동 수집 후보 → 화이트리스트 (사람 최종 검수 필요) ──────────────────
+// ─── 자동 수집 후보 → 화이트리스트 (Supabase fallback) ────────────────────
 // 출처: scripts/output/muntz-candidates.json (2026-05-16 수집)
 // 필터: reviewPriority != high · 음악/댄스 제외 · 같은 채널 최대 1개 ·
 //      우선 카테고리(스포츠/과학·신기/마술·착시/동물/예술·제작/음식·디저트)만.
 // ⚠️ 모두 reviewStatus: "pending" — 학생 노출 전 사람이 실제로 재생해 봐야 함.
 //    부적절한 영상은 해당 객체만 통째로 삭제하면 즉시 피드에서 사라진다.
-export const MUNTZ_ITEMS: MuntzItem[] = [
+//
+// 사용처: Supabase 조회 실패 시 빈 화면 대신 보여줄 fallback.
+//        실데이터 운영이 시작되면 이 배열은 비울 수 있다.
+export const MUNTZ_ITEMS_FALLBACK: MuntzItem[] = [
   {
     id: "muntz-Ri7g1IY8Upw",
     youtubeId: "Ri7g1IY8Upw",
@@ -232,4 +235,44 @@ export const MUNTZ_ITEMS: MuntzItem[] = [
  */
 export function muntzEmbedUrl(id: string): string {
   return `https://www.youtube-nocookie.com/embed/${id}?rel=0&modestbranding=1&playsinline=1`;
+}
+
+/**
+ * 유튜브 링크/ID 에서 11자리 영상 ID 를 추출.
+ * 지원 형식:
+ *   - https://www.youtube.com/shorts/{id}
+ *   - https://www.youtube.com/watch?v={id} (& 추가 파라미터 포함)
+ *   - https://youtu.be/{id}
+ *   - https://www.youtube.com/embed/{id}
+ *   - 11자리 ID 직접 입력
+ * 실패 시 null.
+ */
+export function extractYoutubeId(input: string): string | null {
+  const v = input.trim();
+  if (!v) return null;
+  if (/^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
+  const patterns = [
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+    /[?&]v=([a-zA-Z0-9_-]{11})/,
+    /\/embed\/([a-zA-Z0-9_-]{11})/,
+    /\/shorts\/([a-zA-Z0-9_-]{11})/,
+  ];
+  for (const re of patterns) {
+    const m = v.match(re);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/** UI 라벨("전 학년" / "1학년" ...) → TargetGrade 키. 매치 안 되면 "all". */
+export function gradeLabelToKey(label: string | null | undefined): TargetGrade {
+  if (!label) return "all";
+  const trimmed = label.trim();
+  // "전학년" / "전 학년" 양쪽 허용
+  if (trimmed === "전학년" || trimmed === "전 학년" || trimmed === "all")
+    return "all";
+  if (trimmed === "1학년" || trimmed === "1") return "1";
+  if (trimmed === "2학년" || trimmed === "2") return "2";
+  if (trimmed === "3학년" || trimmed === "3") return "3";
+  return "all";
 }

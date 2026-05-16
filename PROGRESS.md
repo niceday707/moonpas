@@ -4,6 +4,17 @@
 
 ## 2026-05-16
 
+- **문츠 학생/교사 수동 등록 + Supabase 연동 (1차)**
+  - `supabase/migrations/031_muntz_items.sql` 신규 — `muntz_items` 테이블 + RLS.
+    - 컬럼: id/youtube_id/youtube_url/title/channel_title/author_nickname/category/target_grade/description/safety_note/source/review_status/created_by/created_at/updated_at + CHECK 제약 + updated_at 트리거.
+    - 인덱스: `(review_status, created_at DESC) WHERE review_status IN ('visible','auto_approved')` 부분 인덱스 — 피드 쿼리 최적화.
+    - RLS: SELECT는 노출 상태 + admin, INSERT는 인증 사용자 (source/review_status 강제 manual/visible), UPDATE는 본인 또는 admin, DELETE는 admin만.
+  - `src/lib/muntz-service.ts` 신규 — `listVisibleMuntzItems()` / `createMuntzItem()` / `hideMuntzItem()` + row↔UI 변환.
+  - `src/lib/muntz-profanity.ts` 신규 — 한/영 금지어 부분 매칭, 등록 시 1차 차단 (사후 검수 보조용).
+  - `src/lib/muntz-data.ts` 변경 — `extractYoutubeId()` / `gradeLabelToKey()` 헬퍼 추가, `MUNTZ_ITEMS` → `MUNTZ_ITEMS_FALLBACK` 으로 리네임(Supabase 비어있을 때 fallback).
+  - `src/app/(app)/muntz/page.tsx` 전면 개편 — 데이터 소스를 mock → Supabase 조회로 교체, 로딩/빈 상태/fallback 배너/토스트 추가. 우상단 `+` 버튼으로 업로드 모달 (URL/제목/닉네임/카테고리/학년/설명 입력). 각 카드 우상단 `⋮` 메뉴 → 신고/숨김 처리 (낙관적 UI + RLS 실패 시 롤백). fullscreen UI/풀스크린 정책 유지.
+  - 1차 정책: 학생/교사 수동 등록은 즉시 `visible`. 문제 영상은 RLS 가 본인/admin 만 hidden 처리 허용. UI 단 권한 분기는 TODO.
+  - `.env.local` 은 비공개 (gitignore). 영상 자체는 저장하지 않으며 iframe embed 만 사용.
 - **문츠 자동 후보 수집기 1차 (3차 작업)**
   - `scripts/find-muntz-candidates.mjs` 신규 — YouTube Data API v3 (search.list + videos.list) 로 카테고리 15개 인기 쇼츠 후보를 수집.
   - 필터: 올해 1/1 이후 업로드, 조회수 ≥ 1,000,000, 길이 ≤ 60초, embeddable=true, madeForKids 제외, 부적절 키워드(영/한 22개) 제외, 중복 제거.

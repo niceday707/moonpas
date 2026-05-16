@@ -28,53 +28,58 @@ function isBoardItem(item: NavItem): item is BoardNavItem {
 }
 
 // 라벨 정책: 카테고리 헤더에는 포인트 이모지를 1개씩, 메뉴 항목에는
-// 학습게시판/문태에타/누구일까요/오늘의 생일 4 개에만 이모지 유지.
-// 나머지는 텍스트만으로 깔끔하게 — 불필요한 이모지 추가 금지.
+// 핵심 항목에만 이모지를 부여 — 나머지는 텍스트로 깔끔하게 정리.
+// 5섹션 구조: 커뮤니티 / 문태 생활 / 학습·진로 / 문태 미디어 / 학교알림.
 const MEGA_NAV: NavGroup[] = [
   {
     label: "커뮤니티 🫧",
     items: [
-      // 1) 문태 챌린지 — 카테고리 3종(등교/공부/운동) 인증 — 가장 위로.
       { boardType: "challenge", label: "문태 챌린지" },
-      // 2) 문태에타 — 익명 게시판.
       { boardType: "anonymous", label: "문태에타 🔥" },
-      // 3) 학습게시판: 기존 study board_type 재활용.
       { boardType: "study", label: "학습게시판 📚" },
       { boardType: "free", label: "자유게시판" },
+      { boardType: "debate", label: "이슈토론" },
       { boardType: "market", label: "나눔장터" },
       { boardType: "lost", label: "분실물센터" },
-      // council: 재학생에서 커뮤니티로 이동 — board_type/href 그대로 유지.
       { boardType: "council", label: "학생자치회" },
     ],
   },
   {
-    label: "문태 이벤트 ✨",
+    // "문태 이벤트" → "문태 생활"로 라벨 변경 (성격을 더 잘 표현).
+    label: "문태 생활 ✨",
     items: [
-      { boardType: "guess_who", label: "누구일까요? 🎭" },
       { href: "/birthday", label: "오늘의 생일 🎂" },
-      { boardType: "teacher_tip", label: "쌤 꿀팁 공유 🍯" },
+      { boardType: "teacher_tip", label: "쌤 꿀팁 공유 ☕" },
+      // 쌤 어디계세요? — 기존 재학생 섹션에서 이동.
+      { href: "/school-info", label: "쌤 어디계세요? 🏫" },
       { boardType: "news", label: "문태 뉴스" },
+      { boardType: "guess_who", label: "누구일까요? 🎭" },
     ],
   },
   {
-    label: "재학생 🎧",
+    // "재학생 🎧" → "학습·진로 🎯"로 개념 재편.
+    // 일상 메뉴(생일/꿀팁/어디계세요)는 문태 생활로, 미디어(문튜브)는 미디어로 이동.
+    label: "학습·진로 🎯",
     items: [
       { href: "/timetable", label: "시간표" },
       { href: "/exam-schedule", label: "평가일정 📝" },
-      { href: "/school-info", label: "쌤 어디계세요? 🏫" },
-      { boardType: "youtube", label: "문튜브" },
       { boardType: "resources", label: "학습 자료실" },
-      { boardType: "debate", label: "이슈토론" },
-      { boardType: "college", label: "입시 나침반" },
       { boardType: "curriculum", label: "선택과목 가이드" },
+      { boardType: "college", label: "입시 나침반" },
+      // career_news: 신규 board_type, ComingSoon 으로 분기.
+      { boardType: "career_news" as BoardType, label: "진로진학 뉴스" },
+      // senior: 기존 문태교우 → 학습·진로로 이동.
+      { boardType: "senior", label: "면접·입시 후기" },
     ],
   },
   {
-    label: "문태교우 🪐",
+    // 신규 섹션 — 문태 미디어 🎬. 문튜브 + 문츠 + 캠퍼스 스토리 + 인사이트 + 동문 뉴스.
+    label: "문태 미디어 🎬",
     items: [
-      // campus_story / insight: 신규 board_type, 준비 중 안내 페이지로 분기.
+      { boardType: "youtube", label: "문튜브" },
+      // 문츠 — 별도 라우트 /muntz (ComingSoon).
+      { href: "/muntz", label: "문츠 🎬" },
       { boardType: "campus_story" as BoardType, label: "캠퍼스 스토리" },
-      { boardType: "senior", label: "면접·입시 후기" },
       { boardType: "insight" as BoardType, label: "인사이트" },
       { boardType: "alumni_news", label: "동문 뉴스" },
     ],
@@ -82,12 +87,10 @@ const MEGA_NAV: NavGroup[] = [
   {
     label: "학교알림 🔔",
     items: [
-      // 학교 홈페이지 공지 3종 — /notices/{source} 내부 페이지가 크롤링 결과를 보여준다.
       { href: "/notices/school", label: "학교공지" },
       { href: "/notices/news", label: "문태소식" },
       { href: "/notices/letter", label: "가정통신문" },
       { href: "/notices/gallery", label: "행사갤러리" },
-      // parent_board: 신규 board_type, 준비 중 안내 페이지로 분기.
       { boardType: "parent_board" as BoardType, label: "학부모 마당" },
     ],
   },

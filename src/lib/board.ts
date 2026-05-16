@@ -52,6 +52,7 @@ export type BoardType =
   | "alumni"
   | "alumni_news"
   | "senior"
+  | "career_news" // 진로진학 뉴스 (준비 중)
   // 문태 이벤트 — 각 코너마다 전용 UI 컴포넌트로 라우팅
   | "event_member" // 회원 참여방 (정회원 미션)
   | "event_find" // 찹쌀 꽈배기 (숨은 이모지 찾기)
@@ -80,6 +81,7 @@ export const BOARD_LABEL: Record<BoardType, string> = {
   alumni: "졸업생",
   alumni_news: "동문 뉴스",
   senior: "선배의 한마디",
+  career_news: "진로진학 뉴스",
   event_member: "회원 참여방",
   event_find: "찹쌀 꽈배기",
   event_praise: "칭찬합시다",

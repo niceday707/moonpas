@@ -139,6 +139,10 @@ const COMING_SOON_BOARDS: Record<string, { title: string; subtitle?: string }> =
     title: "학부모 마당",
     subtitle: "학부모님을 위한 전용 공간을 준비하고 있어요.",
   },
+  career_news: {
+    title: "진로진학 뉴스",
+    subtitle: "진로·진학 관련 최신 뉴스와 정보를 모아드릴게요.",
+  },
 };
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;

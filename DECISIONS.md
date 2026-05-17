@@ -2,6 +2,96 @@
 
 > 왜 그렇게 만들었는지를 남기는 곳. "무엇을" 은 코드/PROGRESS 에서 보면 됨.
 
+## 2026-05-17 · /moontube 3단계 — 댓글 컴포넌트 분리·카운트 정합·쇼츠 슬라이드업
+
+### `stableCount` 제거: fallback 영상은 모두 0 으로 표시
+- 1·2단계에서는 fallback 영상(`isFallback:true`)에 키 FNV 해시로 만든 의사난수 카운트를 입혀 "조회수 1.2만/좋아요 320" 같은 가짜 인기 표시를 했다. 빈 피드 인상 완화 목적이었지만, 실데이터가 들어오기 시작하면 fallback 만 인기 있어 보이는 역효과가 생긴다.
+- 결정: `stableCount/hashSeed/seedCommentsFor/SEED_COMMENTS` 모두 제거. 모든 카운트는 DB 캐시(`like_count`/`save_count`/`view_count`/`comment_count`) 한 곳만 본다. fallback 은 0 으로 노출되어 "이건 아직 등록 직전 샘플이구나" 가 명확해진다(헤더에 fallback 안내 배너 이미 존재).
+- 트레이드오프: 첫 진입 시 모든 카드가 "조회 0 · 좋아요 0" 으로 보일 수 있음. 그래도 실데이터 시그널 왜곡보다 낫다고 판단.
+
+### 댓글 모델/UI 를 `MoontubeUIComment` + `CommentSection` 한 컴포넌트로 일원화
+- 2단계까지 page.tsx 안에 `CommentBox`/`CommentThread`/`CommentItem`/`CommentSheet` 가 모두 흩어져 있었다. 3단계에 댓글 좋아요 + 멘션 자동완성 + 정렬 토글 + 답글 펼침/접기 + 모바일 키보드 추적이 한꺼번에 들어오면서, page.tsx 한 파일로 끌고 가면 2000줄 + 분기 폭발이 자명했다.
+- 결정: `src/components/moontube/` 아래 `types`/`CommentInput`/`CommentItem`/`CommentSection` 4파일로 분리. page.tsx 는 데이터 보관/낙관적 갱신/네트워크 호출만, 컴포넌트는 표시/정렬/입력만 — 책임 경계가 분명해졌다. inline/sheet 두 변형으로 롱폼 모달과 쇼츠 슬라이드업 양쪽에서 같은 컴포넌트를 그대로 재사용.
+- `MoontubeUIComment` 에 `liked/likeCount/authorAvatarUrl/isFallback` 까지 합성해 컴포넌트가 DB/fallback 분기를 인식할 필요 없게 함.
+
+### 댓글 좋아요 카운트도 트리거(SECURITY DEFINER)로 갱신
+- 영상 좋아요와 같은 이유. 댓글 작성자가 아닌 사용자가 댓글에 좋아요를 누르면 `moontube_comments` UPDATE RLS(본인/admin) 에 막힌다. 그래서 `moontube_comment_likes` INSERT/DELETE 트리거가 `like_count` 캐시를 ±1.
+- 클라이언트는 좋아요 row 만 넣고 빼며, 카운트는 토글 응답을 기다리지 않고 낙관적으로 ±1 하고 실패 시 롤백. 토스트는 영상 좋아요와 동일 톤("댓글 좋아요 처리에 실패했어요").
+
+### 쇼츠 풀스크린 댓글: 별도 시트 대신 영상 축소 + 슬라이드업
+- 기존: 댓글 클릭 시 검정 모달이 75dvh 로 떠 영상이 가려졌다. 유튜브 Shorts 의 "영상은 상단에 그대로, 댓글은 하단에 슬라이드업" 패턴이 익숙하고, 사용자가 "영상 보면서 댓글 읽기" 가 가능해진다.
+- 구현: 스크롤 컨테이너 `motion.div` 에 `animate={{ height: commentsOpen ? '40dvh' : '100dvh' }}` 적용 + 각 `ShortSlide` 의 `height` 도 같은 값으로 묶음. snap-y 스크롤은 같은 컨테이너 안에서 그대로 동작. 슬라이드 높이가 바뀔 때 `scrollTop = round(prev/prevH) * newH` 로 현재 보고 있던 영상의 위치 보존(스냅이 어긋나는 사고 방지). 댓글 영역은 `absolute bottom-0 h-[60dvh]` 에 `motion.div initial={{y:'100%'}}` 로 슬라이드업.
+- 메타/액션 영역은 댓글 열림 시 `compact` prop 으로 한 줄 압축 — 40dvh 안에서도 제목/닉네임/액션이 잘리지 않게.
+
+### 쇼츠 상하 검정 바 제거
+- 기존엔 슬라이드 안에 `aspect-[9/16] w-[min(100%,100dvh*9/16)]` 컨테이너를 띄워, 화면이 9:16 보다 좁으면 상하에 검정 여백이 생겼다.
+- 변경: iframe 을 `absolute left-1/2 top-0 h-full w-[min(100%,var(--slide-h)*9/16)] -translate-x-1/2` 로 두어 슬라이드 전체 높이를 채우고, 가로는 9:16 비율에서 최대 100%. 좌우 검정 바가 생기는 화면(아주 좁은 모바일)은 어쩔 수 없지만 상하 빈 영역은 사라짐. 상단 바도 그라데이션 오버레이 위 `absolute` 배치로 영상 위에 떠 있게 함.
+
+### 트레이드오프
+- 같은 영상의 좋아요 row 가 영상/댓글 두 테이블로 분리되어, 한 사용자가 "영상 좋아요" 와 "댓글 좋아요" 를 별도로 관리해야 한다. 의도된 분리 — 한쪽만 보고 다른 쪽이 갱신되면 정합이 깨진다.
+- 슬라이드 높이 변경 시 일부 모바일 브라우저에서 iframe 의 youtube 임베드가 재로드될 가능성이 있다. 실측 시 문제되면 영상은 100dvh 유지 + 댓글만 위로 슬라이드(영상 하단을 가리는 방식)로 대체 검토.
+
+## 2026-05-17 · /moontube 2단계 — 통합 테이블 + 트리거 카운트 + fallback 격하
+
+### 단일 `moontube_items` 로 롱폼/쇼츠 통합 (muntz_items 와 분리 신설)
+- 기존 `muntz_items`(쇼츠 전용)를 확장하지 않고 `video_type` 을 가진 새 테이블을 만들었다. 이유: 1단계에서 검증된 `muntz_items` 경로(/muntz·muntz-service)를 깨지 않고 그대로 두면서, /moontube 는 상위 통합 표현/저장 계층으로 독립 — 회귀 위험 격리. 두 테이블이 잠시 공존하지만 /moontube 는 `moontube_items` 만 본다.
+- 롱폼 카테고리(문튜브 4종)와 쇼츠 카테고리(문츠 6종)가 한 `category TEXT` 컬럼에 섞인다. 등록 폼이 `video_type` 에 맞는 목록만 노출하므로 혼입 위험은 입력단에서 차단.
+
+### 카운트는 "집계 캐시 컬럼 + DB 트리거" 로 유지 (클라이언트 UPDATE 금지)
+- `moontube_items` UPDATE RLS 는 본인/admin 만 허용한다. 그런데 남의 영상에 좋아요를 누른 사용자는 소유자가 아니라 `like_count` 를 직접 못 올린다. 
+- 해결: `like_count/save_count/comment_count` 를 캐시 컬럼으로 두고, `moontube_likes/saves/comments` 의 INSERT/DELETE 트리거가 갱신. 트리거 함수는 **SECURITY DEFINER** 라 RLS 를 우회해 카운트만 ±1 한다. 클라이언트가 카운트를 조작할 경로 자체가 없음 — 정합성과 권한이 동시에 해결됨. 조회수도 같은 이유로 `moontube_bump_view()` SECURITY DEFINER RPC(오직 +1, 컬럼 한정).
+- 대안(클라이언트가 매번 select count 후 update)은 RLS 에 막히고 경쟁 조건도 있어 기각. RPC 다발(toggle 마다 increment RPC)보다 트리거가 등록·삭제·CASCADE 까지 일관 처리해 더 견고.
+
+### 스펙의 `auth.users(id)` → 코드베이스 관례 `profiles(id)` 로 변경
+- 작업 지시 SQL 은 likes/saves/comments.user_id 를 `auth.users(id)` 로 잡았으나, 기존 016/024 는 모두 `profiles(id)` 를 참조한다. `listComments` 의 "작성자 프로필 join" 을 PostgREST embed(`author:profiles!user_id`)로 깔끔히 하려면 `profiles(id)` FK 가 필요. `profiles.id` 자체가 `auth.users(id)` 를 FK 하므로 인증 무결성도 유지 — 스펙을 의도적으로 코드베이스 관례에 맞춤.
+
+### `update_updated_at_column` 미존재 → 전용 트리거 함수
+- 지시 SQL 은 `update_updated_at_column()` 을 호출하지만 코드베이스 어디에도 그 함수가 없다(있는 건 001 `set_updated_at`, 031 `muntz_items_touch_updated_at`). 031 패턴대로 `moontube_touch_updated_at()` 를 새로 정의해 마이그레이션이 실패하지 않게 함.
+
+### fallback(mock)일 때 인터랙션을 로컬 더미로 "격하"
+- Supabase 조회가 비거나 실패하면 `getMoontubeFallback()`(YOUTUBE_VIDEOS+MUNTZ_ITEMS_FALLBACK)을 보여준다. 이 항목들은 실제 DB row(uuid)가 없어 좋아요/저장/댓글을 DB 에 붙일 수 없다.
+- 그래서 `isFallback` 플래그로 분기: fallback 은 1단계처럼 로컬 state + 키 해시 더미 카운트로만 동작(새로고침 시 초기화), real 은 전부 DB. 빈 화면 대신 데모가 살아있고, 실데이터가 쌓이면 자동으로 DB 경로로 전환. 두 경로를 한 인터페이스(`toggleLike(item)` 등)로 묶어 컴포넌트는 분기 인지 불필요.
+
+### 등록 모달: 유형 선택 단계 제거 → URL 자동 감지
+- 1단계의 "롱폼/쇼츠 선택 → 폼" 2단계를 없애고, URL 을 붙이면 `/shorts/` 포함 여부로 `video_type` 을 자동 판별하는 단일 폼으로 단순화(지시: "video_type 은 URL 에서 자동 감지"). 감지된 유형 배지를 즉시 보여주고 카테고리 목록도 그 유형에 맞게 바뀐다 — 사용자가 유형을 잘못 고르는 경로 자체를 제거.
+
+### 트레이드오프
+- `muntz_items` 와 `moontube_items` 가 당분간 공존(쇼츠 데이터 이원화). /muntz 리다이렉트 상태라 사용자 영향은 없고, 실데이터는 /moontube 등록분이 `moontube_items` 에 일원화됨. 기존 `muntz_items` 마이그레이션/백필은 후속 과제로 남김.
+- 댓글 수 표시는 "열어 본 적 있으면 로드된 실제 개수, 아니면 DB 캐시" 라 답글 포함 여부로 헤더와 카드 숫자가 미세하게 다를 수 있음 — 정확도보다 추가 쿼리 없는 단순함을 택함.
+
+## 2026-05-17 · /moontube 피드 — 쇼츠 우선 + 2줄 그리드 교차 배치
+
+### 결정
+"전체" 탭 피드를 **쇼츠 섹션(2줄 그리드) → 롱폼 3개 → 쇼츠 섹션 → 롱폼 3개 …** 순서로 교차 배치. 기존엔 롱폼 3개 뒤에 쇼츠가 가로 스크롤 1줄로 한 번만 끼었는데, 쇼츠가 묻히고 롱폼이 먼저·과다 노출됐다. 쇼츠 섹션 헤더에 유튜브 느낌의 빨간 🎬 Shorts 칩 + "모두 보기"(쇼츠 전체 그리드 진입) 추가.
+
+### 이유
+- 학생 사용 패턴상 쇼츠 소비량이 롱폼보다 압도적. "영상 보러 옴 = 쇼츠부터" 라는 기대에 맞춰 쇼츠를 최상단·반복 노출로 끌어올림.
+- 가로 스크롤 1줄은 모바일에서 2~3개만 보이고 나머지가 숨어 발견율이 낮음. 2줄 그리드(모바일 2열×3 / 태블릿 3열×2 / 데스크톱 4열×2)로 한 화면 노출량을 6~8개로 키움.
+- mock 쇼츠가 10개뿐이라 섹션마다 순환 슬라이스로 반복 배치 — API 연동 전까지 피드가 비어 보이지 않게 하는 의도된 타협. 반응형 노출 개수 차이(6 vs 8)는 7·8번째에 `hidden lg:block` 만 걸어 JS 분기 없이 CSS로 처리.
+
+### 수집량 변경 (예정)
+- 쇼츠 30개/일 + 롱폼 10개/일로 변경 예정 (API 유닛 ~1,200/일, 무료 한도 10,000 내 여유).
+- 위 피드 구조가 쇼츠를 훨씬 많이 소비하므로 자동 수집 비중을 쇼츠 쪽으로 키움. 검수 부담은 늘지만 quota 여유는 충분.
+
+### 트레이드오프
+- 쇼츠가 섹션마다 반복되어 같은 영상이 피드에서 여러 번 보일 수 있음 — mock 한정 현상. 실데이터(30개/일 누적) 들어오면 순환이 한 바퀴 도는 빈도가 급감해 자연 해소.
+- 풀스크린 뷰어 진입 index 는 항상 shorts 원본 배열 기준으로 매핑 — 반복 노출된 카드를 눌러도 그 영상의 정규 위치에서 뷰어가 열림(중복 위치로 안 튐).
+
+## 2026-05-17 · 문튜브 + 문츠를 /moontube 한 페이지로 통합
+
+### 결정
+별도였던 `/youtube`(롱폼 16:9 큐레이션)와 `/muntz`(쇼츠 9:16 풀스크린)를 **단일 `/moontube` "문태 미디어"** 로 합쳤다. 한 피드에 롱폼 카드와 쇼츠 섹션이 유튜브 앱처럼 섞여 나오고, 각 영상에 좋아요/댓글/공유/저장이 붙는다. 기존 두 라우트는 삭제하지 않고 서버단 `redirect("/moontube")` 로만 교체.
+
+### 이유
+- 학생 입장에서 "영상 보는 곳" 이 메뉴에 둘로 쪼개져 있으면 진입 장벽·혼란이 크다. 유튜브 앱의 통합 피드 멘탈 모델이 이미 익숙하므로 그 패턴을 따른다.
+- 롱폼/쇼츠 데이터·정책(특히 쇼츠의 Supabase+RLS 등록/숨김)은 검증된 자산이라 **그대로 재사용**하고, /moontube 는 그 위의 통합 표현 계층으로만 둔다. 라이브러리(`muntz-*`, `youtube-data`)·기존 페이지 파일·AppShell 은 건드리지 않아 회귀 위험 최소화.
+- 리다이렉트 유지: 외부 공유 링크·북마크·랜딩 FullscreenMenu(`/youtube`) 가 깨지지 않게 함. 라우트 삭제 대신 redirect 가 가장 안전한 호환 경로.
+
+### 트레이드오프
+- 좋아요/댓글/저장/조회수는 1단계에서 **로컬 state 더미** — 새로고침하면 사라진다. 통합 UX/레이아웃을 먼저 검증하고 인터랙션 DB 스키마는 2단계로 미룬 의도된 선택. 더미 카운트가 매 렌더 흔들리지 않도록 키 FNV 해시 기반으로 안정 생성.
+- 롱폼 등록은 이 기기 세션에만 남는다(서버 테이블 없음). 쇼츠는 기존 `muntz_items` 경로라 즉시 영구 저장 — 두 경로의 영속성이 비대칭이지만, 롱폼 큐레이션 DB 화는 다음 단계 범위로 명시.
+- 풀스크린 쇼츠 뷰어를 페이지 내부 `fixed inset-0` 오버레이로 띄운다(AppShell `FULLSCREEN_VIEWER_PATHS` 에 /moontube 미추가) — BottomNav 가 살아있는 일반 페이지 위에 오버레이만 덮는 구조라 AppShell 수정 불필요.
+
 ## 2026-05-16 · 문츠 수동 등록은 1차로 "등록 즉시 노출 + 문제시 숨김" 으로 시작
 
 ### 결정

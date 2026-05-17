@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "muntz:find": "node scripts/find-muntz-candidates.mjs"
+    "muntz:find": "node scripts/find-muntz-candidates.mjs",
+    "moontube:find-long": "node scripts/find-moontube-longform.mjs",
+    "moontube:find-all": "npm run muntz:find && npm run moontube:find-long"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.3",

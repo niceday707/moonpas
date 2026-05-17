@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { GraduationCap, ChevronDown, PenSquare, Menu, X, Search, Bell, Eye } from "lucide-react";
+import { GraduationCap, ChevronDown, PenSquare, Menu, X, Search, Bell, Eye, Play } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useNotifications } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
@@ -29,19 +29,19 @@ function isBoardItem(item: NavItem): item is BoardNavItem {
 
 // 라벨 정책: 카테고리 헤더에는 포인트 이모지를 1개씩, 메뉴 항목에는
 // 핵심 항목에만 이모지를 부여 — 나머지는 텍스트로 깔끔하게 정리.
-// 5섹션 구조: 커뮤니티 / 문태 생활 / 학습·진로 / 문태 미디어 / 학교알림.
+// 5섹션 구조: 커뮤니티 / 문태 생활 / 학습·진로 / MoonTube / 학교알림.
 const MEGA_NAV: NavGroup[] = [
   {
     label: "커뮤니티 🫧",
     items: [
+      // 문튜브 + 문츠 통합 — /moontube 단일 라우트.
+      { href: "/moontube", label: "MoonTube ▶" },
       { boardType: "challenge", label: "문태 챌린지" },
       { boardType: "anonymous", label: "문태에타 🔥" },
-      { boardType: "study", label: "학습게시판 📚" },
       { boardType: "free", label: "자유게시판" },
       { boardType: "debate", label: "이슈토론" },
       { boardType: "market", label: "나눔장터" },
       { boardType: "lost", label: "분실물센터" },
-      { boardType: "council", label: "학생자치회" },
     ],
   },
   {
@@ -73,12 +73,12 @@ const MEGA_NAV: NavGroup[] = [
     ],
   },
   {
-    // 신규 섹션 — 문태 미디어 🎬. 문튜브 + 문츠 + 캠퍼스 스토리 + 인사이트 + 동문 뉴스.
+    // 문태 미디어 🎬 — 문튜브/문츠는 /moontube 로 통합되어 커뮤니티로 이동.
+    // 이 섹션은 학생자치/학습게시판 등 커뮤니티에서 옮겨온 항목으로 재편.
     label: "문태 미디어 🎬",
     items: [
-      { boardType: "youtube", label: "문튜브" },
-      // 문츠 — 별도 라우트 /muntz (ComingSoon).
-      { href: "/muntz", label: "문츠 🎬" },
+      { boardType: "council", label: "학생자치회" },
+      { boardType: "study", label: "학습게시판 📚" },
       { boardType: "campus_story" as BoardType, label: "캠퍼스 스토리" },
       { boardType: "insight" as BoardType, label: "인사이트" },
       { boardType: "alumni_news", label: "동문 뉴스" },
@@ -144,6 +144,19 @@ function itemIsNew(
 }
 
 const SINGLE_NAV = [{ href: "/profile", label: "내 프로필" }];
+
+// MoonTube 항목만 YouTube 스타일로 특별 렌더링
+function renderItemLabel(item: NavItem) {
+  if (!isBoardItem(item) && item.href === "/moontube") {
+    return (
+      <span className="inline-flex items-center gap-1">
+        Moon<span className="rounded-sm bg-red-600 px-1 text-white">Tube</span>
+        <Play className="h-3 w-3 fill-red-500 text-red-500" />
+      </span>
+    );
+  }
+  return item.label;
+}
 
 // 날짜 포맷
 const TODAY_KR = new Date().toLocaleDateString("ko-KR", {
@@ -639,7 +652,7 @@ export function TopBar() {
                                             : "text-gray-600 hover:text-violet-600 dark:text-gray-300 dark:hover:text-violet-400",
                                         )}
                                       >
-                                        <span className="font-medium">{item.label}</span>
+                                        <span className="font-medium">{renderItemLabel(item)}</span>
                                         {fresh && (
                                           <span
                                             aria-label="24시간 이내 새 글"
@@ -716,7 +729,7 @@ export function TopBar() {
                               : "text-gray-600 hover:text-violet-600 dark:text-gray-300 dark:hover:text-violet-400",
                           )}
                         >
-                          <span className="truncate">{item.label}</span>
+                          <span className="truncate">{renderItemLabel(item)}</span>
                           {fresh && (
                             <span
                               aria-label="24시간 이내 새 글"

@@ -83,6 +83,10 @@ export type MuntzItem = {
   safetyNote?: string;
   /** 검수 상태 — 기본 pending. UI 노출은 모두 한 번 사람 검수 후 approved 권장 */
   reviewStatus?: MuntzReviewStatus;
+  /** 유튜브 실제 조회수 — 없으면 카드/풀스크린에서 조회수 표기를 숨긴다. */
+  viewCount?: number;
+  /** 유튜브 원본 업로드 시각(ISO8601) — 없으면 "N개월 전" 등 상대 시간 표기를 숨긴다. */
+  publishedAt?: string;
 };
 
 // ─── 자동 수집 후보 → 화이트리스트 (Supabase fallback) ────────────────────

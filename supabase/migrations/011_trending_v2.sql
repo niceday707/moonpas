@@ -113,7 +113,7 @@ AS $$
   SELECT
     ROW_NUMBER() OVER (ORDER BY c.w DESC, c.kw) AS rank,
     c.kw AS keyword,
-    ROUND(c.w, 2) AS count,
+    ROUND(c.w::numeric, 2) AS count,
     ROUND(COALESCE(p.w, 0), 2) AS prev_count
   FROM combined_curr c
   LEFT JOIN combined_prev p ON p.kw = c.kw

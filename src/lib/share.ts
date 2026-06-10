@@ -3,9 +3,9 @@
 
 import { postDetailHref } from "@/lib/board";
 
-const PROD_ORIGIN = "https://moonpas.kr";
+const PROD_ORIGIN = "https://www.moontaenian.kr";
 
-/** 절대 URL 빌드 — moonpas.kr 도메인 고정 (공유 링크는 프로덕션 도메인이어야 함) */
+/** 절대 URL 빌드 — www.moontaenian.kr 도메인 고정 (공유 링크는 프로덕션 도메인이어야 함) */
 export function buildPostShareUrl(boardType: string, postId: string): string {
   return `${PROD_ORIGIN}${postDetailHref(boardType, postId)}`;
 }

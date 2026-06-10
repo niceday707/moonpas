@@ -27,7 +27,7 @@ export default function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   // OAuth 핸드오프 — Supabase Site URL fallback 으로 인해 토큰이 / 루트에 떨어지는 케이스 구제
-  // 예: moonpas.kr/#access_token=...  →  /auth/callback#access_token=... 으로 그대로 hash 전달
+  // 예: www.moontaenian.kr/#access_token=...  →  /auth/callback#access_token=... 으로 그대로 hash 전달
   useEffect(() => {
     if (typeof window === "undefined") return;
     const hash = window.location.hash;

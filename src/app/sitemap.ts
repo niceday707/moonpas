@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const SITE_URL = "https://moonpas.kr";
+const SITE_URL = "https://www.moontaenian.kr";
 
 // 16개 게시판 — board_type 키
 const BOARD_TYPES = [

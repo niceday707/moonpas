@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 
-const SITE_URL = "https://moonpas.kr";
+const SITE_URL = "https://www.moontaenian.kr";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -44,7 +44,7 @@ export const metadata: Metadata = {
   verification: {
     google: "scpGUP7LuQIzBEuEqzQMZZi8DWxlzWPLuNuItTI_3aA",
     other: {
-      "naver-site-verification": "4e1a6a62281761b379108488a03dbb8322f90f93",
+      "naver-site-verification": "9507775238b42ff3f365c52df7d0d034401c9f41",
     },
   },
 };
